@@ -148,19 +148,11 @@ function dateOnly(date: Date) {
 }
 
 function eventCategory(event: Event): { label: EventCategory; rank: number } {
-  const level = event.level ?? "";
-  const name = event.name.toLowerCase();
+  const robotEventsType = event.level ?? event.event_type ?? "";
 
-  if (level === "World" || /world championship/.test(name)) return { label: "Worlds", rank: 0 };
-  if (level === "Signature") return { label: "Signature", rank: 1 };
-  if (
-    level === "National" ||
-    level === "State" ||
-    level === "Regional" ||
-    /regional championship|national championship|state championship|\bchampionship\b/.test(name)
-  ) {
-    return { label: "Championship", rank: 2 };
-  }
+  if (robotEventsType === "World") return { label: "Worlds", rank: 0 };
+  if (robotEventsType === "Signature") return { label: "Signature", rank: 1 };
+  if (robotEventsType === "National" || robotEventsType === "State" || robotEventsType === "Regional") return { label: "Championship", rank: 2 };
 
   return { label: "Other", rank: 3 };
 }
@@ -211,6 +203,7 @@ function filterAndSortEvents(events: Event[], options: {
         event.name,
         event.sku,
         event.level,
+        event.event_type,
         event.program.code,
         event.program.name,
         event.season.name,
