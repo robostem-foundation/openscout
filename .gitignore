@@ -1,0 +1,8 @@
+.env
+.firecrawl/
+node_modules/
+dist/
+server-dist/
+.DS_Store
+npm-debug.log*
+
