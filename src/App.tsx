@@ -186,6 +186,36 @@ function compareEvents(a: Event, b: Event, sort: EventSort) {
   return new Date(a.start ?? 0).getTime() - new Date(b.start ?? 0).getTime() || aCategory.rank - bCategory.rank;
 }
 
+function compareEventsChronological(a?: Event, b?: Event) {
+  const aTime = new Date(a?.start ?? 0).getTime();
+  const bTime = new Date(b?.start ?? 0).getTime();
+  return aTime - bTime || (a?.name ?? "").localeCompare(b?.name ?? "");
+}
+
+function shortSeasonName(name?: string | null) {
+  if (!name) return "Unknown Season";
+  return name.split(":").pop()?.trim() || name;
+}
+
+function makeEventIndex(events: Event[]) {
+  return new Map(events.map((event) => [event.id, event]));
+}
+
+function groupItemsByEvent<T extends { event: { id: number; name: string } }>(items: T[], eventIndex: Map<number, Event>, seasonId: number | null) {
+  const groups = new Map<number, { eventRef: T["event"]; event?: Event; items: T[] }>();
+
+  items.forEach((item) => {
+    const event = eventIndex.get(item.event.id);
+    if (seasonId && event?.season.id !== seasonId) return;
+
+    const group: { eventRef: T["event"]; event?: Event; items: T[] } = groups.get(item.event.id) ?? { eventRef: item.event, event, items: [] };
+    group.items.push(item);
+    groups.set(item.event.id, group);
+  });
+
+  return [...groups.values()].sort((a, b) => compareEventsChronological(a.event, b.event));
+}
+
 function filterAndSortEvents(events: Event[], options: {
   search?: string;
   program?: string;
@@ -304,18 +334,23 @@ function ProgramBadge({ program }: { program?: { code?: string | null; name?: st
   return <span className="badge">{program?.code ?? program?.name ?? "VEX"}</span>;
 }
 
-function TeamMiniLink({ team }: { team: { id: number; name: string } }) {
-  return <Link href={`/team/${team.id}`}>{team.name}</Link>;
+function TeamMiniLink({ team, className }: { team: { id: number; name: string }; className?: string }) {
+  return (
+    <Link href={`/team/${team.id}`} className={className}>
+      {team.name}
+    </Link>
+  );
 }
 
-function AllianceTeamLinks({ teams }: { teams?: Match["alliances"][number]["teams"] }) {
+function AllianceTeamLinks({ teams, focusTeamId }: { teams?: Match["alliances"][number]["teams"]; focusTeamId?: number }) {
   if (!teams?.length) return <>-</>;
 
   return (
     <span className="team-link-list">
-      {teams.map((entry) => (
-        <TeamMiniLink key={entry.team.id} team={entry.team} />
-      ))}
+      {teams.map((entry) => {
+        const focusClass = focusTeamId ? (entry.team.id === focusTeamId ? "team-chip team-chip-focus" : "team-chip team-chip-muted") : undefined;
+        return <TeamMiniLink key={entry.team.id} team={entry.team} className={focusClass} />;
+      })}
     </span>
   );
 }
@@ -992,43 +1027,74 @@ function EventDetail({ id }: { id: string }) {
 
 function TeamDetail({ id }: { id: string }) {
   const [tab, setTab] = useState("events");
+  const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const { data: team, loading, error } = useAsync(() => api.team(id), [id]);
   const events = useAsync(
     async () => {
-      if (!team || tab !== "events") return null;
-      return api.teamEvents(id, { per_page: 80 });
+      if (!team) return null;
+      return collectAllPages<Event>((page) => api.teamEvents(id, { per_page: 250, page }));
     },
-    [id, team?.id, tab],
+    [id, team?.id],
   );
   const matches = useAsync(
     async () => {
-      if (!team || tab !== "matches") return null;
-      return api.teamMatches(id, { per_page: 80 });
+      if (!team || tab !== "matches" || !selectedSeasonId) return null;
+      return collectAllPages<Match>((page) => api.teamMatches(id, { "season[]": [selectedSeasonId], per_page: 250, page }));
     },
-    [id, team?.id, tab],
+    [id, team?.id, tab, selectedSeasonId],
   );
   const rankings = useAsync(
     async () => {
-      if (!team || tab !== "rankings") return null;
-      return api.teamRankings(id, { per_page: 80 });
+      if (!team || tab !== "rankings" || !selectedSeasonId) return null;
+      return collectAllPages<Ranking>((page) => api.teamRankings(id, { "season[]": [selectedSeasonId], per_page: 250, page }));
     },
-    [id, team?.id, tab],
+    [id, team?.id, tab, selectedSeasonId],
   );
   const skills = useAsync(
     async () => {
-      if (!team || tab !== "skills") return null;
-      return api.teamSkills(id, { per_page: 80 });
+      if (!team || tab !== "skills" || !selectedSeasonId) return null;
+      return api.teamSkills(id, { "season[]": [selectedSeasonId], per_page: 250 });
     },
-    [id, team?.id, tab],
+    [id, team?.id, tab, selectedSeasonId],
   );
   const awards = useAsync(
     async () => {
-      if (!team || tab !== "awards") return null;
-      return api.teamAwards(id, { per_page: 80 });
+      if (!team || tab !== "awards" || !selectedSeasonId) return null;
+      return collectAllPages<Award>((page) => api.teamAwards(id, { "season[]": [selectedSeasonId], per_page: 250, page }));
     },
-    [id, team?.id, tab],
+    [id, team?.id, tab, selectedSeasonId],
   );
+  const teamEvents = events.data?.data ?? [];
+  const eventIndex = useMemo(() => makeEventIndex(teamEvents), [teamEvents]);
+  const seasonOptions = useMemo(() => {
+    const bySeason = new Map<number, { id: number; label: string; latest: number; count: number }>();
+
+    teamEvents.forEach((event) => {
+      const latest = new Date(event.start ?? 0).getTime();
+      const existing = bySeason.get(event.season.id);
+      if (!existing) {
+        bySeason.set(event.season.id, { id: event.season.id, label: shortSeasonName(event.season.name), latest, count: 1 });
+        return;
+      }
+
+      existing.latest = Math.max(existing.latest, latest);
+      existing.count += 1;
+    });
+
+    return [...bySeason.values()].sort((a, b) => b.latest - a.latest || b.id - a.id);
+  }, [teamEvents]);
+  const seasonEvents = useMemo(
+    () => teamEvents.filter((event) => !selectedSeasonId || event.season.id === selectedSeasonId).sort(compareEventsChronological),
+    [teamEvents, selectedSeasonId],
+  );
+  const selectedSeason = seasonOptions.find((season) => season.id === selectedSeasonId);
   const activeStatus = tab === "events" ? events : tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : awards;
+
+  useEffect(() => {
+    if (seasonOptions[0] && (!selectedSeasonId || !seasonOptions.some((season) => season.id === selectedSeasonId))) {
+      setSelectedSeasonId(seasonOptions[0].id);
+    }
+  }, [selectedSeasonId, seasonOptions]);
 
   if (loading || error || !team) {
     return (
@@ -1061,20 +1127,346 @@ function TeamDetail({ id }: { id: string }) {
         active={tab}
         onChange={setTab}
         tabs={[
-          ["events", `Events ${events.data?.meta.total ?? ""}`, <CalendarDays size={15} />],
+          ["events", `Events ${seasonEvents.length || ""}`, <CalendarDays size={15} />],
           ["matches", "Matches", <Gamepad2 size={15} />],
           ["rankings", "Rankings", <BarChart3 size={15} />],
           ["skills", "Skills", <Activity size={15} />],
           ["awards", "Awards", <AwardIcon size={15} />],
         ]}
       />
+      <SeasonSelector
+        seasons={seasonOptions}
+        selectedSeasonId={selectedSeasonId}
+        onChange={setSelectedSeasonId}
+        loading={events.loading}
+      />
       <Status loading={activeStatus.loading} error={activeStatus.error} />
-      {tab === "events" && <EventTable events={events.data?.data ?? []} loading={events.loading} />}
-      {tab === "matches" && <MatchesTable matches={matches.data?.data ?? []} />}
-      {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} />}
-      {tab === "skills" && <SkillsTable skills={skills.data?.data ?? []} />}
-      {tab === "awards" && <AwardsList awards={awards.data?.data ?? []} />}
+      {!activeStatus.loading && !events.loading && selectedSeason && (
+        <div className="table-summary">
+          Showing {selectedSeason.label} only. Change season to review another year.
+        </div>
+      )}
+      {!activeStatus.loading && tab === "events" && <EventTable events={seasonEvents} loading={events.loading} />}
+      {!activeStatus.loading && tab === "matches" && (
+        <TeamMatchesByEvent
+          matches={matches.data?.data ?? []}
+          eventIndex={eventIndex}
+          seasonId={selectedSeasonId}
+          focusTeamId={team.id}
+        />
+      )}
+      {!activeStatus.loading && tab === "rankings" && <TeamRankingsByEvent rankings={rankings.data?.data ?? []} eventIndex={eventIndex} seasonId={selectedSeasonId} />}
+      {!activeStatus.loading && tab === "skills" && <TeamSkillsByEvent skills={skills.data?.data ?? []} eventIndex={eventIndex} seasonId={selectedSeasonId} />}
+      {!activeStatus.loading && tab === "awards" && <TeamAwardsByEvent awards={awards.data?.data ?? []} eventIndex={eventIndex} seasonId={selectedSeasonId} focusTeamId={team.id} />}
     </section>
+  );
+}
+
+function SeasonSelector({
+  seasons,
+  selectedSeasonId,
+  onChange,
+  loading,
+}: {
+  seasons: Array<{ id: number; label: string; count: number }>;
+  selectedSeasonId: number | null;
+  onChange: (seasonId: number) => void;
+  loading: boolean;
+}) {
+  if (loading || !seasons.length) return null;
+
+  return (
+    <div className="season-toolbar">
+      <span>Season</span>
+      <select value={selectedSeasonId ?? ""} onChange={(event) => onChange(Number(event.target.value))}>
+        {seasons.map((season) => (
+          <option key={season.id} value={season.id}>
+            {season.label} ({season.count})
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function EventGroupTitle({ eventRef, event, count }: { eventRef: { id: number; name: string; code?: string | null }; event?: Event; count: number }) {
+  return (
+    <>
+      <span>
+        <Link href={`/event/${eventRef.id}`}>{eventRef.name}</Link>
+        <small>{event?.sku ?? eventRef.code ?? ""}</small>
+      </span>
+      <span className="event-group-meta">
+        {event ? `${formatShortDate(event.start)} - ${formatShortDate(event.end)}` : "Date unavailable"} · {count.toLocaleString()}
+      </span>
+    </>
+  );
+}
+
+function TeamMatchesByEvent({
+  matches,
+  eventIndex,
+  seasonId,
+  focusTeamId,
+}: {
+  matches: Match[];
+  eventIndex: Map<number, Event>;
+  seasonId: number | null;
+  focusTeamId: number;
+}) {
+  const groups = groupItemsByEvent(matches, eventIndex, seasonId);
+
+  return (
+    <Panel title="Matches" icon={<Gamepad2 />}>
+      <div className="event-groups">
+        {groups.map((group, index) => (
+          <details key={group.eventRef.id} className="event-group" open={index === 0}>
+            <summary>
+              <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} />
+            </summary>
+            <TeamMatchTable matches={group.items} focusTeamId={focusTeamId} />
+          </details>
+        ))}
+        {!groups.length && <Empty>No matches returned for this season.</Empty>}
+      </div>
+    </Panel>
+  );
+}
+
+function TeamMatchTable({ matches, focusTeamId }: { matches: Match[]; focusTeamId: number }) {
+  const sortedMatches = [...matches].sort((a, b) => a.round - b.round || (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum);
+
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Match</th>
+          <th>Red Alliance</th>
+          <th>Blue Alliance</th>
+          <th>Score</th>
+          <th>Winner</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sortedMatches.map((match) => {
+          const red = match.alliances.find((alliance) => alliance.color === "red");
+          const blue = match.alliances.find((alliance) => alliance.color === "blue");
+          const redScore = red?.score;
+          const blueScore = blue?.score;
+          const hasScore = redScore !== null && redScore !== undefined && blueScore !== null && blueScore !== undefined;
+          const winner =
+            !hasScore
+              ? "-"
+              : redScore === blueScore
+                ? "Tie"
+                : redScore > blueScore
+                  ? "Red"
+                  : "Blue";
+
+          return (
+            <tr key={match.id}>
+              <td>
+                {match.name}
+                {match.division?.name && <span className="muted inline-muted">{match.division.name}</span>}
+              </td>
+              <td className={winner === "Red" ? "winner-cell" : ""}>
+                <AllianceTeamLinks teams={red?.teams} focusTeamId={focusTeamId} />
+              </td>
+              <td className={winner === "Blue" ? "winner-cell" : ""}>
+                <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} />
+              </td>
+              <td>
+                <span className="score red">{red?.score ?? "-"}</span>
+                <span className="score blue">{blue?.score ?? "-"}</span>
+              </td>
+              <td>
+                <span className={`winner-badge ${winner.toLowerCase()}`}>{winner}</span>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function TeamRankingsByEvent({ rankings, eventIndex, seasonId }: { rankings: Ranking[]; eventIndex: Map<number, Event>; seasonId: number | null }) {
+  const groups = groupItemsByEvent(rankings, eventIndex, seasonId);
+
+  return (
+    <Panel title="Rankings" icon={<BarChart3 />}>
+      <table>
+        <thead>
+          <tr>
+            <th>Event</th>
+            <th>Division</th>
+            <th>Rank</th>
+            <th>Record</th>
+            <th>WP</th>
+            <th>AP</th>
+            <th>SP</th>
+            <th>Avg</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groups.flatMap((group) =>
+            group.items.map((row) => (
+              <tr key={row.id}>
+                <td>
+                  <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                  <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
+                </td>
+                <td>{row.division?.name ?? "-"}</td>
+                <td>{row.rank}</td>
+                <td>
+                  {row.wins ?? 0}-{row.losses ?? 0}-{row.ties ?? 0}
+                </td>
+                <td>{row.wp ?? "-"}</td>
+                <td>{row.ap ?? "-"}</td>
+                <td>{row.sp ?? "-"}</td>
+                <td>{formatNumber(row.average_points)}</td>
+              </tr>
+            )),
+          )}
+          {!groups.length && (
+            <tr>
+              <td colSpan={8}>
+                <Empty>No rankings returned for this season.</Empty>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </Panel>
+  );
+}
+
+function TeamSkillsByEvent({ skills, eventIndex, seasonId }: { skills: Skill[]; eventIndex: Map<number, Event>; seasonId: number | null }) {
+  const groups = groupItemsByEvent(skills, eventIndex, seasonId).map((group) => {
+    const entries = [...group.items].sort((a, b) => (a.type === "driver" ? -1 : 1) - (b.type === "driver" ? -1 : 1));
+    const bestByType = new Map<string, Skill>();
+
+    entries.forEach((skill) => {
+      const key = skill.type.toLowerCase();
+      const existing = bestByType.get(key);
+      if (!existing || (skill.score ?? -1) > (existing.score ?? -1)) bestByType.set(key, skill);
+    });
+
+    return { ...group, entries: [...bestByType.values()] };
+  });
+
+  return (
+    <Panel title="Skills" icon={<Activity />}>
+      <table className="skills-table team-skills-table">
+        <thead>
+          <tr>
+            <th>Event</th>
+            <th>Rank</th>
+            <th>Scores</th>
+            <th>Attempts</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((group) => {
+            const entries = group.entries.sort((a, b) => a.type.localeCompare(b.type));
+            const rank = entries.reduce<number | null>((best, entry) => {
+              if (entry.rank === null || entry.rank === undefined) return best;
+              return best === null ? entry.rank : Math.min(best, entry.rank);
+            }, null);
+            const total = entries.reduce((sum, entry) => sum + (entry.score ?? 0), 0);
+
+            return (
+              <tr key={group.eventRef.id}>
+                <td>
+                  <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                  <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
+                </td>
+                <td>{rank ?? "-"}</td>
+                <td>
+                  <span className="skill-parts">
+                    {entries.map((entry) => (
+                      <span key={`${group.eventRef.id}-${entry.type}`}>
+                        <strong className="capitalize">{entry.type}</strong> {entry.score ?? "-"}
+                      </span>
+                    ))}
+                  </span>
+                </td>
+                <td>
+                  <span className="skill-parts">
+                    {entries.map((entry) => (
+                      <span key={`${group.eventRef.id}-${entry.type}-attempts`}>
+                        <strong className="capitalize">{entry.type}</strong> {entry.attempts ?? "-"}
+                      </span>
+                    ))}
+                  </span>
+                </td>
+                <td>{total || "-"}</td>
+              </tr>
+            );
+          })}
+          {!groups.length && (
+            <tr>
+              <td colSpan={5}>
+                <Empty>No skills scores returned for this season.</Empty>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </Panel>
+  );
+}
+
+function TeamAwardsByEvent({
+  awards,
+  eventIndex,
+  seasonId,
+  focusTeamId,
+}: {
+  awards: Award[];
+  eventIndex: Map<number, Event>;
+  seasonId: number | null;
+  focusTeamId: number;
+}) {
+  const groups = groupItemsByEvent(awards, eventIndex, seasonId);
+
+  return (
+    <Panel title="Awards" icon={<Medal />}>
+      <div className="event-groups">
+        {groups.map((group) => (
+          <details key={group.eventRef.id} className="event-group" open>
+            <summary>
+              <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} />
+            </summary>
+            <div className="award-list">
+              {group.items.map((award) => (
+                <article className="award-item" key={award.id}>
+                  <h3>{award.title}</h3>
+                  <div className="winner-row">
+                    {(award.teamWinners ?? []).map((winner) => (
+                      <Link
+                        key={`${award.id}-${winner.team.id}`}
+                        href={`/team/${winner.team.id}`}
+                        className={`winner-pill ${winner.team.id === focusTeamId ? "" : "other"}`}
+                      >
+                        {winner.team.name}
+                      </Link>
+                    ))}
+                    {(award.individualWinners ?? []).map((winner) => (
+                      <span key={winner} className="winner-pill">
+                        {winner}
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </details>
+        ))}
+        {!groups.length && <Empty>No awards returned for this season.</Empty>}
+      </div>
+    </Panel>
   );
 }
 

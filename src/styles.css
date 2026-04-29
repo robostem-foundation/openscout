@@ -459,6 +459,26 @@ tbody tr:hover {
   gap: 4px 8px;
 }
 
+.team-chip,
+.team-chip:hover,
+.team-chip:focus {
+  display: inline-block;
+  padding: 0.2em 0.6em 0.3em;
+  border-radius: 0.25em;
+  color: #fff;
+  font-size: 75%;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.team-chip-focus {
+  background: #337ab7;
+}
+
+.team-chip-muted {
+  background: #999;
+}
+
 .badge {
   display: inline;
   padding: 0.2em 0.6em 0.3em;
@@ -697,6 +717,74 @@ tbody tr:hover {
   color: #fff;
 }
 
+.season-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -5px 0 15px;
+  padding: 10px;
+  background: #f5f5f5;
+  border: 1px solid #e3e3e3;
+  border-radius: 4px;
+}
+
+.season-toolbar span {
+  color: #555;
+  font-weight: 700;
+}
+
+.season-toolbar select {
+  width: min(420px, 100%);
+  height: 34px;
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  color: #555;
+}
+
+.event-groups {
+  display: grid;
+  gap: 0;
+}
+
+.event-group {
+  border-top: 1px solid #ddd;
+}
+
+.event-group summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 15px;
+  background: #f9f9f9;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.event-group summary:hover {
+  background: #f5f5f5;
+}
+
+.event-group summary span:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.event-group summary small {
+  color: #777;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.event-group-meta {
+  color: #777;
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
 .event-highlights {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -825,6 +913,12 @@ tbody tr:hover {
   white-space: nowrap;
 }
 
+.team-skills-table th:first-child,
+.team-skills-table td:first-child {
+  width: 48%;
+  white-space: normal;
+}
+
 .skill-parts {
   display: inline-flex;
   flex-wrap: nowrap;
@@ -868,6 +962,10 @@ tbody tr:hover {
   color: #fff;
   font-size: 75%;
   font-weight: 700;
+}
+
+.winner-pill.other {
+  background: #999;
 }
 
 .winner-pill:hover,
