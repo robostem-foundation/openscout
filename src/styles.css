@@ -440,6 +440,25 @@ tbody tr:hover {
   font-weight: 400;
 }
 
+.inline-muted {
+  margin-left: 8px;
+}
+
+.team-cell {
+  white-space: nowrap;
+}
+
+.team-cell span::before {
+  content: " - ";
+  color: #777;
+}
+
+.team-link-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
 .badge {
   display: inline;
   padding: 0.2em 0.6em 0.3em;
@@ -522,6 +541,23 @@ tbody tr:hover {
   padding: 10px 15px;
   border-top: 1px solid #ddd;
   color: #777;
+}
+
+.pager-with-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #ddd;
+  color: #777;
+  font-size: 12px;
+}
+
+.pager-with-total > span {
+  padding: 10px 15px;
+}
+
+.pager-with-total .pager {
+  border-top: 0;
 }
 
 .pager button,
@@ -659,6 +695,106 @@ tbody tr:hover {
   background: #337ab7;
   border-color: #2e6da4;
   color: #fff;
+}
+
+.event-highlights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 8px;
+  margin: -5px 0 15px;
+}
+
+.event-highlights article {
+  padding: 10px 12px;
+  background: #fcf8e3;
+  border: 1px solid #faebcc;
+  border-radius: 4px;
+  color: #8a6d3b;
+}
+
+.event-highlights strong {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.event-highlights div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.event-highlights a,
+.event-highlights span {
+  display: inline-block;
+  padding: 0.2em 0.6em 0.3em;
+  border-radius: 0.25em;
+  background: #337ab7;
+  color: #fff;
+  font-size: 75%;
+  font-weight: 700;
+}
+
+.event-highlights a:hover {
+  color: #fff;
+}
+
+.table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 15px;
+  border-bottom: 1px solid #ddd;
+  background: #f9f9f9;
+}
+
+.table-tools button {
+  padding: 3px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  color: #337ab7;
+}
+
+.table-tools button.active,
+.table-tools button:hover {
+  background: #337ab7;
+  border-color: #2e6da4;
+  color: #fff;
+}
+
+.table-tools span {
+  margin-left: auto;
+  color: #777;
+  font-size: 12px;
+}
+
+.winner-cell {
+  font-weight: 700;
+}
+
+.winner-badge {
+  display: inline-block;
+  min-width: 44px;
+  padding: 0.2em 0.6em 0.3em;
+  border-radius: 0.25em;
+  background: #777;
+  color: #fff;
+  font-size: 75%;
+  font-weight: 700;
+  text-align: center;
+}
+
+.winner-badge.red {
+  background: #d9534f;
+}
+
+.winner-badge.blue {
+  background: #337ab7;
+}
+
+.winner-badge.tie {
+  background: #5bc0de;
 }
 
 .score {

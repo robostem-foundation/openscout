@@ -17,7 +17,7 @@ import {
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { api } from "./api";
-import type { Award, Event, Match, PageMeta, Ranking, Skill, Team } from "./types";
+import type { Award, Event, Match, PageMeta, Paginated, Ranking, Skill, Team } from "./types";
 
 const programOptions = [
   { label: "All Programs", value: "" },
@@ -105,6 +105,17 @@ function useAsync<T>(loader: () => Promise<T>, deps: unknown[]) {
   }, deps);
 
   return { data, error, loading };
+}
+
+async function collectAllPages<T>(loader: (page: number) => Promise<Paginated<T>>) {
+  const first = await loader(1);
+  const extraPages = Array.from({ length: Math.max(0, first.meta.last_page - 1) }, (_, index) => index + 2);
+  const rest = await Promise.all(extraPages.map((page) => loader(page)));
+
+  return {
+    ...first,
+    data: [first, ...rest].flatMap((page) => page.data),
+  };
 }
 
 function formatDate(value?: string | null) {
@@ -256,8 +267,8 @@ function LoadingTable({ columns = 4 }: { columns?: number }) {
 }
 
 function Status({ loading, error }: { loading: boolean; error: string | null }) {
-  if (loading) return <div className="notice">Loading RoboStem data...</div>;
-  if (error) return <div className="notice error">RoboStem API error: {error}</div>;
+  if (loading) return <div className="notice">Loading competition data...</div>;
+  if (error) return <div className="notice error">API error: {error}</div>;
   return null;
 }
 
@@ -278,8 +289,42 @@ function Pager({ meta, onPage }: { meta?: PageMeta; onPage: (page: number) => vo
   );
 }
 
+function LocalPager({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (page: number) => void }) {
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="pager">
+      <button disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">
+        <ChevronLeft size={16} />
+      </button>
+      <span>
+        Page {page.toLocaleString()} of {totalPages.toLocaleString()}
+      </span>
+      <button disabled={page >= totalPages} onClick={() => onPage(page + 1)} aria-label="Next page">
+        <ChevronRight size={16} />
+      </button>
+    </div>
+  );
+}
+
 function ProgramBadge({ program }: { program?: { code?: string | null; name?: string } }) {
   return <span className="badge">{program?.code ?? program?.name ?? "VEX"}</span>;
+}
+
+function TeamMiniLink({ team }: { team: { id: number; name: string } }) {
+  return <Link href={`/team/${team.id}`}>{team.name}</Link>;
+}
+
+function AllianceTeamLinks({ teams }: { teams?: Match["alliances"][number]["teams"] }) {
+  if (!teams?.length) return <>-</>;
+
+  return (
+    <span className="team-link-list">
+      {teams.map((entry) => (
+        <TeamMiniLink key={entry.team.id} team={entry.team} />
+      ))}
+    </span>
+  );
 }
 
 function FavoriteButton({ id, kind }: { id: number | string; kind: "team" | "event" }) {
@@ -334,7 +379,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
       </header>
       <main>{children}</main>
       <footer>
-        <div>Data provided by RoboStem DB API. Built as a VEX-native tribute to The Blue Alliance workflow.</div>
+        <div>Event data from RobotEvents. Team stats and SuperScore from RoboStem DB.</div>
         <div className="footer-links">
           <Link href="/events">Events</Link>
           <Link href="/teams">Teams</Link>
@@ -701,48 +746,64 @@ function TeamsPage() {
   );
 }
 
-function TeamTable({ teams, loading }: { teams: Team[]; loading: boolean }) {
+function TeamTable({ teams, loading, localPageSize }: { teams: Team[]; loading: boolean; localPageSize?: number }) {
+  const [page, setPage] = useState(1);
+  const totalPages = localPageSize ? Math.max(1, Math.ceil(teams.length / localPageSize)) : 1;
+  const visibleTeams = localPageSize ? teams.slice((page - 1) * localPageSize, page * localPageSize) : teams;
+
+  useEffect(() => {
+    setPage(1);
+  }, [teams, localPageSize]);
+
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>Team</th>
-          <th>Program</th>
-          <th>Organization</th>
-          <th>Location</th>
-          <th>Grade</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      {loading ? (
-        <LoadingTable columns={6} />
-      ) : (
-        <tbody>
-          {teams.map((team) => (
-            <tr key={team.id}>
-              <td>
-                <Link href={`/team/${team.id}`}>{team.number}</Link>
-                <div className="muted">{team.team_name || "Unnamed team"}</div>
-              </td>
-              <td>
-                <ProgramBadge program={team.program} />
-              </td>
-              <td>{team.organization || "-"}</td>
-              <td>{locationLine(team)}</td>
-              <td>{team.grade ?? "-"}</td>
-              <td>{team.registered ? "Registered" : "Inactive"}</td>
-            </tr>
-          ))}
-          {!teams.length && (
-            <tr>
-              <td colSpan={6}>
-                <Empty />
-              </td>
-            </tr>
-          )}
-        </tbody>
+    <>
+      <table>
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th>Program</th>
+            <th>Organization</th>
+            <th>Location</th>
+            <th>Grade</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        {loading ? (
+          <LoadingTable columns={6} />
+        ) : (
+          <tbody>
+            {visibleTeams.map((team) => (
+              <tr key={team.id}>
+                <td className="team-cell">
+                  <Link href={`/team/${team.id}`}>{team.number}</Link>
+                  {team.team_name && <span>{team.team_name}</span>}
+                </td>
+                <td>
+                  <ProgramBadge program={team.program} />
+                </td>
+                <td>{team.organization || "-"}</td>
+                <td>{locationLine(team)}</td>
+                <td>{team.grade ?? "-"}</td>
+                <td>{team.registered ? "Registered" : "Inactive"}</td>
+              </tr>
+            ))}
+            {!teams.length && (
+              <tr>
+                <td colSpan={6}>
+                  <Empty />
+                </td>
+              </tr>
+            )}
+          </tbody>
+        )}
+      </table>
+      {!loading && localPageSize && (
+        <div className="pager-with-total">
+          <span>{teams.length.toLocaleString()} teams loaded</span>
+          <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
+        </div>
       )}
-    </table>
+    </>
   );
 }
 
@@ -803,20 +864,57 @@ function EventDetail({ id }: { id: string }) {
   const divisions = useMemo(() => [...(event?.divisions ?? [])].sort((a, b) => (a.order ?? a.id) - (b.order ?? b.id)), [event]);
   const division = selectedDivision ?? divisions[0]?.id ?? 1;
   const activeDivision = divisions.find((item) => item.id === division) ?? divisions[0];
-  const detail = useAsync(
+  const awards = useAsync(
     async () => {
       if (!event) return null;
-      const [teams, matches, rankings, skills, awards] = await Promise.all([
-        api.eventTeams(id, { per_page: 250 }),
-        api.eventMatches(id, division, { per_page: 250 }),
-        api.eventRankings(id, division, { per_page: 250 }),
-        api.eventSkills(id, { per_page: 250 }),
-        api.eventAwards(id, { per_page: 250 }),
-      ]);
-      return { teams, matches, rankings, skills, awards };
+      return collectAllPages<Award>((page) => api.eventAwards(id, { per_page: 250, page }));
     },
-    [id, division, event?.id],
+    [id, event?.id],
   );
+  const matches = useAsync(
+    async () => {
+      if (!event || tab !== "matches") return null;
+      return collectAllPages<Match>((page) => api.eventMatches(id, division, { per_page: 250, page }));
+    },
+    [id, division, event?.id, tab],
+  );
+  const rankings = useAsync(
+    async () => {
+      if (!event || tab !== "rankings") return null;
+      return collectAllPages<Ranking>((page) => api.eventRankings(id, division, { per_page: 250, page }));
+    },
+    [id, division, event?.id, tab],
+  );
+  const skills = useAsync(
+    async () => {
+      if (!event || tab !== "skills") return null;
+      return collectAllPages<Skill>((page) => api.eventSkills(id, { per_page: 250, page }));
+    },
+    [id, event?.id, tab],
+  );
+  const teams = useAsync(
+    async () => {
+      if (!event || tab !== "teams") return null;
+      return collectAllPages<Team>((page) => api.eventTeams(id, { per_page: 250, page }));
+    },
+    [id, event?.id, tab],
+  );
+
+  const eventAwards = awards.data?.data ?? [];
+  const activeStatus = tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : tab === "awards" ? awards : teams;
+  const keyAwards = useMemo(() => {
+    const priority = [
+      /world champions|tournament champions|teamwork challenge world champions|event champions/i,
+      /finalists/i,
+      /excellence/i,
+      /robot skills world champions|skills champions/i,
+    ];
+
+    return priority
+      .map((pattern) => eventAwards.find((award) => pattern.test(award.title) && ((award.teamWinners?.length ?? 0) > 0 || (award.individualWinners?.length ?? 0) > 0)))
+      .filter((award): award is Award => Boolean(award))
+      .slice(0, 4);
+  }, [eventAwards]);
 
   useEffect(() => {
     if (!event) return;
@@ -863,10 +961,11 @@ function EventDetail({ id }: { id: string }) {
           ["rankings", "Rankings", <BarChart3 size={15} />],
           ["skills", "Skills", <Activity size={15} />],
           ["awards", "Awards", <AwardIcon size={15} />],
-          ["teams", `Teams ${detail.data?.teams.meta.total ?? ""}`, <Users size={15} />],
+          ["teams", `Teams ${teams.data?.meta.total ?? ""}`, <Users size={15} />],
         ]}
       />
-      {divisions.length > 1 && (
+      {keyAwards.length > 0 && <EventHighlights awards={keyAwards} />}
+      {divisions.length > 1 && (tab === "matches" || tab === "rankings") && (
         <div className="division-tabs" aria-label="Event divisions">
           <span>Division</span>
           {divisions.map((item) => (
@@ -880,17 +979,20 @@ function EventDetail({ id }: { id: string }) {
           ))}
         </div>
       )}
-      <Status loading={detail.loading} error={detail.error} />
+      <Status loading={activeStatus.loading} error={activeStatus.error} />
       {(tab === "matches" || tab === "rankings") && activeDivision && (
         <div className="table-summary">
           Showing {activeDivision.name} division from RobotEvents.
         </div>
       )}
-      {tab === "matches" && <MatchesTable matches={detail.data?.matches.data ?? []} />}
-      {tab === "rankings" && <RankingsTable rankings={detail.data?.rankings.data ?? []} />}
-      {tab === "skills" && <SkillsTable skills={detail.data?.skills.data ?? []} />}
-      {tab === "awards" && <AwardsList awards={detail.data?.awards.data ?? []} />}
-      {tab === "teams" && <TeamTable teams={detail.data?.teams.data ?? []} loading={detail.loading} />}
+      {tab === "matches" && <MatchesTable matches={matches.data?.data ?? []} />}
+      {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} />}
+      {tab === "skills" && <SkillsTable skills={skills.data?.data ?? []} />}
+      {tab === "awards" && <AwardsList awards={awards.data?.data ?? []} />}
+      {tab === "teams" && !teams.loading && teams.data && (
+        <div className="table-summary">Showing 80 per page from {teams.data.data.length.toLocaleString()} RobotEvents teams.</div>
+      )}
+      {tab === "teams" && <TeamTable teams={teams.data?.data ?? []} loading={teams.loading} localPageSize={80} />}
     </section>
   );
 }
@@ -898,20 +1000,42 @@ function EventDetail({ id }: { id: string }) {
 function TeamDetail({ id }: { id: string }) {
   const [tab, setTab] = useState("events");
   const { data: team, loading, error } = useAsync(() => api.team(id), [id]);
-  const detail = useAsync(
+  const events = useAsync(
     async () => {
-      if (!team) return null;
-      const [events, matches, rankings, skills, awards] = await Promise.all([
-        api.teamEvents(id, { per_page: 80 }),
-        api.teamMatches(id, { per_page: 80 }),
-        api.teamRankings(id, { per_page: 80 }),
-        api.teamSkills(id, { per_page: 80 }),
-        api.teamAwards(id, { per_page: 80 }),
-      ]);
-      return { events, matches, rankings, skills, awards };
+      if (!team || tab !== "events") return null;
+      return api.teamEvents(id, { per_page: 80 });
     },
-    [id, team?.id],
+    [id, team?.id, tab],
   );
+  const matches = useAsync(
+    async () => {
+      if (!team || tab !== "matches") return null;
+      return api.teamMatches(id, { per_page: 80 });
+    },
+    [id, team?.id, tab],
+  );
+  const rankings = useAsync(
+    async () => {
+      if (!team || tab !== "rankings") return null;
+      return api.teamRankings(id, { per_page: 80 });
+    },
+    [id, team?.id, tab],
+  );
+  const skills = useAsync(
+    async () => {
+      if (!team || tab !== "skills") return null;
+      return api.teamSkills(id, { per_page: 80 });
+    },
+    [id, team?.id, tab],
+  );
+  const awards = useAsync(
+    async () => {
+      if (!team || tab !== "awards") return null;
+      return api.teamAwards(id, { per_page: 80 });
+    },
+    [id, team?.id, tab],
+  );
+  const activeStatus = tab === "events" ? events : tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : awards;
 
   if (loading || error || !team) {
     return (
@@ -944,20 +1068,40 @@ function TeamDetail({ id }: { id: string }) {
         active={tab}
         onChange={setTab}
         tabs={[
-          ["events", `Events ${detail.data?.events.meta.total ?? ""}`, <CalendarDays size={15} />],
+          ["events", `Events ${events.data?.meta.total ?? ""}`, <CalendarDays size={15} />],
           ["matches", "Matches", <Gamepad2 size={15} />],
           ["rankings", "Rankings", <BarChart3 size={15} />],
           ["skills", "Skills", <Activity size={15} />],
           ["awards", "Awards", <AwardIcon size={15} />],
         ]}
       />
-      <Status loading={detail.loading} error={detail.error} />
-      {tab === "events" && <EventTable events={detail.data?.events.data ?? []} loading={detail.loading} />}
-      {tab === "matches" && <MatchesTable matches={detail.data?.matches.data ?? []} />}
-      {tab === "rankings" && <RankingsTable rankings={detail.data?.rankings.data ?? []} />}
-      {tab === "skills" && <SkillsTable skills={detail.data?.skills.data ?? []} />}
-      {tab === "awards" && <AwardsList awards={detail.data?.awards.data ?? []} />}
+      <Status loading={activeStatus.loading} error={activeStatus.error} />
+      {tab === "events" && <EventTable events={events.data?.data ?? []} loading={events.loading} />}
+      {tab === "matches" && <MatchesTable matches={matches.data?.data ?? []} />}
+      {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} />}
+      {tab === "skills" && <SkillsTable skills={skills.data?.data ?? []} />}
+      {tab === "awards" && <AwardsList awards={awards.data?.data ?? []} />}
     </section>
+  );
+}
+
+function EventHighlights({ awards }: { awards: Award[] }) {
+  return (
+    <div className="event-highlights">
+      {awards.map((award) => (
+        <article key={award.id}>
+          <strong>{award.title}</strong>
+          <div>
+            {(award.teamWinners ?? []).map((winner) => (
+              <TeamMiniLink key={`${award.id}-${winner.team.id}`} team={winner.team} />
+            ))}
+            {(award.individualWinners ?? []).map((winner) => (
+              <span key={winner}>{winner}</span>
+            ))}
+          </div>
+        </article>
+      ))}
+    </div>
   );
 }
 
@@ -975,8 +1119,37 @@ function Tabs({ tabs, active, onChange }: { tabs: Array<[string, string, ReactNo
 }
 
 function MatchesTable({ matches }: { matches: Match[] }) {
+  const [roundFilter, setRoundFilter] = useState("quals");
+  const [page, setPage] = useState(1);
+  const filteredMatches = matches.filter((match) => {
+    if (roundFilter === "practice") return match.round === 1;
+    if (roundFilter === "quals") return match.round === 2;
+    if (roundFilter === "elims") return match.round >= 3;
+    return true;
+  });
+  const pageSize = 50;
+  const totalPages = Math.max(1, Math.ceil(filteredMatches.length / pageSize));
+  const pageMatches = filteredMatches.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [roundFilter, matches]);
+
   return (
     <Panel title="Matches" icon={<Gamepad2 />}>
+      <div className="table-tools">
+        {[
+          ["all", "All"],
+          ["quals", "Qualifications"],
+          ["elims", "Eliminations"],
+          ["practice", "Practice"],
+        ].map(([value, label]) => (
+            <button key={value} className={roundFilter === value ? "active" : ""} onClick={() => setRoundFilter(value)}>
+              {label}
+            </button>
+          ))}
+        <span>{filteredMatches.length.toLocaleString()} matches</span>
+      </div>
       <table>
         <thead>
           <tr>
@@ -984,43 +1157,74 @@ function MatchesTable({ matches }: { matches: Match[] }) {
             <th>Red Alliance</th>
             <th>Blue Alliance</th>
             <th>Score</th>
+            <th>Winner</th>
             <th>Status</th>
           </tr>
         </thead>
         <tbody>
-          {matches.map((match) => {
+          {pageMatches.map((match) => {
             const red = match.alliances.find((alliance) => alliance.color === "red");
             const blue = match.alliances.find((alliance) => alliance.color === "blue");
+            const redScore = red?.score;
+            const blueScore = blue?.score;
+            const hasScore = redScore !== null && redScore !== undefined && blueScore !== null && blueScore !== undefined;
+            const winner =
+              !hasScore
+                ? "-"
+                : redScore === blueScore
+                  ? "Tie"
+                  : redScore > blueScore
+                    ? "Red"
+                    : "Blue";
+
             return (
               <tr key={match.id}>
                 <td>
                   {match.name}
-                  <div className="muted">{match.event.name}</div>
+                  {match.field && <span className="muted inline-muted">Field {match.field}</span>}
                 </td>
-                <td>{red?.teams.map((team) => team.team.name).join(", ") || "-"}</td>
-                <td>{blue?.teams.map((team) => team.team.name).join(", ") || "-"}</td>
+                <td className={winner === "Red" ? "winner-cell" : ""}>
+                  <AllianceTeamLinks teams={red?.teams} />
+                </td>
+                <td className={winner === "Blue" ? "winner-cell" : ""}>
+                  <AllianceTeamLinks teams={blue?.teams} />
+                </td>
                 <td>
                   <span className="score red">{red?.score ?? "-"}</span>
                   <span className="score blue">{blue?.score ?? "-"}</span>
                 </td>
-                <td>{match.scored ? "Final" : match.scheduled ? formatShortDate(match.scheduled) : "Scheduled"}</td>
+                <td>
+                  <span className={`winner-badge ${winner.toLowerCase()}`}>{winner}</span>
+                </td>
+                <td>{hasScore || match.scored ? "Final" : match.scheduled ? formatShortDate(match.scheduled) : "Scheduled"}</td>
               </tr>
             );
           })}
-          {!matches.length && (
+          {!filteredMatches.length && (
             <tr>
-              <td colSpan={5}>
+              <td colSpan={6}>
                 <Empty>No matches available for this view.</Empty>
               </td>
             </tr>
           )}
         </tbody>
       </table>
+      <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
     </Panel>
   );
 }
 
 function RankingsTable({ rankings }: { rankings: Ranking[] }) {
+  const [page, setPage] = useState(1);
+  const sortedRankings = [...rankings].sort((a, b) => a.rank - b.rank);
+  const pageSize = 80;
+  const totalPages = Math.max(1, Math.ceil(sortedRankings.length / pageSize));
+  const pageRows = sortedRankings.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [rankings]);
+
   return (
     <Panel title="Rankings" icon={<BarChart3 />}>
       <table>
@@ -1037,12 +1241,11 @@ function RankingsTable({ rankings }: { rankings: Ranking[] }) {
           </tr>
         </thead>
         <tbody>
-          {rankings.map((row) => (
+          {pageRows.map((row) => (
             <tr key={row.id}>
               <td>{row.rank}</td>
-              <td>
+              <td className="team-cell">
                 <Link href={`/team/${row.team.id}`}>{row.team.name}</Link>
-                <div className="muted">{row.event.name}</div>
               </td>
               <td>
                 {row.wins ?? 0}-{row.losses ?? 0}-{row.ties ?? 0}
@@ -1054,7 +1257,7 @@ function RankingsTable({ rankings }: { rankings: Ranking[] }) {
               <td>{formatNumber(row.average_points)}</td>
             </tr>
           ))}
-          {!rankings.length && (
+          {!sortedRankings.length && (
             <tr>
               <td colSpan={8}>
                 <Empty>No rankings returned.</Empty>
@@ -1063,11 +1266,13 @@ function RankingsTable({ rankings }: { rankings: Ranking[] }) {
           )}
         </tbody>
       </table>
+      <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
     </Panel>
   );
 }
 
 function SkillsTable({ skills }: { skills: Skill[] }) {
+  const [page, setPage] = useState(1);
   const rows = Object.values(
     skills.reduce<Record<string, { rank: number | null; team: Skill["team"]; entries: Skill[] }>>((groups, skill) => {
       const key = String(skill.team.id ?? skill.team.name);
@@ -1096,6 +1301,13 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
       return groups;
     }, {}),
   ).sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) || a.team.name.localeCompare(b.team.name));
+  const pageSize = 80;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [skills]);
 
   return (
     <Panel title="Skills" icon={<Activity />}>
@@ -1110,7 +1322,7 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {pageRows.map((row) => {
             const entries = [...row.entries].sort((a, b) => a.type.localeCompare(b.type));
             const total = entries.reduce((sum, entry) => sum + (entry.score ?? 0), 0);
 
@@ -1151,6 +1363,7 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
           )}
         </tbody>
       </table>
+      <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
     </Panel>
   );
 }
@@ -1162,7 +1375,6 @@ function AwardsList({ awards }: { awards: Award[] }) {
         {awards.map((award) => (
           <article className="award-item" key={award.id}>
             <h3>{award.title}</h3>
-            <div className="muted">{award.event.name}</div>
             <div className="winner-row">
               {(award.teamWinners ?? []).map((winner) => (
                 <Link key={`${award.id}-${winner.team.id}`} href={`/team/${winner.team.id}`} className="winner-pill">
