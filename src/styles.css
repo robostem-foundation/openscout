@@ -805,6 +805,93 @@ tbody tr:hover {
   color: #777;
 }
 
+.team-table {
+  table-layout: fixed;
+}
+
+.team-table th:nth-child(1),
+.team-table td:nth-child(1) {
+  width: 28%;
+}
+
+.team-table th:nth-child(2),
+.team-table td:nth-child(2),
+.team-table th:nth-child(3),
+.team-table td:nth-child(3) {
+  width: 7%;
+}
+
+.team-table th:nth-child(4),
+.team-table td:nth-child(4) {
+  width: 30%;
+}
+
+.team-table th:nth-child(5),
+.team-table td:nth-child(5) {
+  width: 20%;
+}
+
+.team-table th:nth-child(6),
+.team-table td:nth-child(6) {
+  width: 8%;
+}
+
+.team-row {
+  cursor: pointer;
+}
+
+.team-row td {
+  vertical-align: middle;
+}
+
+.truncate-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-detail-row td {
+  background: #fff;
+}
+
+.team-detail-content {
+  display: grid;
+  gap: 10px;
+  padding: 4px 0;
+  color: #555;
+}
+
+.team-detail-top {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.team-detail-top .button-link {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+.team-preview-matches {
+  border-top: 1px solid #eee;
+  padding-top: 8px;
+}
+
+.team-preview-title {
+  margin-bottom: 4px;
+  color: #555;
+  font-weight: 700;
+}
+
+.team-preview-matches table {
+  font-size: 12px;
+}
+
+.team-preview-matches td {
+  vertical-align: middle;
+}
+
 .team-link-list {
   display: inline-flex;
   flex-wrap: wrap;
@@ -832,7 +919,9 @@ tbody tr:hover {
 }
 
 .badge {
-  display: inline;
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
   padding: 0.2em 0.6em 0.3em;
   border-radius: 0.25em;
   background: #777;
@@ -887,6 +976,14 @@ tbody tr:hover {
   background: #f2dede;
   border-color: #ebccd1;
   color: #a94442;
+}
+
+.notice.subtle {
+  margin-block: 8px;
+  padding: 8px 12px;
+  background: #f7f7f7;
+  border-color: #ddd;
+  color: #666;
 }
 
 .skeleton {
@@ -991,14 +1088,163 @@ tbody tr:hover {
   margin: 8px 0 12px;
 }
 
-.meta-line span:not(.badge) {
-  display: inline;
+.meta-line span:not(.badge):not(.event-priority) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
   padding: 0.2em 0.6em 0.3em;
   border-radius: 0.25em;
   background: #5bc0de;
   color: #fff;
   font-size: 75%;
   font-weight: 700;
+}
+
+.meta-line .event-priority {
+  min-width: 0;
+  min-height: 18px;
+  padding: 0.2em 0.45em 0.3em;
+}
+
+.date-range {
+  display: inline-flex;
+  align-items: center;
+  max-width: 155px;
+  line-height: 1.25;
+  color: #444;
+}
+
+.results-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.78fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.results-column h2 {
+  margin: 0 0 14px;
+  color: #333;
+  font-size: 30px;
+  font-weight: 500;
+}
+
+.playoff-round {
+  margin-top: 18px;
+}
+
+.playoff-round h3 {
+  margin: 0 0 8px;
+  color: #333;
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.results-match-table,
+.alliance-selection-table {
+  border: 1px solid #ddd;
+  font-size: 13px;
+}
+
+.results-match-table th,
+.results-match-table td,
+.alliance-selection-table th,
+.alliance-selection-table td {
+  padding: 5px 7px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.results-match-table th,
+.alliance-selection-table th {
+  background: #f1f1f1;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.results-match-table .play-cell {
+  width: 28px;
+}
+
+.play-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #4968c8;
+  border-radius: 50%;
+  color: #4968c8;
+  line-height: 1;
+}
+
+.play-dot::before {
+  content: "";
+  width: 0;
+  height: 0;
+  margin-left: 2px;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid #4968c8;
+}
+
+.result-match-name {
+  width: 140px;
+  color: #4968c8;
+  font-weight: 600;
+}
+
+.alliance-cell {
+  min-width: 165px;
+  color: #4968c8;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.alliance-cell .team-chip,
+.alliance-cell .team-mini-link,
+.alliance-cell a {
+  background: transparent;
+  color: #4968c8;
+  font-size: inherit;
+}
+
+.red-alliance-cell {
+  background: #fde8e8;
+}
+
+.blue-alliance-cell {
+  background: #e9e9ff;
+}
+
+.score-cell {
+  width: 82px;
+}
+
+.results-match-table .score {
+  min-width: 32px;
+  margin-right: 0;
+  background: transparent;
+  border: 0;
+  color: #333;
+  font-size: 15px;
+}
+
+.results-match-table .score-loser {
+  background: transparent;
+  border: 0;
+}
+
+.alliance-selection-table {
+  margin-bottom: 28px;
+}
+
+.alliance-selection-table td {
+  font-size: 16px;
+}
+
+.alliance-selection-table td:not(:first-child) {
+  color: #4968c8;
+  font-weight: 500;
 }
 
 .icon-button.active {
@@ -1069,18 +1315,28 @@ tbody tr:hover {
   color: #fff;
 }
 
-.season-toolbar {
+.season-toolbar,
+.date-direction-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: -5px 0 15px;
+  margin: -5px 0 10px;
   padding: 10px;
   background: #f5f5f5;
   border: 1px solid #e3e3e3;
   border-radius: 4px;
 }
 
-.season-toolbar span {
+.date-direction-toggle {
+  margin-top: -10px;
+  margin-bottom: 15px;
+  padding-top: 0;
+  border-top: 0;
+  border-radius: 0 0 4px 4px;
+}
+
+.season-toolbar span,
+.date-direction-toggle span {
   color: #555;
   font-weight: 700;
 }
@@ -1093,6 +1349,21 @@ tbody tr:hover {
   border-radius: 4px;
   background: #fff;
   color: #555;
+}
+
+.date-direction-toggle button {
+  padding: 5px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  color: #337ab7;
+}
+
+.date-direction-toggle button.active,
+.date-direction-toggle button:hover {
+  border-color: #2e6da4;
+  background: #337ab7;
+  color: #fff;
 }
 
 .event-groups {
@@ -1242,6 +1513,7 @@ tbody tr:hover {
   min-width: 34px;
   margin-right: 4px;
   padding: 2px 6px;
+  border: 1px solid transparent;
   border-radius: 3px;
   color: #fff;
   font-weight: 700;
@@ -1254,6 +1526,18 @@ tbody tr:hover {
 
 .score.blue {
   background: #337ab7;
+}
+
+.score.red.score-loser {
+  background: #fff;
+  border-color: #d9534f;
+  color: #d9534f;
+}
+
+.score.blue.score-loser {
+  background: #fff;
+  border-color: #337ab7;
+  color: #337ab7;
 }
 
 .capitalize {

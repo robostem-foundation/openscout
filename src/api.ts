@@ -60,12 +60,12 @@ export const api = {
   eventSkills: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Skill>>(`events/${id}/skills`, query),
   eventAwards: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Award>>(`events/${id}/awards`, query),
   teams: (query: Query = {}) => rseJson<Paginated<Team>>("teams", query),
-  team: (id: string | number) => rseJson<Team>(`teams/${id}`),
-  teamEvents: (id: string | number, query: Query = {}) => rseJson<Paginated<Event>>(`teams/${id}/events`, query),
-  teamMatches: (id: string | number, query: Query = {}) => rseJson<Paginated<Match>>(`teams/${id}/matches`, query),
-  teamRankings: (id: string | number, query: Query = {}) => rseJson<Paginated<Ranking>>(`teams/${id}/rankings`, query),
-  teamSkills: (id: string | number, query: Query = {}) => rseJson<Paginated<Skill>>(`teams/${id}/skills`, query),
-  teamAwards: (id: string | number, query: Query = {}) => rseJson<Paginated<Award>>(`teams/${id}/awards`, query),
+  team: (id: string | number) => robotEventsJson<Team>(`teams/${id}`),
+  teamEvents: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Event>>(`teams/${id}/events`, query),
+  teamMatches: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Match>>(`teams/${id}/matches`, query),
+  teamRankings: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Ranking>>(`teams/${id}/rankings`, query),
+  teamSkills: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Skill>>(`teams/${id}/skills`, query),
+  teamAwards: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Award>>(`teams/${id}/awards`, query),
   superscore: (program: "v5rc" | "viqrc", query: Query = {}) =>
     rseJson<Paginated<SuperscoreRow>>(`superscore/rankings/${program}`, query),
 };

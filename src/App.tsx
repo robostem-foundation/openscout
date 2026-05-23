@@ -16,8 +16,8 @@ import {
   Trophy,
   Users,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { Dispatch, KeyboardEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
 import type { Award, CountryGroup, Event, Match, PageMeta, Paginated, Ranking, Season, Skill, Team } from "./types";
 
@@ -32,11 +32,19 @@ const programOptions = [
 const today = new Date();
 const oneDay = 24 * 60 * 60 * 1000;
 const vexProgramIds = [1, 4, 41, 57];
+const teamCacheRefreshMs = 3 * 60 * 1000;
 type EventCategory = "Worlds" | "Signature" | "Championship" | "Other";
 type EventSort = "smart" | "date" | "type" | "name" | "program" | "location";
 type EventWindow = "near" | "upcoming" | "next30" | "next90" | "past30" | "allSeason";
 type EventFilterLayout = "sidebar" | "inline";
 type RegionOptionKind = "country" | "subdivision" | "vex-region";
+type DateDirection = "asc" | "desc";
+type TeamDataKind = "matches" | "rankings" | "skills" | "awards";
+type AsyncBucket<T> = {
+  data: T[];
+  loading: boolean;
+  error: string | null;
+};
 type RegionOption = {
   key: string;
   kind: RegionOptionKind;
@@ -47,6 +55,17 @@ type RegionOption = {
   regionName?: string;
   vexLabel?: string;
 };
+type TeamCacheEntry = {
+  data?: Paginated<Team>;
+  updatedAt: number;
+  promise?: Promise<Paginated<Team>>;
+};
+
+const teamListCache = new Map<string, TeamCacheEntry>();
+
+function emptyBucket<T>(): AsyncBucket<T> {
+  return { data: [], loading: false, error: null };
+}
 
 function useRoute() {
   const [path, setPath] = useState(window.location.pathname);
@@ -112,10 +131,26 @@ function useAsync<T>(loader: () => Promise<T>, deps: unknown[]) {
   return { data, error, loading };
 }
 
+function useDebouncedValue<T>(value: T, delay = 250) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedValue(value), delay);
+    return () => window.clearTimeout(timeout);
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
 async function collectAllPages<T>(loader: (page: number) => Promise<Paginated<T>>) {
   const first = await loader(1);
   const extraPages = Array.from({ length: Math.max(0, first.meta.last_page - 1) }, (_, index) => index + 2);
-  const rest = await Promise.all(extraPages.map((page) => loader(page)));
+  const rest: Paginated<T>[] = [];
+
+  for (let index = 0; index < extraPages.length; index += 8) {
+    const batch = extraPages.slice(index, index + 8);
+    rest.push(...(await Promise.all(batch.map((page) => loader(page)))));
+  }
 
   return {
     ...first,
@@ -123,14 +158,37 @@ async function collectAllPages<T>(loader: (page: number) => Promise<Paginated<T>
   };
 }
 
+function cachedTeamsKey(program: string, region: string, registered: string) {
+  return JSON.stringify({ program, region, registered });
+}
+
+async function loadCachedTeams(cacheKey: string, query: Parameters<typeof api.teams>[0]) {
+  const cached = teamListCache.get(cacheKey);
+  if (cached?.promise) return cached.promise;
+
+  const promise = collectAllPages<Team>((page) => api.teams({ ...query, page })).then((result) => {
+    const sortedResult = { ...result, data: [...result.data].sort(compareTeamsNatural) };
+    teamListCache.set(cacheKey, { data: sortedResult, updatedAt: Date.now() });
+    return sortedResult;
+  });
+
+  teamListCache.set(cacheKey, { data: cached?.data, updatedAt: cached?.updatedAt ?? 0, promise });
+
+  try {
+    return await promise;
+  } catch (error) {
+    if (cached?.data) {
+      teamListCache.set(cacheKey, cached);
+    } else {
+      teamListCache.delete(cacheKey);
+    }
+    throw error;
+  }
+}
+
 function formatDate(value?: string | null) {
   if (!value) return "TBD";
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
-}
-
-function formatShortDate(value?: string | null) {
-  if (!value) return "TBD";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
 }
 
 function formatEventDateRange(start?: string | null, end?: string | null) {
@@ -207,10 +265,41 @@ function compareEventsChronological(a?: Event, b?: Event) {
   return aTime - bTime || (a?.name ?? "").localeCompare(b?.name ?? "");
 }
 
+function compareEventsByDirection(direction: DateDirection) {
+  return (a?: Event, b?: Event) => (direction === "asc" ? 1 : -1) * compareEventsChronological(a, b);
+}
+
 function sameNumberSet(a: number[], b: number[]) {
   if (a.length !== b.length) return false;
   const values = new Set(a);
   return b.every((value) => values.has(value));
+}
+
+function teamNumberParts(number?: string) {
+  const match = (number ?? "").trim().match(/^(\d+)(.*)$/);
+  return {
+    numeric: match ? Number(match[1]) : Number.MAX_SAFE_INTEGER,
+    suffix: (match?.[2] ?? number ?? "").toUpperCase(),
+  };
+}
+
+function compareTeamsNatural(a: Team, b: Team) {
+  const aNumber = teamNumberParts(a.number);
+  const bNumber = teamNumberParts(b.number);
+  return (
+    aNumber.numeric - bNumber.numeric ||
+    aNumber.suffix.localeCompare(bNumber.suffix, undefined, { numeric: true }) ||
+    (a.team_name ?? "").localeCompare(b.team_name ?? "") ||
+    a.number.localeCompare(b.number, undefined, { numeric: true })
+  );
+}
+
+function gradeCode(grade?: string | null) {
+  const value = (grade ?? "").toLowerCase();
+  if (value.includes("elementary")) return "ES";
+  if (value.includes("middle")) return "MS";
+  if (value.includes("high")) return "HS";
+  return grade || "-";
 }
 
 function optionKey(kind: RegionOptionKind, id: string | number) {
@@ -268,7 +357,81 @@ function makeEventIndex(events: Event[]) {
   return new Map(events.map((event) => [event.id, event]));
 }
 
-function groupItemsByEvent<T extends { event: { id: number; name: string } }>(items: T[], eventIndex: Map<number, Event>, seasonId: number | null) {
+function awardPriority(award: Award) {
+  if (/excellence/i.test(award.title)) return 0;
+  if (/world champions|tournament champions|teamwork challenge world champions|event champions/i.test(award.title)) return 1;
+  if (/finalists/i.test(award.title)) return 2;
+  if (/robot skills world champions|skills champions/i.test(award.title)) return 3;
+  return 4;
+}
+
+function sortAwards(awards: Award[]) {
+  return [...awards].sort((a, b) => awardPriority(a) - awardPriority(b) || a.title.localeCompare(b.title));
+}
+
+function matchWinner(match: Match) {
+  const red = match.alliances.find((alliance) => alliance.color === "red");
+  const blue = match.alliances.find((alliance) => alliance.color === "blue");
+  const redScore = red?.score;
+  const blueScore = blue?.score;
+  const hasScore = redScore !== null && redScore !== undefined && blueScore !== null && blueScore !== undefined;
+
+  if (!hasScore) return { red, blue, redScore, blueScore, winner: "-" };
+  if (redScore === blueScore) return { red, blue, redScore, blueScore, winner: "Tie" };
+  return { red, blue, redScore, blueScore, winner: redScore > blueScore ? "Red" : "Blue" };
+}
+
+function playoffRoundKey(match: Match) {
+  if (/^R16\b/i.test(match.name)) return "r16";
+  if (/^QF\b/i.test(match.name)) return "qf";
+  if (/^SF\b/i.test(match.name)) return "sf";
+  if (/^Final\b/i.test(match.name)) return "f";
+  return `round-${match.round}`;
+}
+
+function playoffRoundLabel(key: string) {
+  if (key === "r16") return "Round of 16 (R16)";
+  if (key === "qf") return "Quarterfinals (QF)";
+  if (key === "sf") return "Semifinals (SF)";
+  if (key === "f") return "Finals (F)";
+  return "Playoffs";
+}
+
+const r16SeedPairs = [
+  [1, 16],
+  [8, 9],
+  [4, 13],
+  [5, 12],
+  [2, 15],
+  [7, 10],
+  [3, 14],
+  [6, 11],
+];
+
+function allianceRowsFromMatches(matches: Match[]) {
+  const rows = new Map<number, string[]>();
+
+  matches
+    .filter((match) => playoffRoundKey(match) === "r16")
+    .sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum)
+    .forEach((match) => {
+      const seedPair = r16SeedPairs[(match.instance ?? 1) - 1];
+      if (!seedPair) return;
+      const redTeams = match.alliances.find((alliance) => alliance.color === "red")?.teams.map((entry) => entry.team.name).filter(Boolean) ?? [];
+      const blueTeams = match.alliances.find((alliance) => alliance.color === "blue")?.teams.map((entry) => entry.team.name).filter(Boolean) ?? [];
+      rows.set(seedPair[0], redTeams);
+      rows.set(seedPair[1], blueTeams);
+    });
+
+  return [...rows.entries()].sort((a, b) => a[0] - b[0]);
+}
+
+function groupItemsByEvent<T extends { event: { id: number; name: string } }>(
+  items: T[],
+  eventIndex: Map<number, Event>,
+  seasonId: number | null,
+  direction: DateDirection = "asc",
+) {
   const groups = new Map<number, { eventRef: T["event"]; event?: Event; items: T[] }>();
 
   items.forEach((item) => {
@@ -280,7 +443,7 @@ function groupItemsByEvent<T extends { event: { id: number; name: string } }>(it
     groups.set(item.event.id, group);
   });
 
-  return [...groups.values()].sort((a, b) => compareEventsChronological(a.event, b.event));
+  return [...groups.values()].sort((a, b) => compareEventsByDirection(direction)(a.event, b.event));
 }
 
 function filterAndSortEvents(events: Event[], options: {
@@ -368,6 +531,7 @@ function Status({ loading, error }: { loading: boolean; error: string | null }) 
 
 function Pager({ meta, onPage }: { meta?: PageMeta; onPage: (page: number) => void }) {
   if (!meta) return null;
+
   return (
     <div className="pager">
       <button disabled={meta.current_page <= 1} onClick={() => onPage(meta.current_page - 1)} aria-label="Previous page">
@@ -403,6 +567,10 @@ function LocalPager({ page, totalPages, onPage }: { page: number; totalPages: nu
 
 function ProgramBadge({ program }: { program?: { code?: string | null; name?: string } }) {
   return <span className="badge">{program?.code ?? program?.name ?? "VEX"}</span>;
+}
+
+function GradeBadge({ grade }: { grade?: string | null }) {
+  return <span className="badge">{gradeCode(grade)}</span>;
 }
 
 function TeamMiniLink({ team, className }: { team: { id: number; name: string }; className?: string }) {
@@ -1153,9 +1321,13 @@ function EventTable({
               {showSeason && <td>{shortSeasonName(event.season.name)}</td>}
               <td>{locationLine(event)}</td>
               <td>
-                {formatEventDateRange(event.start, event.end)}
+                <span className="date-range">{formatEventDateRange(event.start, event.end)}</span>
               </td>
-              {showLevel && <td>{event.level ?? "Other"}</td>}
+              {showLevel && (
+                <td>
+                  <span className={`event-priority priority-${eventCategory(event).rank}`}>{eventCategory(event).label}</span>
+                </td>
+              )}
             </tr>
           ))}
           {!events.length && (
@@ -1174,23 +1346,89 @@ function EventTable({
 function TeamsPage() {
   const params = new URLSearchParams(window.location.search);
   const [search, setSearch] = useState(params.get("search") ?? "");
-  const [program, setProgram] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim(), 250);
+  const [program, setProgram] = useState("1");
   const [region, setRegion] = useState("");
-  const [registered, setRegistered] = useState("");
+  const [registered, setRegistered] = useState("true");
   const [page, setPage] = useState(1);
-  const queryKey = `${search}:${program}:${region}:${registered}:${page}`;
-  const { data, loading, error } = useAsync(
-    () =>
-      api.teams({
-        teamSearch: search,
-        "program[]": program ? [program] : undefined,
-        "country[]": region,
-        registered: registered === "" ? undefined : registered,
-        page,
-        per_page: 30,
-      }),
-    [queryKey],
-  );
+  const [data, setData] = useState<Paginated<Team> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cacheKey = cachedTeamsKey(program, region, registered);
+  const isSearchingTeams = !!debouncedSearch;
+
+  useEffect(() => {
+    let live = true;
+    const baseQuery = {
+      "program[]": program ? [program] : undefined,
+      "country[]": region,
+      registered: registered === "" ? undefined : registered,
+    };
+
+    const loadTeams = async ({ background = false } = {}) => {
+      setError(null);
+      if (!background) setLoading(true);
+      if (background) setRefreshing(true);
+
+      try {
+        const result = isSearchingTeams
+          ? await api.teams({
+              ...baseQuery,
+              teamSearch: debouncedSearch,
+              page,
+              per_page: 50,
+            })
+          : await loadCachedTeams(cacheKey, {
+              ...baseQuery,
+              per_page: 250,
+            });
+
+        if (live) setData(isSearchingTeams ? { ...result, data: [...result.data].sort(compareTeamsNatural) } : result);
+      } catch (err) {
+        if (live) setError((err as Error).message);
+      } finally {
+        if (live) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    };
+
+    if (isSearchingTeams) {
+      loadTeams();
+      return () => {
+        live = false;
+      };
+    }
+
+    const cached = teamListCache.get(cacheKey);
+    const cacheAge = cached?.updatedAt ? Date.now() - cached.updatedAt : Number.POSITIVE_INFINITY;
+
+    if (cached?.data) {
+      setData(cached.data);
+      setLoading(false);
+    }
+
+    if (!cached?.data || cacheAge >= teamCacheRefreshMs) {
+      loadTeams({ background: !!cached?.data });
+    }
+
+    const interval = window.setInterval(() => loadTeams({ background: true }), teamCacheRefreshMs);
+
+    return () => {
+      live = false;
+      window.clearInterval(interval);
+    };
+  }, [cacheKey, debouncedSearch, isSearchingTeams, page, program, region, registered]);
+
+  const sortedTeams = useMemo(() => [...(data?.data ?? [])].sort(compareTeamsNatural), [data]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, program, region, registered]);
+
+  const tableTeams = isSearchingTeams ? sortedTeams : data?.data ?? [];
 
   return (
     <section className="page">
@@ -1213,7 +1451,13 @@ function TeamsPage() {
         }}
         placeholder="Search team number, name, or region"
       >
-        <select value={registered} onChange={(event) => setRegistered(event.target.value)}>
+        <select
+          value={registered}
+          onChange={(event) => {
+            setRegistered(event.target.value);
+            setPage(1);
+          }}
+        >
           <option value="">Any Status</option>
           <option value="true">Registered</option>
           <option value="false">Inactive</option>
@@ -1221,32 +1465,35 @@ function TeamsPage() {
       </SearchFilters>
       <Panel title="Team List" icon={<Users />}>
         <Status loading={loading} error={error} />
-        <TeamTable teams={data?.data ?? []} loading={loading} />
-        <Pager meta={data?.meta} onPage={setPage} />
+        {refreshing && !loading && <div className="notice subtle">Updating cached teams...</div>}
+        <TeamTable teams={tableTeams} loading={loading} localPageSize={isSearchingTeams ? undefined : 50} />
+        {isSearchingTeams ? <Pager meta={data?.meta} onPage={setPage} /> : null}
       </Panel>
     </section>
   );
 }
 
-function TeamTable({ teams, loading, localPageSize }: { teams: Team[]; loading: boolean; localPageSize?: number }) {
+function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number }) {
   const [page, setPage] = useState(1);
+  const [expandedTeamId, setExpandedTeamId] = useState<number | null>(null);
   const totalPages = localPageSize ? Math.max(1, Math.ceil(teams.length / localPageSize)) : 1;
   const visibleTeams = localPageSize ? teams.slice((page - 1) * localPageSize, page * localPageSize) : teams;
 
   useEffect(() => {
     setPage(1);
+    setExpandedTeamId(null);
   }, [teams, localPageSize]);
 
   return (
     <>
-      <table>
+      <table className="team-table">
         <thead>
           <tr>
             <th>Team</th>
             <th>Program</th>
+            <th>Level</th>
             <th>Organization</th>
             <th>Location</th>
-            <th>Grade</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -1254,21 +1501,52 @@ function TeamTable({ teams, loading, localPageSize }: { teams: Team[]; loading: 
           <LoadingTable columns={6} />
         ) : (
           <tbody>
-            {visibleTeams.map((team) => (
-              <tr key={team.id}>
-                <td className="team-cell">
-                  <Link href={`/team/${team.id}`}>{team.number}</Link>
-                  {team.team_name && <span>{team.team_name}</span>}
-                </td>
-                <td>
-                  <ProgramBadge program={team.program} />
-                </td>
-                <td>{team.organization || "-"}</td>
-                <td>{locationLine(team)}</td>
-                <td>{team.grade ?? "-"}</td>
-                <td>{team.registered ? "Registered" : "Inactive"}</td>
-              </tr>
-            ))}
+            {visibleTeams.map((team) => {
+              const expanded = expandedTeamId === team.id;
+              return (
+                <Fragment key={team.id}>
+                  <tr key={team.id} className="team-row" onClick={() => setExpandedTeamId(expanded ? null : team.id)}>
+                    <td className="team-cell truncate-cell">
+                      <Link href={`/team/${team.id}`}>{team.number}</Link>
+                      {team.team_name && <span>{team.team_name}</span>}
+                    </td>
+                    <td>
+                      <ProgramBadge program={team.program} />
+                    </td>
+                    <td>
+                      <GradeBadge grade={team.grade} />
+                    </td>
+                    <td className="truncate-cell">{team.organization || "-"}</td>
+                    <td className="truncate-cell">{locationLine(team)}</td>
+                    <td>{team.registered ? "Registered" : "Inactive"}</td>
+                  </tr>
+                  {expanded && (
+                    <tr key={`${team.id}-details`} className="team-detail-row">
+                      <td colSpan={6}>
+                        <div className="team-detail-content">
+                          <div className="team-detail-top">
+                            <div>
+                              <div>
+                                <strong>{team.number}</strong>
+                                {team.team_name && <span> - {team.team_name}</span>}
+                              </div>
+                              <div>{team.organization || "No organization listed"}</div>
+                              <div>
+                                {locationLine(team)} · {team.grade ?? "Grade unknown"} · {team.registered ? "Registered" : "Inactive"}
+                              </div>
+                            </div>
+                            <Link href={`/team/${team.id}`} className="button-link secondary">
+                              View stats of {team.number}
+                            </Link>
+                          </div>
+                          <TeamRowMatchesPreview teamId={team.id} eventId={eventId} />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
             {!teams.length && (
               <tr>
                 <td colSpan={6}>
@@ -1286,6 +1564,49 @@ function TeamTable({ teams, loading, localPageSize }: { teams: Team[]; loading: 
         </div>
       )}
     </>
+  );
+}
+
+function TeamRowMatchesPreview({ teamId, eventId }: { teamId: number; eventId?: number }) {
+  const { data, loading, error } = useAsync(
+    () => api.teamMatches(teamId, { "event[]": eventId ? [eventId] : undefined, per_page: eventId ? 250 : 6, page: 1 }),
+    [teamId, eventId],
+  );
+  const matches = data?.data ?? [];
+
+  if (loading) return <div className="muted">Loading matches...</div>;
+  if (error) return <div className="muted">Could not load matches.</div>;
+  if (!matches.length) return <div className="muted">{eventId ? "No matches in this event." : "No recent matches."}</div>;
+
+  return (
+    <div className="team-preview-matches">
+      <div className="team-preview-title">{eventId ? "Event matches" : "Recent matches"}</div>
+      <table>
+        <tbody>
+          {matches.map((match) => {
+            const { red, blue, redScore, blueScore, winner } = matchWinner(match);
+            return (
+              <tr key={match.id}>
+                <td>
+                  <Link href={`/event/${match.event.id}`}>{match.event.name}</Link>
+                  <span className="muted inline-muted">{match.name}</span>
+                </td>
+                <td>
+                  <AllianceTeamLinks teams={red?.teams} focusTeamId={teamId} />
+                </td>
+                <td>
+                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={teamId} />
+                </td>
+                <td>
+                  <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
+                  <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -1345,7 +1666,6 @@ function EventDetail({ id }: { id: string }) {
   const { data: event, loading, error } = useAsync(() => api.event(id), [id]);
   const divisions = useMemo(() => [...(event?.divisions ?? [])].sort((a, b) => (a.order ?? a.id) - (b.order ?? b.id)), [event]);
   const division = selectedDivision ?? divisions[0]?.id ?? 1;
-  const activeDivision = divisions.find((item) => item.id === division) ?? divisions[0];
   const awards = useAsync(
     async () => {
       if (!event) return null;
@@ -1385,16 +1705,8 @@ function EventDetail({ id }: { id: string }) {
   const eventAwards = awards.data?.data ?? [];
   const activeStatus = tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : tab === "awards" ? awards : teams;
   const keyAwards = useMemo(() => {
-    const priority = [
-      /world champions|tournament champions|teamwork challenge world champions|event champions/i,
-      /finalists/i,
-      /excellence/i,
-      /robot skills world champions|skills champions/i,
-    ];
-
-    return priority
-      .map((pattern) => eventAwards.find((award) => pattern.test(award.title) && ((award.teamWinners?.length ?? 0) > 0 || (award.individualWinners?.length ?? 0) > 0)))
-      .filter((award): award is Award => Boolean(award))
+    return sortAwards(eventAwards)
+      .filter((award) => awardPriority(award) < 4 && ((award.teamWinners?.length ?? 0) > 0 || (award.individualWinners?.length ?? 0) > 0))
       .slice(0, 4);
   }, [eventAwards]);
 
@@ -1429,7 +1741,8 @@ function EventDetail({ id }: { id: string }) {
           <div className="meta-line">
             <ProgramBadge program={event.program} />
             <span>{formatDate(event.start)} - {formatDate(event.end)}</span>
-            <span>{event.level ?? "Other"}</span>
+            <span>{shortSeasonName(event.season.name)}</span>
+            <span className={`event-priority priority-${eventCategory(event).rank}`}>{eventCategory(event).label}</span>
           </div>
         </div>
         <FavoriteButton id={event.id} kind="event" />
@@ -1439,7 +1752,7 @@ function EventDetail({ id }: { id: string }) {
         active={tab}
         onChange={setTab}
         tabs={[
-          ["matches", "Matches", <Gamepad2 size={15} />],
+          ["matches", "Results", <Gamepad2 size={15} />],
           ["rankings", "Rankings", <BarChart3 size={15} />],
           ["skills", "Skills", <Activity size={15} />],
           ["awards", "Awards", <AwardIcon size={15} />],
@@ -1462,11 +1775,6 @@ function EventDetail({ id }: { id: string }) {
         </div>
       )}
       <Status loading={activeStatus.loading} error={activeStatus.error} />
-      {(tab === "matches" || tab === "rankings") && activeDivision && (
-        <div className="table-summary">
-          Showing {activeDivision.name} division from RobotEvents.
-        </div>
-      )}
       {tab === "matches" && <MatchesTable matches={matches.data?.data ?? []} />}
       {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} />}
       {tab === "skills" && <SkillsTable skills={skills.data?.data ?? []} />}
@@ -1474,7 +1782,7 @@ function EventDetail({ id }: { id: string }) {
       {tab === "teams" && !teams.loading && teams.data && (
         <div className="table-summary">Showing 80 per page from {teams.data.data.length.toLocaleString()} RobotEvents teams.</div>
       )}
-      {tab === "teams" && <TeamTable teams={teams.data?.data ?? []} loading={teams.loading} localPageSize={80} />}
+      {tab === "teams" && <TeamTable teams={teams.data?.data ?? []} loading={teams.loading} localPageSize={80} eventId={event.id} />}
     </section>
   );
 }
@@ -1482,6 +1790,12 @@ function EventDetail({ id }: { id: string }) {
 function TeamDetail({ id }: { id: string }) {
   const [tab, setTab] = useState("events");
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
+  const [dateDirection, setDateDirection] = useState<DateDirection>("asc");
+  const [matchesBySeason, setMatchesBySeason] = useState<Record<number, AsyncBucket<Match>>>({});
+  const [rankingsBySeason, setRankingsBySeason] = useState<Record<number, AsyncBucket<Ranking>>>({});
+  const [skillsBySeason, setSkillsBySeason] = useState<Record<number, AsyncBucket<Skill>>>({});
+  const [awardsBySeason, setAwardsBySeason] = useState<Record<number, AsyncBucket<Award>>>({});
+  const inFlightTeamData = useRef(new Set<string>());
   const { data: team, loading, error } = useAsync(() => api.team(id), [id]);
   const events = useAsync(
     async () => {
@@ -1489,34 +1803,6 @@ function TeamDetail({ id }: { id: string }) {
       return collectAllPages<Event>((page) => api.teamEvents(id, { per_page: 250, page }));
     },
     [id, team?.id],
-  );
-  const matches = useAsync(
-    async () => {
-      if (!team || tab !== "matches" || !selectedSeasonId) return null;
-      return collectAllPages<Match>((page) => api.teamMatches(id, { "season[]": [selectedSeasonId], per_page: 250, page }));
-    },
-    [id, team?.id, tab, selectedSeasonId],
-  );
-  const rankings = useAsync(
-    async () => {
-      if (!team || tab !== "rankings" || !selectedSeasonId) return null;
-      return collectAllPages<Ranking>((page) => api.teamRankings(id, { "season[]": [selectedSeasonId], per_page: 250, page }));
-    },
-    [id, team?.id, tab, selectedSeasonId],
-  );
-  const skills = useAsync(
-    async () => {
-      if (!team || tab !== "skills" || !selectedSeasonId) return null;
-      return api.teamSkills(id, { "season[]": [selectedSeasonId], per_page: 250 });
-    },
-    [id, team?.id, tab, selectedSeasonId],
-  );
-  const awards = useAsync(
-    async () => {
-      if (!team || tab !== "awards" || !selectedSeasonId) return null;
-      return collectAllPages<Award>((page) => api.teamAwards(id, { "season[]": [selectedSeasonId], per_page: 250, page }));
-    },
-    [id, team?.id, tab, selectedSeasonId],
   );
   const teamEvents = events.data?.data ?? [];
   const eventIndex = useMemo(() => makeEventIndex(teamEvents), [teamEvents]);
@@ -1538,17 +1824,121 @@ function TeamDetail({ id }: { id: string }) {
     return [...bySeason.values()].sort((a, b) => b.latest - a.latest || b.id - a.id);
   }, [teamEvents]);
   const seasonEvents = useMemo(
-    () => teamEvents.filter((event) => !selectedSeasonId || event.season.id === selectedSeasonId).sort(compareEventsChronological),
-    [teamEvents, selectedSeasonId],
+    () => teamEvents.filter((event) => !selectedSeasonId || event.season.id === selectedSeasonId).sort(compareEventsByDirection(dateDirection)),
+    [dateDirection, teamEvents, selectedSeasonId],
   );
   const selectedSeason = seasonOptions.find((season) => season.id === selectedSeasonId);
-  const activeStatus = tab === "events" ? events : tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : awards;
+  const selectedMatches = selectedSeasonId ? (matchesBySeason[selectedSeasonId] ?? emptyBucket<Match>()) : emptyBucket<Match>();
+  const selectedRankings = selectedSeasonId ? (rankingsBySeason[selectedSeasonId] ?? emptyBucket<Ranking>()) : emptyBucket<Ranking>();
+  const selectedSkills = selectedSeasonId ? (skillsBySeason[selectedSeasonId] ?? emptyBucket<Skill>()) : emptyBucket<Skill>();
+  const selectedAwards = selectedSeasonId ? (awardsBySeason[selectedSeasonId] ?? emptyBucket<Award>()) : emptyBucket<Award>();
+  const activeStatus =
+    tab === "events"
+      ? events
+      : tab === "matches"
+        ? selectedMatches
+        : tab === "rankings"
+          ? selectedRankings
+          : tab === "skills"
+            ? selectedSkills
+            : selectedAwards;
 
   useEffect(() => {
     if (seasonOptions[0] && (!selectedSeasonId || !seasonOptions.some((season) => season.id === selectedSeasonId))) {
       setSelectedSeasonId(seasonOptions[0].id);
     }
   }, [selectedSeasonId, seasonOptions]);
+
+  useEffect(() => {
+    setMatchesBySeason({});
+    setRankingsBySeason({});
+    setSkillsBySeason({});
+    setAwardsBySeason({});
+    inFlightTeamData.current.clear();
+  }, [id]);
+
+  useEffect(() => {
+    if (!team || !seasonOptions.length) return;
+    const seasonIds = new Set<number>(seasonOptions.slice(0, 2).map((season) => season.id));
+    if (selectedSeasonId) seasonIds.add(selectedSeasonId);
+
+    const markLoading = <T,>(setter: Dispatch<SetStateAction<Record<number, AsyncBucket<T>>>>, seasonId: number) => {
+      setter((current) => ({ ...current, [seasonId]: { ...(current[seasonId] ?? emptyBucket<T>()), loading: true, error: null } }));
+    };
+
+    const markDone = <T,>(setter: Dispatch<SetStateAction<Record<number, AsyncBucket<T>>>>, seasonId: number, data: T[]) => {
+      setter((current) => ({ ...current, [seasonId]: { data, loading: false, error: null } }));
+    };
+
+    const markError = <T,>(setter: Dispatch<SetStateAction<Record<number, AsyncBucket<T>>>>, seasonId: number, message: string) => {
+      setter((current) => ({ ...current, [seasonId]: { ...(current[seasonId] ?? emptyBucket<T>()), loading: false, error: message } }));
+    };
+
+    seasonIds.forEach((seasonId) => {
+      const tasks: Array<{
+        kind: TeamDataKind;
+        loaded: boolean;
+        run: () => Promise<unknown[]>;
+        markLoading: () => void;
+        markDone: (data: unknown[]) => void;
+        markError: (message: string) => void;
+      }> = [
+        {
+          kind: "matches",
+          loaded: !!matchesBySeason[seasonId],
+          run: async () => (await collectAllPages<Match>((page) => api.teamMatches(id, { "season[]": [seasonId], per_page: 250, page }))).data,
+          markLoading: () => markLoading(setMatchesBySeason, seasonId),
+          markDone: (data) => markDone(setMatchesBySeason, seasonId, data as Match[]),
+          markError: (message) => markError(setMatchesBySeason, seasonId, message),
+        },
+        {
+          kind: "rankings",
+          loaded: !!rankingsBySeason[seasonId],
+          run: async () => (await collectAllPages<Ranking>((page) => api.teamRankings(id, { "season[]": [seasonId], per_page: 250, page }))).data,
+          markLoading: () => markLoading(setRankingsBySeason, seasonId),
+          markDone: (data) => markDone(setRankingsBySeason, seasonId, data as Ranking[]),
+          markError: (message) => markError(setRankingsBySeason, seasonId, message),
+        },
+        {
+          kind: "skills",
+          loaded: !!skillsBySeason[seasonId],
+          run: async () => (await collectAllPages<Skill>((page) => api.teamSkills(id, { "season[]": [seasonId], per_page: 250, page }))).data,
+          markLoading: () => markLoading(setSkillsBySeason, seasonId),
+          markDone: (data) => markDone(setSkillsBySeason, seasonId, data as Skill[]),
+          markError: (message) => markError(setSkillsBySeason, seasonId, message),
+        },
+        {
+          kind: "awards",
+          loaded: !!awardsBySeason[seasonId],
+          run: async () => (await collectAllPages<Award>((page) => api.teamAwards(id, { "season[]": [seasonId], per_page: 250, page }))).data,
+          markLoading: () => markLoading(setAwardsBySeason, seasonId),
+          markDone: (data) => markDone(setAwardsBySeason, seasonId, data as Award[]),
+          markError: (message) => markError(setAwardsBySeason, seasonId, message),
+        },
+      ];
+
+      tasks.forEach((task) => {
+        const key = `${id}:${seasonId}:${task.kind}`;
+        if (task.loaded || inFlightTeamData.current.has(key)) return;
+        inFlightTeamData.current.add(key);
+        task.markLoading();
+        task
+          .run()
+          .then(task.markDone)
+          .catch((err: Error) => task.markError(err.message))
+          .finally(() => inFlightTeamData.current.delete(key));
+      });
+    });
+  }, [
+    awardsBySeason,
+    id,
+    matchesBySeason,
+    rankingsBySeason,
+    seasonOptions,
+    selectedSeasonId,
+    skillsBySeason,
+    team,
+  ]);
 
   if (loading || error || !team) {
     return (
@@ -1565,7 +1955,10 @@ function TeamDetail({ id }: { id: string }) {
           <div className="eyebrow">
             <Users size={16} /> Team {team.number}
           </div>
-          <h1>{team.team_name || `Team ${team.number}`}</h1>
+          <h1>
+            {team.number}
+            {team.team_name ? ` - ${team.team_name}` : ""}
+          </h1>
           <p>{team.organization || team.robot_name || "VEX Robotics team"}</p>
           <div className="meta-line">
             <ProgramBadge program={team.program} />
@@ -1594,6 +1987,7 @@ function TeamDetail({ id }: { id: string }) {
         onChange={setSelectedSeasonId}
         loading={events.loading}
       />
+      <DateDirectionToggle direction={dateDirection} onChange={setDateDirection} />
       <Status loading={activeStatus.loading} error={activeStatus.error} />
       {!activeStatus.loading && !events.loading && selectedSeason && (
         <div className="table-summary">
@@ -1603,15 +1997,20 @@ function TeamDetail({ id }: { id: string }) {
       {!activeStatus.loading && tab === "events" && <EventTable events={seasonEvents} loading={events.loading} />}
       {!activeStatus.loading && tab === "matches" && (
         <TeamMatchesByEvent
-          matches={matches.data?.data ?? []}
+          matches={selectedMatches.data}
           eventIndex={eventIndex}
           seasonId={selectedSeasonId}
           focusTeamId={team.id}
+          direction={dateDirection}
         />
       )}
-      {!activeStatus.loading && tab === "rankings" && <TeamRankingsByEvent rankings={rankings.data?.data ?? []} eventIndex={eventIndex} seasonId={selectedSeasonId} />}
-      {!activeStatus.loading && tab === "skills" && <TeamSkillsByEvent skills={skills.data?.data ?? []} eventIndex={eventIndex} seasonId={selectedSeasonId} />}
-      {!activeStatus.loading && tab === "awards" && <TeamAwardsByEvent awards={awards.data?.data ?? []} eventIndex={eventIndex} seasonId={selectedSeasonId} focusTeamId={team.id} />}
+      {!activeStatus.loading && tab === "rankings" && (
+        <TeamRankingsByEvent rankings={selectedRankings.data} eventIndex={eventIndex} seasonId={selectedSeasonId} direction={dateDirection} />
+      )}
+      {!activeStatus.loading && tab === "skills" && <TeamSkillsByEvent skills={selectedSkills.data} eventIndex={eventIndex} seasonId={selectedSeasonId} direction={dateDirection} />}
+      {!activeStatus.loading && tab === "awards" && (
+        <TeamAwardsByEvent awards={selectedAwards.data} eventIndex={eventIndex} seasonId={selectedSeasonId} focusTeamId={team.id} direction={dateDirection} />
+      )}
     </section>
   );
 }
@@ -1643,6 +2042,20 @@ function SeasonSelector({
   );
 }
 
+function DateDirectionToggle({ direction, onChange }: { direction: DateDirection; onChange: (direction: DateDirection) => void }) {
+  return (
+    <div className="date-direction-toggle" aria-label="Date order">
+      <span>Order</span>
+      <button className={direction === "asc" ? "active" : ""} onClick={() => onChange("asc")}>
+        Earlier first
+      </button>
+      <button className={direction === "desc" ? "active" : ""} onClick={() => onChange("desc")}>
+        Later first
+      </button>
+    </div>
+  );
+}
+
 function EventGroupTitle({ eventRef, event, count }: { eventRef: { id: number; name: string; code?: string | null }; event?: Event; count: number }) {
   return (
     <>
@@ -1651,7 +2064,7 @@ function EventGroupTitle({ eventRef, event, count }: { eventRef: { id: number; n
         <small>{event?.sku ?? eventRef.code ?? ""}</small>
       </span>
       <span className="event-group-meta">
-        {event ? `${formatShortDate(event.start)} - ${formatShortDate(event.end)}` : "Date unavailable"} · {count.toLocaleString()}
+        {event ? formatEventDateRange(event.start, event.end) : "Date unavailable"} · {count.toLocaleString()}
       </span>
     </>
   );
@@ -1662,13 +2075,15 @@ function TeamMatchesByEvent({
   eventIndex,
   seasonId,
   focusTeamId,
+  direction,
 }: {
   matches: Match[];
   eventIndex: Map<number, Event>;
   seasonId: number | null;
   focusTeamId: number;
+  direction: DateDirection;
 }) {
-  const groups = groupItemsByEvent(matches, eventIndex, seasonId);
+  const groups = groupItemsByEvent(matches, eventIndex, seasonId, direction);
 
   return (
     <Panel title="Matches" icon={<Gamepad2 />}>
@@ -1698,24 +2113,11 @@ function TeamMatchTable({ matches, focusTeamId }: { matches: Match[]; focusTeamI
           <th>Red Alliance</th>
           <th>Blue Alliance</th>
           <th>Score</th>
-          <th>Winner</th>
         </tr>
       </thead>
       <tbody>
         {sortedMatches.map((match) => {
-          const red = match.alliances.find((alliance) => alliance.color === "red");
-          const blue = match.alliances.find((alliance) => alliance.color === "blue");
-          const redScore = red?.score;
-          const blueScore = blue?.score;
-          const hasScore = redScore !== null && redScore !== undefined && blueScore !== null && blueScore !== undefined;
-          const winner =
-            !hasScore
-              ? "-"
-              : redScore === blueScore
-                ? "Tie"
-                : redScore > blueScore
-                  ? "Red"
-                  : "Blue";
+          const { red, blue, redScore, blueScore, winner } = matchWinner(match);
 
           return (
             <tr key={match.id}>
@@ -1730,11 +2132,8 @@ function TeamMatchTable({ matches, focusTeamId }: { matches: Match[]; focusTeamI
                 <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} />
               </td>
               <td>
-                <span className="score red">{red?.score ?? "-"}</span>
-                <span className="score blue">{blue?.score ?? "-"}</span>
-              </td>
-              <td>
-                <span className={`winner-badge ${winner.toLowerCase()}`}>{winner}</span>
+                <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
+                <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
               </td>
             </tr>
           );
@@ -1744,8 +2143,18 @@ function TeamMatchTable({ matches, focusTeamId }: { matches: Match[]; focusTeamI
   );
 }
 
-function TeamRankingsByEvent({ rankings, eventIndex, seasonId }: { rankings: Ranking[]; eventIndex: Map<number, Event>; seasonId: number | null }) {
-  const groups = groupItemsByEvent(rankings, eventIndex, seasonId);
+function TeamRankingsByEvent({
+  rankings,
+  eventIndex,
+  seasonId,
+  direction,
+}: {
+  rankings: Ranking[];
+  eventIndex: Map<number, Event>;
+  seasonId: number | null;
+  direction: DateDirection;
+}) {
+  const groups = groupItemsByEvent(rankings, eventIndex, seasonId, direction);
 
   return (
     <Panel title="Rankings" icon={<BarChart3 />}>
@@ -1795,8 +2204,18 @@ function TeamRankingsByEvent({ rankings, eventIndex, seasonId }: { rankings: Ran
   );
 }
 
-function TeamSkillsByEvent({ skills, eventIndex, seasonId }: { skills: Skill[]; eventIndex: Map<number, Event>; seasonId: number | null }) {
-  const groups = groupItemsByEvent(skills, eventIndex, seasonId).map((group) => {
+function TeamSkillsByEvent({
+  skills,
+  eventIndex,
+  seasonId,
+  direction,
+}: {
+  skills: Skill[];
+  eventIndex: Map<number, Event>;
+  seasonId: number | null;
+  direction: DateDirection;
+}) {
+  const groups = groupItemsByEvent(skills, eventIndex, seasonId, direction).map((group) => {
     const entries = [...group.items].sort((a, b) => (a.type === "driver" ? -1 : 1) - (b.type === "driver" ? -1 : 1));
     const bestByType = new Map<string, Skill>();
 
@@ -1877,13 +2296,15 @@ function TeamAwardsByEvent({
   eventIndex,
   seasonId,
   focusTeamId,
+  direction,
 }: {
   awards: Award[];
   eventIndex: Map<number, Event>;
   seasonId: number | null;
   focusTeamId: number;
+  direction: DateDirection;
 }) {
-  const groups = groupItemsByEvent(awards, eventIndex, seasonId);
+  const groups = groupItemsByEvent(awards, eventIndex, seasonId, direction);
 
   return (
     <Panel title="Awards" icon={<Medal />}>
@@ -1894,7 +2315,7 @@ function TeamAwardsByEvent({
               <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} />
             </summary>
             <div className="award-list">
-              {group.items.map((award) => (
+              {sortAwards(group.items).map((award) => (
                 <article className="award-item" key={award.id}>
                   <h3>{award.title}</h3>
                   <div className="winner-row">
@@ -1958,111 +2379,120 @@ function Tabs({ tabs, active, onChange }: { tabs: Array<[string, string, ReactNo
 }
 
 function MatchesTable({ matches }: { matches: Match[] }) {
-  const [roundFilter, setRoundFilter] = useState("quals");
-  const [page, setPage] = useState(1);
-  const filteredMatches = matches.filter((match) => {
-    if (roundFilter === "practice") return match.round === 1;
-    if (roundFilter === "quals") return match.round === 2;
-    if (roundFilter === "elims") return match.round >= 3;
-    return true;
-  });
-  const pageSize = 50;
-  const totalPages = Math.max(1, Math.ceil(filteredMatches.length / pageSize));
-  const pageMatches = filteredMatches.slice((page - 1) * pageSize, page * pageSize);
-
-  useEffect(() => {
-    setPage(1);
-  }, [roundFilter, matches]);
+  const qualificationMatches = matches.filter((match) => match.round === 2).sort((a, b) => a.matchnum - b.matchnum);
+  const playoffMatches = matches.filter((match) => match.round >= 3).sort((a, b) => a.round - b.round || a.matchnum - b.matchnum);
+  const playoffGroups = playoffMatches.reduce<Map<string, Match[]>>((groups, match) => {
+    const key = playoffRoundKey(match);
+    groups.set(key, [...(groups.get(key) ?? []), match]);
+    return groups;
+  }, new Map());
+  const allianceRows = allianceRowsFromMatches(matches);
+  const playoffOrder = ["r16", "qf", "sf", "f"];
 
   return (
-    <Panel title="Matches" icon={<Gamepad2 />}>
-      <div className="table-tools">
-        {[
-          ["all", "All"],
-          ["quals", "Qualifications"],
-          ["elims", "Eliminations"],
-          ["practice", "Practice"],
-        ].map(([value, label]) => (
-            <button key={value} className={roundFilter === value ? "active" : ""} onClick={() => setRoundFilter(value)}>
-              {label}
-            </button>
+    <div className="results-layout">
+      <section className="results-column">
+        <h2>Qualification Results</h2>
+        <ResultsMatchTable matches={qualificationMatches} emptyText="No qualification matches returned." />
+      </section>
+      <section className="results-column">
+        <h2>Alliances</h2>
+        <AllianceSelectionTable alliances={allianceRows} />
+        <h2>Playoff Results</h2>
+        {playoffOrder
+          .filter((key) => playoffGroups.has(key))
+          .map((key) => (
+            <section className="playoff-round" key={key}>
+              <h3>{playoffRoundLabel(key)}</h3>
+              <ResultsMatchTable matches={(playoffGroups.get(key) ?? []).sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum)} emptyText="No playoff matches returned." />
+            </section>
           ))}
-        <span>{filteredMatches.length.toLocaleString()} matches</span>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Match</th>
-            <th>Red Alliance</th>
-            <th>Blue Alliance</th>
-            <th>Score</th>
-            <th>Winner</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {pageMatches.map((match) => {
-            const red = match.alliances.find((alliance) => alliance.color === "red");
-            const blue = match.alliances.find((alliance) => alliance.color === "blue");
-            const redScore = red?.score;
-            const blueScore = blue?.score;
-            const hasScore = redScore !== null && redScore !== undefined && blueScore !== null && blueScore !== undefined;
-            const winner =
-              !hasScore
-                ? "-"
-                : redScore === blueScore
-                  ? "Tie"
-                  : redScore > blueScore
-                    ? "Red"
-                    : "Blue";
+        {!playoffMatches.length && <Empty>No playoff matches returned.</Empty>}
+      </section>
+    </div>
+  );
+}
 
-            return (
-              <tr key={match.id}>
-                <td>
-                  {match.name}
-                  {match.field && <span className="muted inline-muted">Field {match.field}</span>}
-                </td>
-                <td className={winner === "Red" ? "winner-cell" : ""}>
-                  <AllianceTeamLinks teams={red?.teams} />
-                </td>
-                <td className={winner === "Blue" ? "winner-cell" : ""}>
-                  <AllianceTeamLinks teams={blue?.teams} />
-                </td>
-                <td>
-                  <span className="score red">{red?.score ?? "-"}</span>
-                  <span className="score blue">{blue?.score ?? "-"}</span>
-                </td>
-                <td>
-                  <span className={`winner-badge ${winner.toLowerCase()}`}>{winner}</span>
-                </td>
-                <td>{hasScore || match.scored ? "Final" : match.scheduled ? formatShortDate(match.scheduled) : "Scheduled"}</td>
-              </tr>
-            );
-          })}
-          {!filteredMatches.length && (
-            <tr>
-              <td colSpan={6}>
-                <Empty>No matches available for this view.</Empty>
+function ResultsMatchTable({ matches, emptyText }: { matches: Match[]; emptyText: string }) {
+  return (
+    <table className="results-match-table">
+      <thead>
+        <tr>
+          <th className="play-cell" aria-label="Open match" />
+          <th>Match</th>
+          <th>Red Alliance</th>
+          <th>Blue Alliance</th>
+          <th>Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {matches.map((match) => {
+          const { red, blue, redScore, blueScore, winner } = matchWinner(match);
+          const redTeams = red?.teams ?? [];
+          const blueTeams = blue?.teams ?? [];
+
+          return (
+            <tr key={match.id}>
+              <td className="play-cell">
+                <span className="play-dot" />
+              </td>
+              <td className="result-match-name">
+                {match.name}
+                {match.field && <span className="muted inline-muted">Field {match.field}</span>}
+              </td>
+              <td className="alliance-cell red-alliance-cell">
+                <AllianceTeamLinks teams={redTeams} />
+              </td>
+              <td className="alliance-cell blue-alliance-cell">
+                <AllianceTeamLinks teams={blueTeams} />
+              </td>
+              <td className="score-cell">
+                <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
+                <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
               </td>
             </tr>
-          )}
-        </tbody>
-      </table>
-      <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
-    </Panel>
+          );
+        })}
+        {!matches.length && (
+          <tr>
+            <td colSpan={5}>
+              <Empty>{emptyText}</Empty>
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  );
+}
+
+function AllianceSelectionTable({ alliances }: { alliances: Array<[number, string[]]> }) {
+  if (!alliances.length) return <Empty>No alliance selections returned.</Empty>;
+
+  return (
+    <table className="alliance-selection-table">
+      <thead>
+        <tr>
+          <th>Seed</th>
+          <th>Captain</th>
+          <th>Pick 1</th>
+        </tr>
+      </thead>
+      <tbody>
+        {alliances.map(([seed, teams]) => (
+          <tr key={`${seed}-${teams.join("-")}`}>
+            <td>Seed {seed}</td>
+            {Array.from({ length: 2 }).map((_, teamIndex) => (
+              <td key={teamIndex}>{teams[teamIndex] ?? ""}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
 function RankingsTable({ rankings }: { rankings: Ranking[] }) {
-  const [page, setPage] = useState(1);
   const sortedRankings = [...rankings].sort((a, b) => a.rank - b.rank);
-  const pageSize = 80;
-  const totalPages = Math.max(1, Math.ceil(sortedRankings.length / pageSize));
-  const pageRows = sortedRankings.slice((page - 1) * pageSize, page * pageSize);
-
-  useEffect(() => {
-    setPage(1);
-  }, [rankings]);
 
   return (
     <Panel title="Rankings" icon={<BarChart3 />}>
@@ -2080,7 +2510,7 @@ function RankingsTable({ rankings }: { rankings: Ranking[] }) {
           </tr>
         </thead>
         <tbody>
-          {pageRows.map((row) => (
+          {sortedRankings.map((row) => (
             <tr key={row.id}>
               <td>{row.rank}</td>
               <td className="team-cell">
@@ -2105,13 +2535,11 @@ function RankingsTable({ rankings }: { rankings: Ranking[] }) {
           )}
         </tbody>
       </table>
-      <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
     </Panel>
   );
 }
 
 function SkillsTable({ skills }: { skills: Skill[] }) {
-  const [page, setPage] = useState(1);
   const rows = Object.values(
     skills.reduce<Record<string, { rank: number | null; team: Skill["team"]; entries: Skill[] }>>((groups, skill) => {
       const key = String(skill.team.id ?? skill.team.name);
@@ -2140,13 +2568,6 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
       return groups;
     }, {}),
   ).sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) || a.team.name.localeCompare(b.team.name));
-  const pageSize = 80;
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
-
-  useEffect(() => {
-    setPage(1);
-  }, [skills]);
 
   return (
     <Panel title="Skills" icon={<Activity />}>
@@ -2161,7 +2582,7 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
           </tr>
         </thead>
         <tbody>
-          {pageRows.map((row) => {
+          {rows.map((row) => {
             const entries = [...row.entries].sort((a, b) => a.type.localeCompare(b.type));
             const total = entries.reduce((sum, entry) => sum + (entry.score ?? 0), 0);
 
@@ -2202,16 +2623,17 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
           )}
         </tbody>
       </table>
-      <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
     </Panel>
   );
 }
 
 function AwardsList({ awards }: { awards: Award[] }) {
+  const sortedAwards = sortAwards(awards);
+
   return (
     <Panel title="Awards" icon={<Medal />}>
       <div className="award-list">
-        {awards.map((award) => (
+        {sortedAwards.map((award) => (
           <article className="award-item" key={award.id}>
             <h3>{award.title}</h3>
             <div className="winner-row">
@@ -2228,7 +2650,7 @@ function AwardsList({ awards }: { awards: Award[] }) {
             </div>
           </article>
         ))}
-        {!awards.length && <Empty>No awards returned.</Empty>}
+        {!sortedAwards.length && <Empty>No awards returned.</Empty>}
       </div>
     </Panel>
   );
