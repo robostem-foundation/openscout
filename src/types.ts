@@ -37,6 +37,24 @@ export type Program = {
   name: string;
 };
 
+export type CountryOption = {
+  label: string;
+  value: number;
+  country_id: string;
+};
+
+export type CountryGroup = {
+  label: string;
+  options: CountryOption[];
+};
+
+export type CountryRegion = {
+  id: number;
+  country_id: number;
+  code: string;
+  name: string;
+};
+
 export type Season = {
   id: number;
   name: string;
@@ -159,4 +177,3 @@ export type SuperscoreRow = {
   total_matches?: number;
   calculated_at?: string;
 };
-

@@ -7,7 +7,9 @@ import {
   ChevronRight,
   ExternalLink,
   Gamepad2,
+  ListFilter,
   Medal,
+  PanelRight,
   Search,
   Shield,
   Star,
@@ -15,9 +17,9 @@ import {
   Users,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { api } from "./api";
-import type { Award, Event, Match, PageMeta, Paginated, Ranking, Skill, Team } from "./types";
+import type { Award, CountryGroup, Event, Match, PageMeta, Paginated, Ranking, Season, Skill, Team } from "./types";
 
 const programOptions = [
   { label: "All Programs", value: "" },
@@ -30,18 +32,21 @@ const programOptions = [
 const today = new Date();
 const oneDay = 24 * 60 * 60 * 1000;
 const vexProgramIds = [1, 4, 41, 57];
-const eventLevels = [
-  { label: "All Event Types", value: "" },
-  { label: "Worlds", value: "World" },
-  { label: "Signature", value: "Signature" },
-  { label: "National", value: "National" },
-  { label: "State / Regional Championship", value: "State" },
-  { label: "Everything Else", value: "Other" },
-];
-
 type EventCategory = "Worlds" | "Signature" | "Championship" | "Other";
 type EventSort = "smart" | "date" | "type" | "name" | "program" | "location";
 type EventWindow = "near" | "upcoming" | "next30" | "next90" | "past30" | "allSeason";
+type EventFilterLayout = "sidebar" | "inline";
+type RegionOptionKind = "country" | "subdivision" | "vex-region";
+type RegionOption = {
+  key: string;
+  kind: RegionOptionKind;
+  label: string;
+  badge: string;
+  countryId?: number;
+  countryName?: string;
+  regionName?: string;
+  vexLabel?: string;
+};
 
 function useRoute() {
   const [path, setPath] = useState(window.location.pathname);
@@ -128,6 +133,12 @@ function formatShortDate(value?: string | null) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
 }
 
+function formatEventDateRange(start?: string | null, end?: string | null) {
+  const startLabel = formatDate(start);
+  const endLabel = formatDate(end);
+  return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
+}
+
 function formatNumber(value?: number | null, digits = 1) {
   if (value === undefined || value === null || Number.isNaN(value)) return "-";
   return value.toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -145,6 +156,10 @@ function addDays(date: Date, days: number) {
 
 function dateOnly(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+function normalizeText(value?: string | null) {
+  return (value ?? "").trim().toLowerCase();
 }
 
 function eventCategory(event: Event): { label: EventCategory; rank: number } {
@@ -192,6 +207,58 @@ function compareEventsChronological(a?: Event, b?: Event) {
   return aTime - bTime || (a?.name ?? "").localeCompare(b?.name ?? "");
 }
 
+function sameNumberSet(a: number[], b: number[]) {
+  if (a.length !== b.length) return false;
+  const values = new Set(a);
+  return b.every((value) => values.has(value));
+}
+
+function optionKey(kind: RegionOptionKind, id: string | number) {
+  return `${kind}:${id}`;
+}
+
+function dedupeCountryGroups(groups: CountryGroup[]) {
+  const countries = new Map<number, CountryGroup["options"][number]>();
+  groups.forEach((group) => group.options.forEach((country) => countries.set(country.value, country)));
+  return [...countries.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function derivedVexRegionLabels(event: Event) {
+  const labels = new Set<string>();
+  const candidates = [event.name, event.location.region, event.location.country].filter(Boolean).join(" ");
+  const patterns = [
+    /\b([A-Z][A-Za-z .'-]{2,}?)\s*[-–]\s*(Region\s*\d+|North|South|East|West|Central|Northeast|Northwest|Southeast|Southwest)\b/g,
+    /\b([A-Z][A-Za-z .'-]{2,}?)\s+(Region\s*\d+)\b/g,
+  ];
+
+  patterns.forEach((pattern) => {
+    for (const match of candidates.matchAll(pattern)) {
+      const place = match[1].replace(/\s+/g, " ").trim();
+      const area = match[2].replace(/\s+/g, " ").trim();
+      if (place && area && place.length <= 40) labels.add(`${place} - ${area}`);
+    }
+  });
+
+  return [...labels];
+}
+
+function eventMatchesRegionOption(event: Event, option: RegionOption) {
+  const country = normalizeText(event.location.country);
+  const region = normalizeText(event.location.region);
+
+  if (option.kind === "country") return country === normalizeText(option.countryName);
+  if (option.kind === "subdivision") {
+    const countryMatches = !option.countryName || country === normalizeText(option.countryName);
+    return countryMatches && region === normalizeText(option.regionName);
+  }
+  return derivedVexRegionLabels(event).some((label) => normalizeText(label) === normalizeText(option.vexLabel));
+}
+
+function eventMatchesRegionOptions(event: Event, options: RegionOption[]) {
+  if (!options.length) return true;
+  return options.some((option) => eventMatchesRegionOption(event, option));
+}
+
 function shortSeasonName(name?: string | null) {
   if (!name) return "Unknown Season";
   return name.split(":").pop()?.trim() || name;
@@ -218,14 +285,16 @@ function groupItemsByEvent<T extends { event: { id: number; name: string } }>(it
 
 function filterAndSortEvents(events: Event[], options: {
   search?: string;
-  program?: string;
+  programIds?: string[];
   level?: string;
-  region?: string;
+  regionOptions?: RegionOption[];
+  seasonIds?: number[];
   hideCanceled?: boolean;
   sort?: EventSort;
 }) {
   const needle = (options.search ?? "").trim().toLowerCase();
-  const region = (options.region ?? "").trim().toLowerCase();
+  const seasonIds = options.seasonIds ?? [];
+  const programIds = options.programIds ?? [];
 
   return events
     .filter((event) => {
@@ -248,12 +317,14 @@ function filterAndSortEvents(events: Event[], options: {
         .toLowerCase();
 
       if (needle && !haystack.includes(needle)) return false;
-      if (region && !haystack.includes(region)) return false;
-      if (options.program && String(event.program.id) !== options.program) return false;
+      if (programIds.length && !programIds.includes(String(event.program.id))) return false;
+      if (seasonIds.length && !seasonIds.includes(event.season.id)) return false;
       if (options.level) {
         if (options.level === "Championship" && eventCategory(event).label !== "Championship") return false;
-        if (options.level !== "Championship" && event.level !== options.level) return false;
+        if (options.level === "Other" && eventCategory(event).label !== "Other") return false;
+        if (options.level !== "Championship" && options.level !== "Other" && event.level !== options.level) return false;
       }
+      if (!eventMatchesRegionOptions(event, options.regionOptions ?? [])) return false;
       if (options.hideCanceled && /cancel+ed|canceled/i.test(event.name)) return false;
       return vexProgramIds.includes(event.program.id);
     })
@@ -265,7 +336,7 @@ function eventWindowDates(eventWindow: EventWindow) {
   if (eventWindow === "next30") return { start: dateOnly(today), end: dateOnly(addDays(today, 30)) };
   if (eventWindow === "next90") return { start: dateOnly(today), end: dateOnly(addDays(today, 90)) };
   if (eventWindow === "past30") return { start: dateOnly(addDays(today, -30)), end: dateOnly(today) };
-  if (eventWindow === "allSeason") return { start: "2025-05-01", end: "2026-08-31" };
+  if (eventWindow === "allSeason") return { start: undefined, end: undefined };
   return { start: dateOnly(addDays(today, -30)), end: dateOnly(addDays(today, 120)) };
 }
 
@@ -537,148 +608,530 @@ function Panel({ title, icon, children }: { title: string; icon: ReactNode; chil
 
 function EventsPage() {
   const params = new URLSearchParams(window.location.search);
-  const [search, setSearch] = useState(params.get("search") ?? "");
-  const [program, setProgram] = useState("");
+  const [quickSearch, setQuickSearch] = useState(params.get("search") ?? "");
+  const [quickSearchLimit, setQuickSearchLimit] = useState(3);
+  const [activeQuickResult, setActiveQuickResult] = useState(0);
+  const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>(() => {
+    const saved = window.localStorage.getItem("vex-events-programs");
+    if (!saved) return ["1"];
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) && parsed.every((item) => typeof item === "string") ? parsed : ["1"];
+    } catch {
+      return ["1"];
+    }
+  });
+  const [programMenuOpen, setProgramMenuOpen] = useState(false);
   const [level, setLevel] = useState("");
-  const [region, setRegion] = useState("");
+  const [selectedRegionKeys, setSelectedRegionKeys] = useState<string[]>([]);
+  const [regionMenuOpen, setRegionMenuOpen] = useState(false);
+  const [regionTab, setRegionTab] = useState<RegionOptionKind>("country");
+  const [regionSearch, setRegionSearch] = useState("");
   const [eventWindow, setEventWindow] = useState<EventWindow>("near");
   const [sort, setSort] = useState<EventSort>("smart");
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [filterLayout, setFilterLayout] = useState<EventFilterLayout>("sidebar");
+  const [selectedSeasonIds, setSelectedSeasonIds] = useState<number[]>([]);
+  const [seasonSelectionTouched, setSeasonSelectionTouched] = useState(false);
+  const [seasonMenuOpen, setSeasonMenuOpen] = useState(false);
   const [hideCanceled, setHideCanceled] = useState(true);
   const [page, setPage] = useState(1);
-  const queryKey = `${eventWindow}:${program}:${level}`;
+  const selectedProgramKey = selectedProgramIds.join(",");
+  const selectedSeasonKey = selectedSeasonIds.join(",");
+  const queryKey = `${eventWindow}:${selectedProgramKey}:${level}:${selectedSeasonKey}`;
   const dateWindow = eventWindowDates(eventWindow);
+  const seasons = useAsync(() => collectAllPages<Season>((page) => api.robotEventsSeasons({ page, per_page: 250 })), []);
+  const countries = useAsync(() => api.robotEventsCountries(), []);
+  const countryRegions = useAsync(() => api.robotEventsRegions(), []);
   const { data, loading, error } = useAsync(
     () =>
       api.events({
         start: dateWindow.start,
         end: dateWindow.end,
-        "program[]": program ? [program] : undefined,
-        "level[]": level === "Championship" ? ["National", "State"] : level ? [level] : undefined,
+        "program[]": selectedProgramIds.length ? selectedProgramIds : undefined,
+        "level[]": level === "Championship" ? ["National", "State", "Regional"] : level && level !== "Other" ? [level] : undefined,
+        "season[]": selectedSeasonIds.length ? selectedSeasonIds : undefined,
         per_page: 250,
       }),
     [queryKey],
   );
+  const seasonOptions = useMemo(() => {
+    const selectedPrograms = new Set(selectedProgramIds.map(Number));
+    return (seasons.data?.data ?? [])
+      .filter((season) => !season.program || (vexProgramIds.includes(season.program.id) && (!selectedPrograms.size || selectedPrograms.has(season.program.id))))
+      .map((season) => ({ id: season.id, label: shortSeasonName(season.name), program: season.program?.code ?? "" }))
+      .sort((a, b) => b.id - a.id);
+  }, [seasons.data, selectedProgramIds]);
+  const allSeasonIds = useMemo(() => seasonOptions.map((season) => season.id), [seasonOptions]);
+  const allSeasonsSelected = !!seasonOptions.length && sameNumberSet(selectedSeasonIds, allSeasonIds);
+  const selectedProgramLabels = programOptions
+    .filter((option) => option.value && selectedProgramIds.includes(option.value))
+    .map((option) => option.label);
+  const programButtonLabel =
+    !selectedProgramIds.length || selectedProgramIds.length === programOptions.length - 1
+      ? "All programs"
+      : selectedProgramIds.length === 1
+        ? selectedProgramLabels[0] ?? "Program"
+        : `${selectedProgramIds.length} programs`;
+  const countryOptions = useMemo(() => dedupeCountryGroups(countries.data ?? []), [countries.data]);
+  const sortOptions: Array<{ label: string; value: EventSort }> = [
+    { label: "Smart Sort", value: "smart" },
+    { label: "Start Date", value: "date" },
+    { label: "Event Type", value: "type" },
+    { label: "Program", value: "program" },
+    { label: "Location", value: "location" },
+    { label: "Name", value: "name" },
+  ];
+  const sortLabel = sortOptions.find((option) => option.value === sort)?.label ?? "Sort";
+  const countryById = useMemo(() => new Map(countryOptions.map((country) => [country.value, country])), [countryOptions]);
+  const regionOptions = useMemo<RegionOption[]>(() => {
+    const countryItems = countryOptions.map((country) => ({
+      key: optionKey("country", country.value),
+      kind: "country" as const,
+      label: country.label,
+      badge: "Country",
+      countryId: country.value,
+      countryName: country.label,
+    }));
+    const subdivisionItems = (countryRegions.data ?? []).map((region) => {
+      const country = countryById.get(region.country_id);
+      return {
+        key: optionKey("subdivision", region.id),
+        kind: "subdivision" as const,
+        label: country ? `${region.name}, ${country.label}` : region.name,
+        badge: country?.country_id === "US" ? "State" : "State / Province",
+        countryId: region.country_id,
+        countryName: country?.label,
+        regionName: region.name,
+      };
+    });
+    const vexItems = new Map<string, RegionOption>();
+    (data?.data ?? []).forEach((event) => {
+      derivedVexRegionLabels(event).forEach((label) => {
+        const key = optionKey("vex-region", label);
+        if (!vexItems.has(key)) {
+          vexItems.set(key, {
+            key,
+            kind: "vex-region",
+            label,
+            badge: "VEX Region",
+            vexLabel: label,
+          });
+        }
+      });
+    });
+
+    return [...countryItems, ...subdivisionItems, ...vexItems.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [countryOptions, countryRegions.data, countryById, data]);
+  const selectedRegionOptions = regionOptions.filter((option) => selectedRegionKeys.includes(option.key));
+  const regionButtonLabel =
+    selectedRegionOptions.length === 0
+      ? "All regions"
+      : selectedRegionOptions.length === 1
+        ? selectedRegionOptions[0].label
+        : `${selectedRegionOptions.length} regions`;
+  const visibleRegionOptions = regionOptions.filter((option) => {
+    if (option.kind !== regionTab) return false;
+    const needle = regionSearch.trim().toLowerCase();
+    if (!needle) return true;
+    return [option.label, option.badge, option.countryName, option.regionName, option.vexLabel].filter(Boolean).join(" ").toLowerCase().includes(needle);
+  });
   const visibleEvents = useMemo(
     () =>
       filterAndSortEvents(data?.data ?? [], {
-        search,
-        program,
+        programIds: selectedProgramIds,
         level,
-        region,
+        regionOptions: selectedRegionOptions,
+        seasonIds: selectedSeasonIds,
         hideCanceled,
         sort,
       }),
-    [data, search, program, level, region, hideCanceled, sort],
+    [data, selectedProgramIds, level, selectedRegionOptions, selectedSeasonIds, hideCanceled, sort],
   );
+  const quickResults = useMemo(() => {
+    const needle = quickSearch.trim().toLowerCase();
+    if (!needle) return [];
+    return visibleEvents.filter((event) => event.name.toLowerCase().includes(needle)).slice(0, quickSearchLimit);
+  }, [visibleEvents, quickSearch, quickSearchLimit]);
+  const quickResultTotal = useMemo(() => {
+    const needle = quickSearch.trim().toLowerCase();
+    if (!needle) return 0;
+    return visibleEvents.filter((event) => event.name.toLowerCase().includes(needle)).length;
+  }, [visibleEvents, quickSearch]);
   const pageSize = 40;
   const totalPages = Math.max(1, Math.ceil(visibleEvents.length / pageSize));
   const pageEvents = visibleEvents.slice((page - 1) * pageSize, page * pageSize);
+  const selectedSeasonLabels = seasonOptions.filter((season) => selectedSeasonIds.includes(season.id)).map((season) => season.label);
+  const seasonButtonLabel =
+    !selectedSeasonIds.length || selectedSeasonIds.length === seasonOptions.length
+      ? "All seasons"
+      : selectedSeasonIds.length === 1
+        ? selectedSeasonLabels[0] ?? "Season"
+        : `${selectedSeasonIds.length} seasons`;
 
   useEffect(() => {
     setPage(1);
-  }, [search, program, level, region, eventWindow, sort, hideCanceled]);
+  }, [selectedProgramIds, level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds, hideCanceled]);
 
-  return (
-    <section className="page">
-      <PageTitle icon={<CalendarDays />} title="Events" subtitle="Smart-sorted RobotEvents listings for finding the VEX events people actually care about first." />
-      <div className="event-toolbar">
+  useEffect(() => {
+    setQuickSearchLimit(3);
+    setActiveQuickResult(0);
+  }, [quickSearch, visibleEvents]);
+
+  useEffect(() => {
+    window.localStorage.setItem("vex-events-programs", JSON.stringify(selectedProgramIds));
+  }, [selectedProgramIds]);
+
+  useEffect(() => {
+    if (!seasonOptions.length) return;
+    const availableIds = new Set(seasonOptions.map((season) => season.id));
+    if (!seasonSelectionTouched) {
+      setSelectedSeasonIds([seasonOptions[0].id]);
+      return;
+    }
+    setSelectedSeasonIds((ids) => {
+      if (!ids.length) return ids;
+      return ids.filter((id) => availableIds.has(id));
+    });
+  }, [seasonOptions, seasonSelectionTouched]);
+
+  useEffect(() => {
+    if (selectedRegionKeys.length && regionOptions.length) {
+      const availableKeys = new Set(regionOptions.map((option) => option.key));
+      setSelectedRegionKeys((keys) => keys.filter((key) => availableKeys.has(key)));
+    }
+  }, [selectedRegionKeys, regionOptions]);
+
+  const toggleSeason = (seasonId: number) => {
+    setSeasonSelectionTouched(true);
+    setSelectedSeasonIds((ids) => (ids.includes(seasonId) ? ids.filter((id) => id !== seasonId) : [...ids, seasonId]));
+  };
+  const toggleProgram = (programId: string) => {
+    setSelectedProgramIds((ids) => (ids.includes(programId) ? ids.filter((id) => id !== programId) : [...ids, programId]));
+    setSeasonSelectionTouched(false);
+    setSelectedSeasonIds([]);
+  };
+  const selectAllPrograms = () => {
+    setSelectedProgramIds(programOptions.map((option) => option.value).filter(Boolean));
+    setSeasonSelectionTouched(false);
+    setSelectedSeasonIds([]);
+  };
+  const clearPrograms = () => {
+    setSelectedProgramIds([]);
+    setSeasonSelectionTouched(false);
+    setSelectedSeasonIds([]);
+  };
+  const selectAllSeasons = () => {
+    setSeasonSelectionTouched(true);
+    setSelectedSeasonIds(seasonOptions.map((season) => season.id));
+  };
+  const clearSeasons = () => {
+    setSeasonSelectionTouched(true);
+    setSelectedSeasonIds([]);
+  };
+  const setQuickFilter = (nextLevel: string, nextWindow: EventWindow, nextSort: EventSort = "smart") => {
+    setLevel(nextLevel);
+    setEventWindow(nextWindow);
+    setSort(nextSort);
+  };
+  const toggleRegion = (key: string) => {
+    setSelectedRegionKeys((keys) => (keys.includes(key) ? keys.filter((item) => item !== key) : [...keys, key]));
+  };
+  const clearRegions = () => {
+    setSelectedRegionKeys([]);
+  };
+  const openQuickResult = (event?: Event) => {
+    if (event) navigate(`/event/${event.id}`);
+  };
+  const handleQuickSearchKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (!quickResults.length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveQuickResult((index) => Math.min(index + 1, quickResults.length - 1));
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveQuickResult((index) => Math.max(index - 1, 0));
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      openQuickResult(quickResults[activeQuickResult] ?? quickResults[0]);
+    }
+  };
+
+  const filterControls = (
+    <>
+      <div className="filter-section">
+        <div className="filter-section-title">Time</div>
         <div className="quick-filters">
-          <button className={eventWindow === "near" && sort === "smart" && !level ? "active" : ""} onClick={() => { setEventWindow("near"); setSort("smart"); setLevel(""); }}>
+          <button className={eventWindow === "near" ? "active" : ""} onClick={() => setEventWindow("near")}>
             Near today
-          </button>
-          <button className={level === "World" ? "active" : ""} onClick={() => { setLevel("World"); setEventWindow("allSeason"); setSort("smart"); }}>
-            Worlds
-          </button>
-          <button className={level === "Signature" ? "active" : ""} onClick={() => { setLevel("Signature"); setEventWindow("allSeason"); setSort("smart"); }}>
-            Signature
-          </button>
-          <button className={level === "Championship" ? "active" : ""} onClick={() => { setLevel("Championship"); setEventWindow("allSeason"); setSort("smart"); }}>
-            Championships
           </button>
           <button className={eventWindow === "upcoming" ? "active" : ""} onClick={() => { setEventWindow("upcoming"); setSort("date"); }}>
             Upcoming
           </button>
+          <button className={eventWindow === "allSeason" ? "active" : ""} onClick={() => setEventWindow("allSeason")}>
+            All
+          </button>
         </div>
-        <SearchFilters
-          search={search}
-          setSearch={setSearch}
-          program={program}
-          setProgram={setProgram}
-          region={region}
-          setRegion={setRegion}
-          placeholder="Search loaded events, cities, venues, SKUs"
-        >
-          <select value={level} onChange={(event) => setLevel(event.target.value)}>
-            {eventLevels.map((option) => (
-              <option key={option.value || "all"} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <select value={eventWindow} onChange={(event) => setEventWindow(event.target.value as EventWindow)}>
-            <option value="near">Closest to Today</option>
-            <option value="upcoming">All Upcoming</option>
-            <option value="next30">Next 30 Days</option>
-            <option value="next90">Next 90 Days</option>
-            <option value="past30">Past 30 Days</option>
-            <option value="allSeason">2025-26 Season</option>
-          </select>
-          <select value={sort} onChange={(event) => setSort(event.target.value as EventSort)}>
-            <option value="smart">Smart: type, then closest</option>
-            <option value="date">Start Date</option>
-            <option value="type">Event Type</option>
-            <option value="program">Program</option>
-            <option value="location">Location</option>
-            <option value="name">Name</option>
-          </select>
-          <label className="checkbox-filter">
-            <input type="checkbox" checked={hideCanceled} onChange={(event) => setHideCanceled(event.target.checked)} />
-            Hide canceled
-          </label>
-        </SearchFilters>
       </div>
-      <Panel title="Event List" icon={<CalendarDays />}>
-        <Status loading={loading} error={error} />
-        {!loading && (
-          <div className="table-summary">
-            Showing {pageEvents.length.toLocaleString()} of {visibleEvents.length.toLocaleString()} loaded RobotEvents results. Smart sort prioritizes Worlds,
-            Signature Events, Championships, then everything else, with closest-to-today inside each tier.
-          </div>
-        )}
-        <EventTable events={pageEvents} loading={loading} showPriority />
-        {!loading && (
-          <div className="pager">
-            <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
-              <ChevronLeft size={16} />
+      <div className="filter-section">
+        <div className="filter-section-title">Type</div>
+        <div className="quick-filters">
+          <button className={!level ? "active" : ""} onClick={() => setLevel("")}>
+            All
+          </button>
+          <button className={level === "World" ? "active" : ""} onClick={() => setQuickFilter("World", eventWindow, "date")}>
+            Worlds
+          </button>
+          <button className={level === "Signature" ? "active" : ""} onClick={() => setQuickFilter("Signature", eventWindow, "date")}>
+            Signature
+          </button>
+          <button className={level === "Championship" ? "active" : ""} onClick={() => setQuickFilter("Championship", eventWindow, "date")}>
+            Championships
+          </button>
+          <button className={level === "Other" ? "active" : ""} onClick={() => setLevel("Other")}>
+            Other
+          </button>
+        </div>
+      </div>
+      <div className="event-filter-fields">
+        <div className="filter-field">
+          <span>Programs</span>
+          <div className="picker-menu">
+            <button type="button" onClick={() => setProgramMenuOpen((open) => !open)} aria-expanded={programMenuOpen}>
+              {programButtonLabel}
             </button>
-            <span>
-              Page {page.toLocaleString()} of {totalPages.toLocaleString()}
-            </span>
-            <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} aria-label="Next page">
-              <ChevronRight size={16} />
-            </button>
+            {programMenuOpen && (
+              <div className="picker-menu-list">
+                <div className="picker-menu-actions">
+                  <button type="button" onClick={selectAllPrograms}>
+                    All
+                  </button>
+                  <button type="button" onClick={clearPrograms}>
+                    Clear
+                  </button>
+                </div>
+                {programOptions
+                  .filter((option) => option.value)
+                  .map((option) => (
+                    <label key={option.value}>
+                      <input type="checkbox" checked={selectedProgramIds.includes(option.value)} onChange={() => toggleProgram(option.value)} />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+              </div>
+            )}
           </div>
+        </div>
+        <div className="filter-field">
+          <span>Region</span>
+          <div className="picker-menu">
+            <button type="button" onClick={() => setRegionMenuOpen((open) => !open)} aria-expanded={regionMenuOpen}>
+              {regionButtonLabel}
+            </button>
+            {regionMenuOpen && (
+              <div className="picker-menu-list region-menu-list">
+                <div className="picker-tabs">
+                  <button type="button" className={regionTab === "country" ? "active" : ""} onClick={() => setRegionTab("country")}>
+                    Countries
+                  </button>
+                  <button type="button" className={regionTab === "subdivision" ? "active" : ""} onClick={() => setRegionTab("subdivision")}>
+                    State / Province
+                  </button>
+                  <button type="button" className={regionTab === "vex-region" ? "active" : ""} onClick={() => setRegionTab("vex-region")}>
+                    Region
+                  </button>
+                </div>
+                <input className="picker-search" value={regionSearch} onChange={(event) => setRegionSearch(event.target.value)} placeholder="Search regions" />
+                <div className="picker-menu-actions">
+                  <button type="button" onClick={clearRegions}>
+                    Clear
+                  </button>
+                </div>
+                <div className="region-option-list">
+                  {visibleRegionOptions.map((option) => (
+                    <label key={option.key}>
+                      <input type="checkbox" checked={selectedRegionKeys.includes(option.key)} onChange={() => toggleRegion(option.key)} />
+                      <span>{option.label}</span>
+                      <small>{option.badge}</small>
+                    </label>
+                  ))}
+                </div>
+                {!visibleRegionOptions.length && <div className="picker-menu-empty">No matches.</div>}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="filter-field">
+          <span>Sort</span>
+          <div className="picker-menu">
+            <button type="button" onClick={() => setSortMenuOpen((open) => !open)} aria-expanded={sortMenuOpen}>
+              {sortLabel}
+            </button>
+            {sortMenuOpen && (
+              <div className="picker-menu-list">
+                {sortOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={sort === option.value ? "active" : ""}
+                    onClick={() => {
+                      setSort(option.value);
+                      setSortMenuOpen(false);
+                    }}
+                  >
+                    <span>{option.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="filter-field">
+          <span>Seasons</span>
+          <div className="picker-menu">
+            <button type="button" onClick={() => setSeasonMenuOpen((open) => !open)} aria-expanded={seasonMenuOpen}>
+              {seasonButtonLabel}
+            </button>
+            {seasonMenuOpen && (
+              <div className="picker-menu-list">
+                <div className="picker-menu-actions">
+                  <button type="button" onClick={selectAllSeasons}>
+                    All
+                  </button>
+                  <button type="button" onClick={clearSeasons}>
+                    Clear
+                  </button>
+                </div>
+                {seasonOptions.map((season) => (
+                  <label key={season.id}>
+                    <input type="checkbox" checked={selectedSeasonIds.includes(season.id)} onChange={() => toggleSeason(season.id)} />
+                    <span>{season.label}</span>
+                    {season.program && <small>{season.program}</small>}
+                  </label>
+                ))}
+                {!seasonOptions.length && <div className="picker-menu-empty">Loading seasons...</div>}
+              </div>
+            )}
+          </div>
+        </div>
+        <label className="checkbox-filter">
+          <input type="checkbox" checked={hideCanceled} onChange={(event) => setHideCanceled(event.target.checked)} />
+          Hide canceled
+        </label>
+      </div>
+    </>
+  );
+
+  return (
+    <section className="page">
+      <div className="events-title-row">
+        <PageTitle icon={<CalendarDays />} title="Events" />
+        <button
+          className="icon-button"
+          onClick={() => setFilterLayout((layout) => (layout === "sidebar" ? "inline" : "sidebar"))}
+          aria-label={filterLayout === "sidebar" ? "Use compact filters" : "Use sidebar filters"}
+          title={filterLayout === "sidebar" ? "Compact filters" : "Sidebar filters"}
+        >
+          {filterLayout === "sidebar" ? <ListFilter size={16} /> : <PanelRight size={16} />}
+        </button>
+      </div>
+      {filterLayout === "inline" && <div className="event-toolbar event-toolbar-inline">{filterControls}</div>}
+      <div className={filterLayout === "sidebar" ? "events-layout" : ""}>
+        <Panel title="Event List" icon={<CalendarDays />}>
+          <Status loading={loading} error={error} />
+          <div className="event-quick-search">
+            <label className="search-field">
+              <Search size={16} />
+              <input
+                value={quickSearch}
+                onChange={(event) => setQuickSearch(event.target.value)}
+                onKeyDown={handleQuickSearchKey}
+                placeholder="Quick search event name"
+              />
+            </label>
+            {!!quickSearch.trim() && (
+              <div className="quick-search-results">
+                {quickResults.map((event, index) => (
+                  <button
+                    key={event.id}
+                    className={index === activeQuickResult ? "active" : ""}
+                    type="button"
+                    onMouseEnter={() => setActiveQuickResult(index)}
+                    onClick={() => openQuickResult(event)}
+                  >
+                    <span>{event.name}</span>
+                    <small>{formatEventDateRange(event.start, event.end)}</small>
+                  </button>
+                ))}
+                {!quickResults.length && <div className="quick-search-empty">No matching event names.</div>}
+                {quickSearchLimit < quickResultTotal && (
+                  <button type="button" className="show-more-results" onClick={() => setQuickSearchLimit((limit) => limit + 3)}>
+                    Show more
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <EventTable events={pageEvents} loading={loading} showPriority showSeason={!selectedSeasonIds.length || allSeasonsSelected} />
+          {!loading && (
+            <div className="pager">
+              <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
+                <ChevronLeft size={16} />
+              </button>
+              <span>
+                Page {page.toLocaleString()} of {totalPages.toLocaleString()}
+              </span>
+              <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} aria-label="Next page">
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
+        </Panel>
+        {filterLayout === "sidebar" && (
+          <aside className="event-filter-sidebar">
+            <div className="event-filter-sidebar-title">Filters</div>
+            {filterControls}
+          </aside>
         )}
-      </Panel>
+      </div>
     </section>
   );
 }
 
-function EventTable({ events, loading, compact = false, showPriority = false }: { events: Event[]; loading: boolean; compact?: boolean; showPriority?: boolean }) {
+function EventTable({
+  events,
+  loading,
+  compact = false,
+  showPriority = false,
+  showSeason = false,
+}: {
+  events: Event[];
+  loading: boolean;
+  compact?: boolean;
+  showPriority?: boolean;
+  showSeason?: boolean;
+}) {
+  const showProgram = !compact;
+  const showLevel = !compact && !showPriority;
+  const columnCount = 3 + (showPriority ? 1 : 0) + (showProgram ? 1 : 0) + (showSeason ? 1 : 0) + (showLevel ? 1 : 0);
+
   return (
     <table>
       <thead>
         <tr>
           <th>Event</th>
           {showPriority && <th>Priority</th>}
-          {!compact && <th>Program</th>}
+          {showProgram && <th>Program</th>}
+          {showSeason && <th>Season</th>}
           <th>Location</th>
           <th>Dates</th>
-          {!compact && <th>Level</th>}
+          {showLevel && <th>Level</th>}
         </tr>
       </thead>
       {loading ? (
-        <LoadingTable columns={(compact ? 3 : 5) + (showPriority ? 1 : 0)} />
+        <LoadingTable columns={columnCount} />
       ) : (
         <tbody>
           {events.map((event) => (
@@ -692,21 +1145,22 @@ function EventTable({ events, loading, compact = false, showPriority = false }: 
                   <span className={`event-priority priority-${eventCategory(event).rank}`}>{eventCategory(event).label}</span>
                 </td>
               )}
-              {!compact && (
+              {showProgram && (
                 <td>
                   <ProgramBadge program={event.program} />
                 </td>
               )}
+              {showSeason && <td>{shortSeasonName(event.season.name)}</td>}
               <td>{locationLine(event)}</td>
               <td>
-                {formatShortDate(event.start)} - {formatShortDate(event.end)}
+                {formatEventDateRange(event.start, event.end)}
               </td>
-              {!compact && <td>{event.level ?? "Other"}</td>}
+              {showLevel && <td>{event.level ?? "Other"}</td>}
             </tr>
           ))}
           {!events.length && (
             <tr>
-              <td colSpan={(compact ? 3 : 5) + (showPriority ? 1 : 0)}>
+              <td colSpan={columnCount}>
                 <Empty />
               </td>
             </tr>
@@ -873,14 +1327,14 @@ function SearchFilters({
   );
 }
 
-function PageTitle({ icon, title, subtitle }: { icon: ReactNode; title: string; subtitle: string }) {
+function PageTitle({ icon, title, subtitle }: { icon: ReactNode; title: string; subtitle?: string }) {
   return (
     <div className="page-title">
       <h1>
         {icon}
         {title}
       </h1>
-      <p>{subtitle}</p>
+      {subtitle && <p>{subtitle}</p>}
     </div>
   );
 }

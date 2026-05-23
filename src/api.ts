@@ -1,5 +1,7 @@
 import type {
   Award,
+  CountryGroup,
+  CountryRegion,
   Event,
   Match,
   Paginated,
@@ -14,7 +16,7 @@ import type {
 type QueryValue = string | number | boolean | null | undefined;
 type Query = Record<string, QueryValue | QueryValue[]>;
 
-const jsonFrom = async <T>(source: "rse" | "re", path: string, query: Query = {}): Promise<T> => {
+const jsonFrom = async <T>(source: "rse" | "re" | "re-root", path: string, query: Query = {}): Promise<T> => {
   const params = new URLSearchParams();
 
   Object.entries(query).forEach(([key, value]) => {
@@ -40,10 +42,14 @@ const jsonFrom = async <T>(source: "rse" | "re", path: string, query: Query = {}
 
 const rseJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("rse", path, query);
 const robotEventsJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("re", path, query);
+const robotEventsRootJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("re-root", path, query);
 
 export const api = {
   programs: () => rseJson<Paginated<Program>>("programs", { per_page: 50 }),
   seasons: (query: Query = {}) => rseJson<Paginated<Season>>("seasons", { per_page: 50, ...query }),
+  robotEventsSeasons: (query: Query = {}) => robotEventsJson<Paginated<Season>>("seasons", { per_page: 250, ...query }),
+  robotEventsCountries: () => robotEventsRootJson<CountryGroup[]>("api/countries", { common: 1 }),
+  robotEventsRegions: (countryId?: string | number) => robotEventsRootJson<CountryRegion[]>(countryId ? `api/regions/${countryId}` : "api/regions"),
   events: (query: Query = {}) => robotEventsJson<Paginated<Event>>("events", query),
   event: (id: string | number) => robotEventsJson<Event>(`events/${id}`),
   eventTeams: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Team>>(`events/${id}/teams`, query),
