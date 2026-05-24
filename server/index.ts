@@ -11,6 +11,7 @@ const port = Number(process.env.PORT ?? 5173);
 const apiBase = (process.env.ROBOSTEM_API_BASE ?? "https://robostem-api.org").replace(/\/$/, "");
 const robotEventsApiBase = (process.env.ROBOTEVENTS_API_BASE ?? "https://events.vex.com/api/v2").replace(/\/$/, "");
 const robotEventsRootBase = (process.env.ROBOTEVENTS_ROOT_BASE ?? "https://events.vex.com").replace(/\/$/, "");
+const jumperApiBase = (process.env.JUMPER_API_BASE ?? "https://jumper.robostem.org").replace(/\/$/, "");
 const apiKey = process.env.RSE_API_KEY;
 const robotEventsApiKey = process.env.ROBOTEVENTS_API_KEY;
 
@@ -107,6 +108,34 @@ app.get("/api/re-root/*endpoint", async (req, res) => {
   } catch (error) {
     console.error("VEX Events root proxy failed", error);
     res.status(502).json({ message: "VEX Events request failed" });
+  }
+});
+
+app.get("/api/jumper/*endpoint", async (req, res) => {
+  const endpoint = Array.isArray(req.params.endpoint)
+    ? req.params.endpoint.join("/")
+    : req.params.endpoint;
+  const queryIndex = req.originalUrl.indexOf("?");
+  const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : "";
+  const url = `${jumperApiBase}/api/${endpoint}${query}`;
+
+  try {
+    const upstream = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    const contentType = upstream.headers.get("content-type") ?? "application/json";
+    const body = await upstream.text();
+
+    res.status(upstream.status);
+    res.setHeader("content-type", contentType);
+    res.setHeader("cache-control", "private, max-age=60");
+    res.send(body);
+  } catch (error) {
+    console.error("Jumper proxy failed", error);
+    res.status(502).json({ message: "Jumper API request failed" });
   }
 });
 

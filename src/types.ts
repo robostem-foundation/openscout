@@ -124,6 +124,23 @@ export type Match = {
   alliances: Alliance[];
 };
 
+export type JumperPresetExists = {
+  exists: boolean;
+  sku?: string;
+  preset?: string;
+  presetName?: string;
+  preset_name?: string;
+};
+
+export type MatchTimestamp = {
+  id: number;
+  name: string;
+  divisionId: number;
+  timestamp: number | null;
+  livestreamLink: string | null;
+  videoId: string | null;
+};
+
 export type Ranking = {
   id: number;
   event: IdInfo;

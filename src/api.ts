@@ -3,7 +3,9 @@ import type {
   CountryGroup,
   CountryRegion,
   Event,
+  JumperPresetExists,
   Match,
+  MatchTimestamp,
   Paginated,
   Program,
   Ranking,
@@ -16,7 +18,7 @@ import type {
 type QueryValue = string | number | boolean | null | undefined;
 type Query = Record<string, QueryValue | QueryValue[]>;
 
-const jsonFrom = async <T>(source: "rse" | "re" | "re-root", path: string, query: Query = {}): Promise<T> => {
+const jsonFrom = async <T>(source: "rse" | "re" | "re-root" | "jumper", path: string, query: Query = {}): Promise<T> => {
   const params = new URLSearchParams();
 
   Object.entries(query).forEach(([key, value]) => {
@@ -43,6 +45,7 @@ const jsonFrom = async <T>(source: "rse" | "re" | "re-root", path: string, query
 const rseJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("rse", path, query);
 const robotEventsJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("re", path, query);
 const robotEventsRootJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("re-root", path, query);
+const jumperJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("jumper", path, query);
 
 export const api = {
   programs: () => rseJson<Paginated<Program>>("programs", { per_page: 50 }),
@@ -66,6 +69,8 @@ export const api = {
   teamRankings: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Ranking>>(`teams/${id}/rankings`, query),
   teamSkills: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Skill>>(`teams/${id}/skills`, query),
   teamAwards: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Award>>(`teams/${id}/awards`, query),
+  jumperPresetEventExists: (sku: string) => jumperJson<JumperPresetExists>("preset-event-exists", { sku }),
+  jumperMatchTimestamps: (sku: string, query: Query = {}) => jumperJson<MatchTimestamp[]>("match-timestamp", { sku, ...query }),
   superscore: (program: "v5rc" | "viqrc", query: Query = {}) =>
     rseJson<Paginated<SuperscoreRow>>(`superscore/rankings/${program}`, query),
 };

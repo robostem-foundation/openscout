@@ -8,18 +8,25 @@ import {
   ExternalLink,
   Gamepad2,
   ListFilter,
+  Link as LinkIcon,
   Medal,
   PanelRight,
+  Pause,
+  Play,
+  RotateCcw,
+  RotateCw,
   Search,
   Shield,
   Star,
   Trophy,
+  Unlink,
   Users,
+  Youtube,
 } from "lucide-react";
 import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, KeyboardEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
-import type { Award, CountryGroup, Event, Match, PageMeta, Paginated, Ranking, Season, Skill, Team } from "./types";
+import type { Award, CountryGroup, Event, JumperPresetExists, Match, MatchTimestamp, PageMeta, Paginated, Ranking, Season, Skill, Team } from "./types";
 
 const programOptions = [
   { label: "All Programs", value: "" },
@@ -44,6 +51,15 @@ type AsyncBucket<T> = {
   data: T[];
   loading: boolean;
   error: string | null;
+};
+type HighlightAward = {
+  award: Award;
+  label: string;
+  kind: "excellence" | "champions" | "skills";
+};
+type MatchPlayback = {
+  match: Match;
+  timestamp: MatchTimestamp;
 };
 type RegionOption = {
   key: string;
@@ -367,6 +383,43 @@ function awardPriority(award: Award) {
 
 function sortAwards(awards: Award[]) {
   return [...awards].sort((a, b) => awardPriority(a) - awardPriority(b) || a.title.localeCompare(b.title));
+}
+
+function isIqProgram(event?: Event | null) {
+  const code = event?.program.code ?? "";
+  const name = event?.program.name ?? "";
+  return /VIQ|IQ/i.test(`${code} ${name}`);
+}
+
+function highlightAwards(awards: Award[], event?: Event | null): HighlightAward[] {
+  const hasWinners = (award: Award) => (award.teamWinners?.length ?? 0) > 0 || (award.individualWinners?.length ?? 0) > 0;
+  const titleMatches = (pattern: RegExp) => awards.find((award) => pattern.test(award.title) && hasWinners(award));
+  const excellence = titleMatches(/excellence award/i);
+  const champions = titleMatches(isIqProgram(event) ? /teamwork.*champions?/i : /tournament champions?|event champions?/i);
+  const skills = titleMatches(/(?:robot\s*)?skills?.*champions?/i);
+  const highlights: HighlightAward[] = [];
+
+  if (excellence) highlights.push({ award: excellence, label: "Excellence Award", kind: "excellence" });
+  if (champions) highlights.push({ award: champions, label: isIqProgram(event) ? "Teamwork Champions" : "Tournament Champions", kind: "champions" });
+  if (skills) highlights.push({ award: skills, label: "Robot Skills Champion", kind: "skills" });
+
+  return highlights;
+}
+
+function jumperPresetName(event: Event, preset?: JumperPresetExists | null) {
+  return preset?.preset ?? preset?.presetName ?? preset?.preset_name ?? preset?.sku ?? event.sku;
+}
+
+function youtubeEmbedUrl(timestamp: MatchTimestamp) {
+  if (!timestamp.videoId || timestamp.timestamp === null) return "";
+  const params = new URLSearchParams({
+    start: String(Math.max(0, Math.floor(timestamp.timestamp))),
+    autoplay: "1",
+    rel: "0",
+    enablejsapi: "1",
+    origin: window.location.origin,
+  });
+  return `https://www.youtube.com/embed/${timestamp.videoId}?${params.toString()}`;
 }
 
 function matchWinner(match: Match) {
@@ -1663,6 +1716,7 @@ function PageTitle({ icon, title, subtitle }: { icon: ReactNode; title: string; 
 function EventDetail({ id }: { id: string }) {
   const [tab, setTab] = useState("matches");
   const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
+  const [playback, setPlayback] = useState<MatchPlayback | null>(null);
   const { data: event, loading, error } = useAsync(() => api.event(id), [id]);
   const divisions = useMemo(() => [...(event?.divisions ?? [])].sort((a, b) => (a.order ?? a.id) - (b.order ?? b.id)), [event]);
   const division = selectedDivision ?? divisions[0]?.id ?? 1;
@@ -1701,14 +1755,26 @@ function EventDetail({ id }: { id: string }) {
     },
     [id, event?.id, tab],
   );
+  const preset = useAsync(
+    async () => {
+      if (!event) return null;
+      return api.jumperPresetEventExists(event.sku);
+    },
+    [event?.sku],
+  );
+  const matchTimestamps = useAsync(
+    async () => {
+      if (!event || !preset.data?.exists) return null;
+      return api.jumperMatchTimestamps(event.sku, { offsetSeconds: -5 });
+    },
+    [event?.sku, preset.data?.exists],
+  );
 
   const eventAwards = awards.data?.data ?? [];
+  const timestampMap = useMemo(() => new Map((matchTimestamps.data ?? []).map((timestamp) => [timestamp.id, timestamp])), [matchTimestamps.data]);
+  const presetUrl = event && preset.data?.exists ? `https://jumper.robostem.org/?preset=${encodeURIComponent(jumperPresetName(event, preset.data))}` : null;
   const activeStatus = tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : tab === "awards" ? awards : teams;
-  const keyAwards = useMemo(() => {
-    return sortAwards(eventAwards)
-      .filter((award) => awardPriority(award) < 4 && ((award.teamWinners?.length ?? 0) > 0 || (award.individualWinners?.length ?? 0) > 0))
-      .slice(0, 4);
-  }, [eventAwards]);
+  const keyAwards = useMemo(() => highlightAwards(eventAwards, event), [eventAwards, event]);
 
   useEffect(() => {
     if (!event) return;
@@ -1775,7 +1841,16 @@ function EventDetail({ id }: { id: string }) {
         </div>
       )}
       <Status loading={activeStatus.loading} error={activeStatus.error} />
-      {tab === "matches" && <MatchesTable matches={matches.data?.data ?? []} />}
+      {tab === "matches" && (
+        <MatchesTable
+          matches={matches.data?.data ?? []}
+          timestampMap={timestampMap}
+          presetSupported={!!preset.data?.exists}
+          presetLoading={preset.loading || (preset.data?.exists ? matchTimestamps.loading : false)}
+          presetUrl={presetUrl}
+          onOpenMatch={(match, timestamp) => setPlayback({ match, timestamp })}
+        />
+      )}
       {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} />}
       {tab === "skills" && <SkillsTable skills={skills.data?.data ?? []} />}
       {tab === "awards" && <AwardsList awards={awards.data?.data ?? []} />}
@@ -1783,6 +1858,7 @@ function EventDetail({ id }: { id: string }) {
         <div className="table-summary">Showing 80 per page from {teams.data.data.length.toLocaleString()} RobotEvents teams.</div>
       )}
       {tab === "teams" && <TeamTable teams={teams.data?.data ?? []} loading={teams.loading} localPageSize={80} eventId={event.id} />}
+      {playback && <MatchVideoOverlay playback={playback} onClose={() => setPlayback(null)} />}
     </section>
   );
 }
@@ -2345,22 +2421,30 @@ function TeamAwardsByEvent({
   );
 }
 
-function EventHighlights({ awards }: { awards: Award[] }) {
+function EventHighlights({ awards }: { awards: HighlightAward[] }) {
   return (
     <div className="event-highlights">
-      {awards.map((award) => (
-        <article key={award.id}>
-          <strong>{award.title}</strong>
-          <div>
-            {(award.teamWinners ?? []).map((winner) => (
-              <TeamMiniLink key={`${award.id}-${winner.team.id}`} team={winner.team} />
-            ))}
-            {(award.individualWinners ?? []).map((winner) => (
-              <span key={winner}>{winner}</span>
-            ))}
-          </div>
-        </article>
-      ))}
+      {awards.map((highlight) => {
+        const Icon = highlight.kind === "skills" ? Medal : highlight.kind === "champions" ? Trophy : Star;
+        return (
+          <article key={`${highlight.kind}-${highlight.award.id}`} className={`event-highlight-card highlight-${highlight.kind}`}>
+            <div className="event-highlight-icon">
+              <Icon size={15} />
+            </div>
+            <div className="event-highlight-body">
+              <strong>{highlight.label}</strong>
+              <div>
+                {(highlight.award.teamWinners ?? []).map((winner) => (
+                  <TeamMiniLink key={`${highlight.award.id}-${winner.team.id}`} team={winner.team} />
+                ))}
+                {(highlight.award.individualWinners ?? []).map((winner) => (
+                  <span key={winner}>{winner}</span>
+                ))}
+              </div>
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -2379,7 +2463,10 @@ function Tabs({ tabs, active, onChange }: { tabs: Array<[string, string, ReactNo
 }
 
 function MatchesTable({ matches }: { matches: Match[] }) {
-  const qualificationMatches = matches.filter((match) => match.round === 2).sort((a, b) => a.matchnum - b.matchnum);
+  const [qualificationDirection, setQualificationDirection] = useState<DateDirection>("asc");
+  const qualificationMatches = matches
+    .filter((match) => match.round === 2)
+    .sort((a, b) => (qualificationDirection === "asc" ? 1 : -1) * (a.matchnum - b.matchnum));
   const playoffMatches = matches.filter((match) => match.round >= 3).sort((a, b) => a.round - b.round || a.matchnum - b.matchnum);
   const playoffGroups = playoffMatches.reduce<Map<string, Match[]>>((groups, match) => {
     const key = playoffRoundKey(match);
@@ -2393,7 +2480,12 @@ function MatchesTable({ matches }: { matches: Match[] }) {
     <div className="results-layout">
       <section className="results-column">
         <h2>Qualification Results</h2>
-        <ResultsMatchTable matches={qualificationMatches} emptyText="No qualification matches returned." />
+        <ResultsMatchTable
+          matches={qualificationMatches}
+          emptyText="No qualification matches returned."
+          matchDirection={qualificationDirection}
+          onToggleMatchDirection={() => setQualificationDirection((direction) => (direction === "asc" ? "desc" : "asc"))}
+        />
       </section>
       <section className="results-column">
         <h2>Alliances</h2>
@@ -2413,13 +2505,39 @@ function MatchesTable({ matches }: { matches: Match[] }) {
   );
 }
 
-function ResultsMatchTable({ matches, emptyText }: { matches: Match[]; emptyText: string }) {
+function ResultsMatchTable({
+  matches,
+  emptyText,
+  matchDirection,
+  onToggleMatchDirection,
+}: {
+  matches: Match[];
+  emptyText: string;
+  matchDirection?: DateDirection;
+  onToggleMatchDirection?: () => void;
+}) {
   return (
     <table className="results-match-table">
+      <colgroup>
+        <col className="results-play-col" />
+        <col className="results-match-col" />
+        <col className="results-alliance-col" />
+        <col className="results-alliance-col" />
+        <col className="results-score-col" />
+      </colgroup>
       <thead>
         <tr>
           <th className="play-cell" aria-label="Open match" />
-          <th>Match</th>
+          <th>
+            <span className="match-header-label">
+              Match
+              {onToggleMatchDirection && (
+                <button className="match-sort-toggle" onClick={onToggleMatchDirection} aria-label="Toggle match order">
+                  {matchDirection === "desc" ? "▾" : "▴"}
+                </button>
+              )}
+            </span>
+          </th>
           <th>Red Alliance</th>
           <th>Blue Alliance</th>
           <th>Score</th>
@@ -2437,13 +2555,19 @@ function ResultsMatchTable({ matches, emptyText }: { matches: Match[]; emptyText
                 <span className="play-dot" />
               </td>
               <td className="result-match-name">
-                {match.name}
-                {match.field && <span className="muted inline-muted">Field {match.field}</span>}
+                <span className="result-match-line">
+                  <span className="result-match-label">{match.name}</span>
+                  {match.round === 2 && match.field && (
+                    <span className="result-field-name">
+                      {match.field}
+                    </span>
+                  )}
+                </span>
               </td>
-              <td className="alliance-cell red-alliance-cell">
+              <td className={`alliance-cell red-alliance-cell ${winner === "Red" ? "winning-alliance-cell" : ""}`}>
                 <AllianceTeamLinks teams={redTeams} />
               </td>
-              <td className="alliance-cell blue-alliance-cell">
+              <td className={`alliance-cell blue-alliance-cell ${winner === "Blue" ? "winning-alliance-cell" : ""}`}>
                 <AllianceTeamLinks teams={blueTeams} />
               </td>
               <td className="score-cell">

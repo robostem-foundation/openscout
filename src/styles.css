@@ -934,14 +934,17 @@ tbody tr:hover {
 }
 
 .event-priority {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 88px;
+  min-height: 18px;
   padding: 0.2em 0.6em 0.3em;
   border-radius: 0.25em;
   color: #fff;
   font-size: 75%;
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.1;
   text-align: center;
   white-space: nowrap;
 }
@@ -1116,9 +1119,14 @@ tbody tr:hover {
 
 .results-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.78fr);
-  gap: 28px;
+  grid-template-columns: max-content minmax(280px, 1fr);
+  gap: 24px;
   align-items: start;
+  justify-content: start;
+}
+
+.results-column:first-child {
+  max-width: min(100%, 780px);
 }
 
 .results-column h2 {
@@ -1141,12 +1149,53 @@ tbody tr:hover {
 
 .results-match-table,
 .alliance-selection-table {
+  table-layout: fixed;
   border: 1px solid #ddd;
-  font-size: 13px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.results-match-table {
+  width: auto;
+}
+
+.results-play-col {
+  width: 44px;
+}
+
+.results-match-col {
+  width: 230px;
+}
+
+.results-alliance-col {
+  width: 190px;
+}
+
+.results-score-col {
+  width: 108px;
+}
+
+.results-column:last-child .results-match-table {
+  width: 100%;
+}
+
+.results-column:last-child .results-play-col {
+  width: 34px;
+}
+
+.results-column:last-child .results-match-col {
+  width: 88px;
+}
+
+.results-column:last-child .results-alliance-col {
+  width: auto;
+}
+
+.results-column:last-child .results-score-col {
+  width: 94px;
 }
 
 .results-match-table th,
-.results-match-table td,
 .alliance-selection-table th,
 .alliance-selection-table td {
   padding: 5px 7px;
@@ -1154,15 +1203,53 @@ tbody tr:hover {
   vertical-align: middle;
 }
 
+.results-match-table td {
+  height: 39px;
+  padding: 6px 10px;
+  border-top: 1px solid #ddd;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
 .results-match-table th,
 .alliance-selection-table th {
-  background: #f1f1f1;
+  background: #fff;
+  border-bottom: 2px solid #ddd;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
+  text-align: left;
+}
+
+.match-header-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.match-sort-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #777;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.match-sort-toggle:hover {
+  color: #337ab7;
 }
 
 .results-match-table .play-cell {
-  width: 28px;
+  padding: 6px 10px;
+  border-right: 1px solid #ddd;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .play-dot {
@@ -1188,16 +1275,41 @@ tbody tr:hover {
 }
 
 .result-match-name {
-  width: 140px;
-  color: #4968c8;
-  font-weight: 600;
+  position: relative;
+  overflow: hidden;
+  color: #333;
+  font-weight: 400;
+  line-height: 1.42857143;
+  vertical-align: middle;
+}
+
+.result-match-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 14px;
+}
+
+.result-match-label {
+  flex: 0 0 auto;
+}
+
+.result-field-name {
+  min-width: 0;
+  padding-right: 10px;
+  overflow: hidden;
+  color: #777;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .alliance-cell {
-  min-width: 165px;
-  color: #4968c8;
-  font-size: 13px;
-  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #337ab7;
+  font-size: 14px;
+  font-weight: 400;
+  text-align: center !important;
 }
 
 .alliance-cell .team-chip,
@@ -1208,30 +1320,45 @@ tbody tr:hover {
   font-size: inherit;
 }
 
+.winning-alliance-cell a {
+  font-weight: 700;
+}
+
 .red-alliance-cell {
-  background: #fde8e8;
+  background: rgba(217, 83, 79, 0.1);
 }
 
 .blue-alliance-cell {
-  background: #e9e9ff;
+  background: rgba(51, 122, 183, 0.1);
 }
 
 .score-cell {
-  width: 82px;
+  padding-inline: 12px !important;
+  text-align: left !important;
+  white-space: nowrap;
 }
 
 .results-match-table .score {
-  min-width: 32px;
-  margin-right: 0;
-  background: transparent;
-  border: 0;
-  color: #333;
-  font-size: 15px;
+  min-width: 34px;
+  margin-right: 4px;
+  color: #fff;
+  font-size: 14px;
 }
 
-.results-match-table .score-loser {
-  background: transparent;
-  border: 0;
+@media (max-width: 1200px) {
+  .results-layout {
+    grid-template-columns: minmax(720px, max-content) minmax(220px, 1fr);
+    gap: 18px;
+  }
+
+  .results-column h2 {
+    font-size: 26px;
+  }
+
+  .alliance-selection-table th,
+  .alliance-selection-table td {
+    padding-inline: 4px;
+  }
 }
 
 .alliance-selection-table {
@@ -1410,42 +1537,77 @@ tbody tr:hover {
 
 .event-highlights {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 8px;
-  margin: -5px 0 15px;
+  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+  gap: 10px;
+  margin: -6px 0 12px;
 }
 
 .event-highlights article {
-  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 10px;
   background: #fcf8e3;
-  border: 1px solid #faebcc;
+  border: 1px solid #f3d69c;
   border-radius: 4px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
   color: #8a6d3b;
 }
 
-.event-highlights strong {
-  display: block;
-  margin-bottom: 5px;
+.event-highlight-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: #8a6d3b;
 }
 
-.event-highlights div {
+.event-highlight-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.event-highlights strong {
+  display: inline;
+  flex: 0 1 auto;
+  margin-bottom: 0;
+  overflow: hidden;
+  color: #8a6d3b;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-highlight-body div {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
+  margin-left: auto;
 }
 
 .event-highlights a,
 .event-highlights span {
-  display: inline-block;
-  padding: 0.2em 0.6em 0.3em;
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0.16em 0.65em 0.24em;
   border-radius: 0.25em;
   background: #337ab7;
+  border: 1px solid #2e6da4;
   color: #fff;
-  font-size: 75%;
+  font-size: 11px;
   font-weight: 700;
 }
 
 .event-highlights a:hover {
+  background: #286090;
+  border-color: #204d74;
   color: #fff;
 }
 
