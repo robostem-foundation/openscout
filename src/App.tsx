@@ -410,16 +410,30 @@ function jumperPresetName(event: Event, preset?: JumperPresetExists | null) {
   return preset?.preset ?? preset?.presetName ?? preset?.preset_name ?? preset?.sku ?? event.sku;
 }
 
-function youtubeEmbedUrl(timestamp: MatchTimestamp) {
-  if (!timestamp.videoId || timestamp.timestamp === null) return "";
-  const params = new URLSearchParams({
-    start: String(Math.max(0, Math.floor(timestamp.timestamp))),
-    autoplay: "1",
-    rel: "0",
-    enablejsapi: "1",
-    origin: window.location.origin,
-  });
-  return `https://www.youtube.com/embed/${timestamp.videoId}?${params.toString()}`;
+let ytApiLoaded = false;
+let ytApiReady = false;
+const ytReadyCallbacks: Array<() => void> = [];
+
+function loadYouTubeApi() {
+  if (ytApiLoaded) return;
+  ytApiLoaded = true;
+  const tag = document.createElement("script");
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.head.appendChild(tag);
+  (window as unknown as Record<string, unknown>).onYouTubeIframeAPIReady = () => {
+    ytApiReady = true;
+    ytReadyCallbacks.forEach((cb) => cb());
+    ytReadyCallbacks.length = 0;
+  };
+}
+
+function onYtApiReady(cb: () => void) {
+  if (ytApiReady) {
+    cb();
+  } else {
+    ytReadyCallbacks.push(cb);
+    loadYouTubeApi();
+  }
 }
 
 function matchWinner(match: Match) {
@@ -2462,7 +2476,21 @@ function Tabs({ tabs, active, onChange }: { tabs: Array<[string, string, ReactNo
   );
 }
 
-function MatchesTable({ matches }: { matches: Match[] }) {
+function MatchesTable({
+  matches,
+  timestampMap,
+  presetSupported,
+  presetLoading,
+  presetUrl,
+  onOpenMatch,
+}: {
+  matches: Match[];
+  timestampMap: Map<number, MatchTimestamp>;
+  presetSupported: boolean;
+  presetLoading: boolean;
+  presetUrl: string | null;
+  onOpenMatch: (match: Match, timestamp: MatchTimestamp) => void;
+}) {
   const [qualificationDirection, setQualificationDirection] = useState<DateDirection>("asc");
   const qualificationMatches = matches
     .filter((match) => match.round === 2)
@@ -2485,6 +2513,11 @@ function MatchesTable({ matches }: { matches: Match[] }) {
           emptyText="No qualification matches returned."
           matchDirection={qualificationDirection}
           onToggleMatchDirection={() => setQualificationDirection((direction) => (direction === "asc" ? "desc" : "asc"))}
+          timestampMap={timestampMap}
+          presetSupported={presetSupported}
+          presetLoading={presetLoading}
+          presetUrl={presetUrl}
+          onOpenMatch={onOpenMatch}
         />
       </section>
       <section className="results-column">
@@ -2496,7 +2529,15 @@ function MatchesTable({ matches }: { matches: Match[] }) {
           .map((key) => (
             <section className="playoff-round" key={key}>
               <h3>{playoffRoundLabel(key)}</h3>
-              <ResultsMatchTable matches={(playoffGroups.get(key) ?? []).sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum)} emptyText="No playoff matches returned." />
+              <ResultsMatchTable
+                matches={(playoffGroups.get(key) ?? []).sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum)}
+                emptyText="No playoff matches returned."
+                timestampMap={timestampMap}
+                presetSupported={presetSupported}
+                presetLoading={presetLoading}
+                presetUrl={presetUrl}
+                onOpenMatch={onOpenMatch}
+              />
             </section>
           ))}
         {!playoffMatches.length && <Empty>No playoff matches returned.</Empty>}
@@ -2510,11 +2551,21 @@ function ResultsMatchTable({
   emptyText,
   matchDirection,
   onToggleMatchDirection,
+  timestampMap,
+  presetSupported,
+  presetLoading,
+  presetUrl,
+  onOpenMatch,
 }: {
   matches: Match[];
   emptyText: string;
   matchDirection?: DateDirection;
   onToggleMatchDirection?: () => void;
+  timestampMap?: Map<number, MatchTimestamp>;
+  presetSupported?: boolean;
+  presetLoading?: boolean;
+  presetUrl?: string | null;
+  onOpenMatch?: (match: Match, timestamp: MatchTimestamp) => void;
 }) {
   return (
     <table className="results-match-table">
@@ -2527,7 +2578,19 @@ function ResultsMatchTable({
       </colgroup>
       <thead>
         <tr>
-          <th className="play-cell" aria-label="Open match" />
+          <th className="play-cell" aria-label="Open match">
+            {presetLoading ? (
+              <span className="play-header-icon loading" />
+            ) : presetSupported ? (
+              <a href={presetUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="play-header-link active" title="Open in Jumper">
+                <LinkIcon size={14} />
+              </a>
+            ) : (
+              <span className="play-header-link disabled" title="No livestream preset">
+                <Unlink size={14} />
+              </span>
+            )}
+          </th>
           <th>
             <span className="match-header-label">
               Match
@@ -2548,11 +2611,21 @@ function ResultsMatchTable({
           const { red, blue, redScore, blueScore, winner } = matchWinner(match);
           const redTeams = red?.teams ?? [];
           const blueTeams = blue?.teams ?? [];
+          const timestamp = timestampMap?.get(match.id);
+          const canPlay = presetSupported && timestamp && timestamp.timestamp !== null && timestamp.videoId;
 
           return (
             <tr key={match.id}>
               <td className="play-cell">
-                <span className="play-dot" />
+                {canPlay ? (
+                  <button
+                    className="play-dot active"
+                    onClick={() => onOpenMatch?.(match, timestamp)}
+                    title={`Play ${match.name}`}
+                  />
+                ) : (
+                  <span className="play-dot disabled" />
+                )}
               </td>
               <td className="result-match-name">
                 <span className="result-match-line">
@@ -2586,6 +2659,182 @@ function ResultsMatchTable({
         )}
       </tbody>
     </table>
+  );
+}
+
+function formatTimestamp(seconds: number) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  return `${minutes}:${String(secs).padStart(2, "0")}`;
+}
+
+function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onClose: () => void }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const playerRef = useRef<{ seekTo: (s: number, b: boolean) => void; pauseVideo: () => void; playVideo: () => void; getCurrentTime: () => number; destroy: () => void } | null>(null);
+  const pollRef = useRef<number>(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [currentTime, setCurrentTime] = useState(playback.timestamp.timestamp ?? 0);
+
+  const { red, blue, redScore, blueScore, winner } = matchWinner(playback.match);
+  const redTeams = red?.teams.map((t) => t.team.name).join(" ") ?? "";
+  const blueTeams = blue?.teams.map((t) => t.team.name).join(" ") ?? "";
+  const startSeconds = Math.max(0, Math.floor(playback.timestamp.timestamp ?? 0));
+
+  const embedUrl = useMemo(() => {
+    if (!playback.timestamp.videoId) return "";
+    const params = new URLSearchParams({
+      enablejsapi: "1",
+      autoplay: "1",
+      start: String(startSeconds),
+      rel: "0",
+      modestbranding: "1",
+      origin: window.location.origin,
+    });
+    return `https://www.youtube.com/embed/${playback.timestamp.videoId}?${params.toString()}`;
+  }, [playback.timestamp.videoId, startSeconds]);
+
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!playback.timestamp.videoId || !iframeRef.current) return;
+    let destroyed = false;
+
+    onYtApiReady(() => {
+      if (destroyed || !iframeRef.current) return;
+      const YT = (window as unknown as Record<string, unknown>).YT as { Player: new (el: HTMLElement, opts: unknown) => unknown };
+      const player = new YT.Player(iframeRef.current, {
+        events: {
+          onReady: () => {
+            playerRef.current = player as typeof playerRef.current;
+            pollRef.current = window.setInterval(() => {
+              if (playerRef.current) setCurrentTime(Math.floor(playerRef.current.getCurrentTime()));
+            }, 1000);
+          },
+          onStateChange: (event: { data: number }) => {
+            setIsPlaying(event.data === 1);
+          },
+        },
+      }) as typeof playerRef.current;
+    });
+
+    return () => {
+      destroyed = true;
+      window.clearInterval(pollRef.current);
+      playerRef.current?.destroy();
+      playerRef.current = null;
+    };
+  }, [playback.timestamp.videoId]);
+
+  const seekBy = (delta: number) => {
+    if (!playerRef.current) return;
+    const newTime = Math.max(0, playerRef.current.getCurrentTime() + delta);
+    playerRef.current.seekTo(newTime, true);
+    setCurrentTime(Math.floor(newTime));
+  };
+
+  const togglePlay = () => {
+    if (!playerRef.current) return;
+    if (isPlaying) {
+      playerRef.current.pauseVideo();
+    } else {
+      playerRef.current.playVideo();
+    }
+  };
+
+  return (
+    <div className="video-overlay" onClick={onClose}>
+      <div className="video-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="video-modal-header">
+          <div className="video-match-info">
+            <strong>{playback.match.name}</strong>
+            <span className="video-match-teams">
+              <span className="video-team-red">{redTeams}</span>
+              <span className="video-vs">vs</span>
+              <span className="video-team-blue">{blueTeams}</span>
+            </span>
+            {redScore !== null && blueScore !== null && (
+              <span className="video-match-score">
+                <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore}</span>
+                <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore}</span>
+              </span>
+            )}
+          </div>
+          <div className="video-header-actions">
+            <a
+              href={playback.timestamp.livestreamLink ?? "#"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="video-yt-link"
+            >
+              <Youtube size={16} />
+              Open in YouTube
+            </a>
+            <button className="video-close-btn" onClick={onClose} aria-label="Close">&times;</button>
+          </div>
+        </div>
+        <div className="video-embed-wrap">
+          {playback.timestamp.videoId ? (
+            <iframe
+              ref={iframeRef}
+              src={embedUrl}
+              className="video-player-iframe"
+              allow="autoplay; encrypted-media; fullscreen"
+              allowFullScreen
+            />
+          ) : (
+            <div className="video-unavailable">Video unavailable</div>
+          )}
+        </div>
+        <div className="video-controls">
+          <button onClick={() => seekBy(-60)} title="Back 1 minute">
+            <ChevronLeft size={12} /><ChevronLeft size={12} />
+            <span>1M</span>
+          </button>
+          <button onClick={() => seekBy(-30)} title="Back 30 seconds">
+            <ChevronLeft size={12} />
+            <span>30S</span>
+          </button>
+          <button onClick={() => seekBy(-10)} title="Back 10 seconds">
+            <RotateCcw size={13} />
+            <span>10S</span>
+          </button>
+          <button onClick={() => seekBy(-5)} title="Back 5 seconds">
+            <ChevronLeft size={12} />
+            <span>5S</span>
+          </button>
+          <button className="video-play-btn" onClick={togglePlay} title={isPlaying ? "Pause" : "Play"}>
+            {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+          </button>
+          <button onClick={() => seekBy(5)} title="Forward 5 seconds">
+            <span>5S</span>
+            <ChevronRight size={12} />
+          </button>
+          <button onClick={() => seekBy(10)} title="Forward 10 seconds">
+            <span>10S</span>
+            <RotateCw size={13} />
+          </button>
+          <button onClick={() => seekBy(30)} title="Forward 30 seconds">
+            <span>30S</span>
+            <ChevronRight size={12} />
+          </button>
+          <button onClick={() => seekBy(60)} title="Forward 1 minute">
+            <span>1M</span>
+            <ChevronRight size={12} /><ChevronRight size={12} />
+          </button>
+        </div>
+        <div className="video-timestamp">
+          {formatTimestamp(currentTime)} from stream start
+        </div>
+      </div>
+    </div>
   );
 }
 
