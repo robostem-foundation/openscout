@@ -13,8 +13,6 @@ import {
   PanelRight,
   Pause,
   Play,
-  RotateCcw,
-  RotateCw,
   Search,
   Shield,
   Star,
@@ -2714,12 +2712,15 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
         events: {
           onReady: () => {
             playerRef.current = player as typeof playerRef.current;
-            pollRef.current = window.setInterval(() => {
-              if (playerRef.current) setCurrentTime(Math.floor(playerRef.current.getCurrentTime()));
-            }, 1000);
           },
           onStateChange: (event: { data: number }) => {
             setIsPlaying(event.data === 1);
+            if ((event.data === 1 || event.data === 3) && !pollRef.current) {
+              pollRef.current = window.setInterval(() => {
+                const t = playerRef.current?.getCurrentTime() ?? 0;
+                if (t > 0) setCurrentTime(Math.floor(t));
+              }, 1000);
+            }
           },
         },
       }) as typeof playerRef.current;
@@ -2756,9 +2757,9 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
           <div className="video-match-info">
             <strong>{playback.match.name}</strong>
             <span className="video-match-teams">
-              <span className="video-team-red">{redTeams}</span>
+              <span className={`video-team-red ${winner === "Red" ? "winning" : ""}`}>{redTeams}</span>
               <span className="video-vs">vs</span>
-              <span className="video-team-blue">{blueTeams}</span>
+              <span className={`video-team-blue ${winner === "Blue" ? "winning" : ""}`}>{blueTeams}</span>
             </span>
             {redScore !== null && blueScore !== null && (
               <span className="video-match-score">
@@ -2794,41 +2795,17 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
           )}
         </div>
         <div className="video-controls">
-          <button onClick={() => seekBy(-60)} title="Back 1 minute">
-            <ChevronLeft size={12} /><ChevronLeft size={12} />
-            <span>1M</span>
-          </button>
-          <button onClick={() => seekBy(-30)} title="Back 30 seconds">
-            <ChevronLeft size={12} />
-            <span>30S</span>
-          </button>
-          <button onClick={() => seekBy(-10)} title="Back 10 seconds">
-            <RotateCcw size={13} />
-            <span>10S</span>
-          </button>
-          <button onClick={() => seekBy(-5)} title="Back 5 seconds">
-            <ChevronLeft size={12} />
-            <span>5S</span>
-          </button>
+          <button onClick={() => seekBy(-60)} title="Back 1 minute">-1m</button>
+          <button onClick={() => seekBy(-30)} title="Back 30 seconds">-30s</button>
+          <button onClick={() => seekBy(-10)} title="Back 10 seconds">-10s</button>
+          <button onClick={() => seekBy(-5)} title="Back 5 seconds">-5s</button>
           <button className="video-play-btn" onClick={togglePlay} title={isPlaying ? "Pause" : "Play"}>
             {isPlaying ? <Pause size={18} /> : <Play size={18} />}
           </button>
-          <button onClick={() => seekBy(5)} title="Forward 5 seconds">
-            <span>5S</span>
-            <ChevronRight size={12} />
-          </button>
-          <button onClick={() => seekBy(10)} title="Forward 10 seconds">
-            <span>10S</span>
-            <RotateCw size={13} />
-          </button>
-          <button onClick={() => seekBy(30)} title="Forward 30 seconds">
-            <span>30S</span>
-            <ChevronRight size={12} />
-          </button>
-          <button onClick={() => seekBy(60)} title="Forward 1 minute">
-            <span>1M</span>
-            <ChevronRight size={12} /><ChevronRight size={12} />
-          </button>
+          <button onClick={() => seekBy(5)} title="Forward 5 seconds">+5s</button>
+          <button onClick={() => seekBy(10)} title="Forward 10 seconds">+10s</button>
+          <button onClick={() => seekBy(30)} title="Forward 30 seconds">+30s</button>
+          <button onClick={() => seekBy(60)} title="Forward 1 minute">+1m</button>
         </div>
         <div className="video-timestamp">
           {formatTimestamp(currentTime)} from stream start
@@ -3118,5 +3095,8 @@ function route(path: string) {
 
 export default function App() {
   const path = useRoute();
+  useEffect(() => {
+    loadYouTubeApi();
+  }, []);
   return <Layout path={path}>{route(path)}</Layout>;
 }

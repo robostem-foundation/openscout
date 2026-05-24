@@ -1408,6 +1408,11 @@ tbody tr:hover {
   text-overflow: ellipsis;
 }
 
+.video-team-red.winning,
+.video-team-blue.winning {
+  font-weight: 700;
+}
+
 .video-match-score {
   display: flex;
   gap: 4px;
