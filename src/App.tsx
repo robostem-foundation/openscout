@@ -22,9 +22,9 @@ import {
   Youtube,
 } from "lucide-react";
 import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
-import type { Dispatch, KeyboardEvent, ReactNode, SetStateAction } from "react";
+import type { Dispatch, KeyboardEvent, MouseEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
-import type { Award, CountryGroup, Event, JumperPresetExists, Match, MatchTimestamp, PageMeta, Paginated, Ranking, Season, Skill, Team } from "./types";
+import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team } from "./types";
 
 const programOptions = [
   { label: "All Programs", value: "" },
@@ -37,7 +37,7 @@ const programOptions = [
 const today = new Date();
 const oneDay = 24 * 60 * 60 * 1000;
 const vexProgramIds = [1, 4, 41, 57];
-const teamCacheRefreshMs = 3 * 60 * 1000;
+const teamCacheRefreshMs = 30 * 60 * 1000;
 type EventCategory = "Worlds" | "Signature" | "Championship" | "Other";
 type EventSort = "smart" | "date" | "type" | "name" | "program" | "location";
 type EventWindow = "near" | "upcoming" | "next30" | "next90" | "past30" | "allSeason";
@@ -99,12 +99,23 @@ function navigate(path: string) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function Link({ href, children, className }: { href: string; children: ReactNode; className?: string }) {
+function Link({
+  href,
+  children,
+  className,
+  onClick,
+}: {
+  href: string;
+  children: ReactNode;
+  className?: string;
+  onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
+}) {
   return (
     <a
       href={href}
       className={className}
       onClick={(event) => {
+        onClick?.(event);
         if (href.startsWith("/")) {
           event.preventDefault();
           navigate(href);
@@ -172,8 +183,8 @@ async function collectAllPages<T>(loader: (page: number) => Promise<Paginated<T>
   };
 }
 
-function cachedTeamsKey(program: string, region: string, registered: string) {
-  return JSON.stringify({ program, region, registered });
+function cachedTeamsKey(program: string, registered: string) {
+  return JSON.stringify({ program, registered });
 }
 
 async function loadCachedTeams(cacheKey: string, query: Parameters<typeof api.teams>[0]) {
@@ -308,6 +319,47 @@ function compareTeamsNatural(a: Team, b: Team) {
   );
 }
 
+function normalizedTeamQuery(query: string) {
+  return query.trim().toUpperCase().replace(/\s+/g, "");
+}
+
+function teamSearchRank(team: Team, query: string) {
+  const needle = normalizedTeamQuery(query);
+  if (!needle) return 0;
+  const teamNumber = normalizedTeamQuery(team.number);
+  const numericNeedle = /^\d+$/.test(needle);
+  const numberParts = teamNumberParts(team.number);
+
+  if (teamNumber === needle) return 0;
+  if (numericNeedle && String(numberParts.numeric) === needle) return 1;
+  if (teamNumber.startsWith(needle)) return 2;
+  if (teamNumber.includes(needle)) return 3;
+
+  const text = [team.team_name, team.organization, team.grade, team.program?.name, team.program?.code, locationLine(team)]
+    .filter(Boolean)
+    .join(" ")
+    .toUpperCase();
+  if (text.includes(needle)) return 4;
+  return 5;
+}
+
+function compareTeamsForSearch(query: string) {
+  return (a: Team, b: Team) => teamSearchRank(a, query) - teamSearchRank(b, query) || compareTeamsNatural(a, b);
+}
+
+function rankTeamsForSearch(teams: Team[], query: string) {
+  return [...teams].sort(compareTeamsForSearch(query));
+}
+
+function uniqueTeams(teams: Team[]) {
+  const seen = new Set<number>();
+  return teams.filter((team) => {
+    if (seen.has(team.id)) return false;
+    seen.add(team.id);
+    return true;
+  });
+}
+
 function gradeCode(grade?: string | null) {
   const value = (grade ?? "").toLowerCase();
   if (value.includes("elementary")) return "ES";
@@ -362,6 +414,23 @@ function eventMatchesRegionOptions(event: Event, options: RegionOption[]) {
   return options.some((option) => eventMatchesRegionOption(event, option));
 }
 
+function teamMatchesRegionOption(team: Team, option: RegionOption) {
+  const country = normalizeText(team.location?.country);
+  const region = normalizeText(team.location?.region);
+
+  if (option.kind === "country") return country === normalizeText(option.countryName);
+  if (option.kind === "subdivision") {
+    const countryMatches = !option.countryName || country === normalizeText(option.countryName);
+    return countryMatches && region === normalizeText(option.regionName);
+  }
+  return region === normalizeText(option.vexLabel);
+}
+
+function teamMatchesRegionOptions(team: Team, options: RegionOption[]) {
+  if (!options.length) return true;
+  return options.some((option) => teamMatchesRegionOption(team, option));
+}
+
 function shortSeasonName(name?: string | null) {
   if (!name) return "Unknown Season";
   return name.split(":").pop()?.trim() || name;
@@ -383,6 +452,25 @@ function sortAwards(awards: Award[]) {
   return [...awards].sort((a, b) => awardPriority(a) - awardPriority(b) || a.title.localeCompare(b.title));
 }
 
+function awardTeamWinners(award: Award) {
+  const value = award.teamWinners as unknown;
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") {
+    return Object.values(value).filter((winner): winner is NonNullable<Award["teamWinners"]>[number] => {
+      return !!winner && typeof winner === "object" && "team" in winner;
+    });
+  }
+  return [];
+}
+
+function awardIndividualWinners(award: Award) {
+  const value = award.individualWinners as unknown;
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") return [value];
+  if (value && typeof value === "object") return Object.values(value).map(String);
+  return [];
+}
+
 function isIqProgram(event?: Event | null) {
   const code = event?.program.code ?? "";
   const name = event?.program.name ?? "";
@@ -390,7 +478,7 @@ function isIqProgram(event?: Event | null) {
 }
 
 function highlightAwards(awards: Award[], event?: Event | null): HighlightAward[] {
-  const hasWinners = (award: Award) => (award.teamWinners?.length ?? 0) > 0 || (award.individualWinners?.length ?? 0) > 0;
+  const hasWinners = (award: Award) => awardTeamWinners(award).length > 0 || awardIndividualWinners(award).length > 0;
   const titleMatches = (pattern: RegExp) => awards.find((award) => pattern.test(award.title) && hasWinners(award));
   const excellence = titleMatches(/excellence award/i);
   const champions = titleMatches(isIqProgram(event) ? /teamwork.*champions?/i : /tournament champions?|event champions?/i);
@@ -460,6 +548,55 @@ function playoffRoundLabel(key: string) {
   if (key === "sf") return "Semifinals (SF)";
   if (key === "f") return "Finals (F)";
   return "Playoffs";
+}
+
+function matchRoundOrder(match: Match) {
+  if (/practice/i.test(match.name)) return 0;
+  if (/qual/i.test(match.name) || match.round === 2) return 1;
+  const key = playoffRoundKey(match);
+  if (key === "r16") return 2;
+  if (key === "qf") return 3;
+  if (key === "sf") return 4;
+  if (key === "f") return 5;
+  return 6 + Math.max(0, match.round ?? 0);
+}
+
+function compareMatchesDisplay(a: Match, b: Match, preferredDivisionId?: number | null) {
+  const aPreferred = preferredDivisionId && a.division?.id === preferredDivisionId ? 0 : 1;
+  const bPreferred = preferredDivisionId && b.division?.id === preferredDivisionId ? 0 : 1;
+  return (
+    aPreferred - bPreferred ||
+    matchRoundOrder(a) - matchRoundOrder(b) ||
+    (a.instance ?? 0) - (b.instance ?? 0) ||
+    a.matchnum - b.matchnum ||
+    (a.division?.name ?? "").localeCompare(b.division?.name ?? "") ||
+    a.name.localeCompare(b.name)
+  );
+}
+
+function matchTimestampMs(match: Match) {
+  const value = match.scheduled ?? match.started;
+  return value ? new Date(value).getTime() || 0 : 0;
+}
+
+function uniqueMatches(matches: Match[]) {
+  const seen = new Set<number>();
+  return matches.filter((match) => {
+    if (seen.has(match.id)) return false;
+    seen.add(match.id);
+    return true;
+  });
+}
+
+function preferredTeamDivisionId(matches: Match[], teamId: number) {
+  const divisionCounts = new Map<number, number>();
+  matches
+    .filter((match) => match.round === 2 || /qual/i.test(match.name))
+    .forEach((match) => {
+      if (!match.alliances.some((alliance) => isTeamInAlliance(alliance, teamId))) return;
+      divisionCounts.set(match.division.id, (divisionCounts.get(match.division.id) ?? 0) + 1);
+    });
+  return [...divisionCounts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] ?? null;
 }
 
 const r16SeedPairs = [
@@ -592,24 +729,6 @@ function Status({ loading, error }: { loading: boolean; error: string | null }) 
   if (loading) return <div className="notice">Loading competition data...</div>;
   if (error) return <div className="notice error">API error: {error}</div>;
   return null;
-}
-
-function Pager({ meta, onPage }: { meta?: PageMeta; onPage: (page: number) => void }) {
-  if (!meta) return null;
-
-  return (
-    <div className="pager">
-      <button disabled={meta.current_page <= 1} onClick={() => onPage(meta.current_page - 1)} aria-label="Previous page">
-        <ChevronLeft size={16} />
-      </button>
-      <span>
-        Page {meta.current_page.toLocaleString()} of {meta.last_page.toLocaleString()} · {meta.total.toLocaleString()} total
-      </span>
-      <button disabled={meta.current_page >= meta.last_page} onClick={() => onPage(meta.current_page + 1)} aria-label="Next page">
-        <ChevronRight size={16} />
-      </button>
-    </div>
-  );
 }
 
 function LocalPager({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (page: number) => void }) {
@@ -956,7 +1075,7 @@ function EventsPage() {
 
     return [...countryItems, ...subdivisionItems, ...vexItems.values()].sort((a, b) => a.label.localeCompare(b.label));
   }, [countryOptions, countryRegions.data, countryById, data]);
-  const selectedRegionOptions = regionOptions.filter((option) => selectedRegionKeys.includes(option.key));
+  const selectedRegionOptions = useMemo(() => regionOptions.filter((option) => selectedRegionKeys.includes(option.key)), [regionOptions, selectedRegionKeys]);
   const regionButtonLabel =
     selectedRegionOptions.length === 0
       ? "All regions"
@@ -1031,7 +1150,10 @@ function EventsPage() {
   useEffect(() => {
     if (selectedRegionKeys.length && regionOptions.length) {
       const availableKeys = new Set(regionOptions.map((option) => option.key));
-      setSelectedRegionKeys((keys) => keys.filter((key) => availableKeys.has(key)));
+      setSelectedRegionKeys((keys) => {
+        const nextKeys = keys.filter((key) => availableKeys.has(key));
+        return nextKeys.length === keys.length ? keys : nextKeys;
+      });
     }
   }, [selectedRegionKeys, regionOptions]);
 
@@ -1411,25 +1533,37 @@ function EventTable({
 function TeamsPage() {
   const params = new URLSearchParams(window.location.search);
   const [search, setSearch] = useState(params.get("search") ?? "");
-  const debouncedSearch = useDebouncedValue(search.trim(), 250);
+  const [submittedSearch, setSubmittedSearch] = useState(params.get("search") ?? "");
+  const debouncedQuickSearch = useDebouncedValue(search.trim(), 220);
   const [program, setProgram] = useState("1");
-  const [region, setRegion] = useState("");
+  const [selectedRegionKeys, setSelectedRegionKeys] = useState<string[]>([]);
+  const [regionMenuOpen, setRegionMenuOpen] = useState(false);
+  const [regionTab, setRegionTab] = useState<RegionOptionKind>("country");
+  const [regionSearch, setRegionSearch] = useState("");
   const [registered, setRegistered] = useState("true");
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Paginated<Team> | null>(null);
+  const [quickData, setQuickData] = useState<Team[]>([]);
+  const [quickLoading, setQuickLoading] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cacheKey = cachedTeamsKey(program, region, registered);
-  const isSearchingTeams = !!debouncedSearch;
+  const cacheKey = cachedTeamsKey(program, registered);
+  const committedSearch = submittedSearch.trim();
+  const isSearchingTeams = !!committedSearch;
+  const countries = useAsync(() => api.robotEventsCountries(), []);
+  const countryRegions = useAsync(() => api.robotEventsRegions(), []);
+  const baseQuery = useMemo(
+    () => ({
+      "program[]": program ? [program] : undefined,
+      registered: registered === "" ? undefined : registered,
+    }),
+    [program, registered],
+  );
 
   useEffect(() => {
     let live = true;
-    const baseQuery = {
-      "program[]": program ? [program] : undefined,
-      "country[]": region,
-      registered: registered === "" ? undefined : registered,
-    };
 
     const loadTeams = async ({ background = false } = {}) => {
       setError(null);
@@ -1438,18 +1572,20 @@ function TeamsPage() {
 
       try {
         const result = isSearchingTeams
-          ? await api.teams({
-              ...baseQuery,
-              teamSearch: debouncedSearch,
-              page,
-              per_page: 50,
-            })
+          ? await collectAllPages<Team>((page) =>
+              api.teams({
+                ...baseQuery,
+                teamSearch: committedSearch,
+                page,
+                per_page: 250,
+              }),
+            )
           : await loadCachedTeams(cacheKey, {
               ...baseQuery,
               per_page: 250,
             });
 
-        if (live) setData(isSearchingTeams ? { ...result, data: [...result.data].sort(compareTeamsNatural) } : result);
+        if (live) setData(isSearchingTeams ? { ...result, data: rankTeamsForSearch(result.data, committedSearch) } : result);
       } catch (err) {
         if (live) setError((err as Error).message);
       } finally {
@@ -1485,15 +1621,173 @@ function TeamsPage() {
       live = false;
       window.clearInterval(interval);
     };
-  }, [cacheKey, debouncedSearch, isSearchingTeams, page, program, region, registered]);
+  }, [baseQuery, cacheKey, committedSearch, isSearchingTeams, page]);
 
-  const sortedTeams = useMemo(() => [...(data?.data ?? [])].sort(compareTeamsNatural), [data]);
+  const cachedTeams = teamListCache.get(cacheKey)?.data?.data;
+  const quickSourceTeams = cachedTeams ?? (!isSearchingTeams ? data?.data : []) ?? [];
+  const countryOptions = useMemo(() => dedupeCountryGroups(countries.data ?? []), [countries.data]);
+  const countryById = useMemo(() => new Map(countryOptions.map((country) => [country.value, country])), [countryOptions]);
+  const regionOptions = useMemo<RegionOption[]>(() => {
+    const countryItems = countryOptions.map((country) => ({
+      key: optionKey("country", country.value),
+      kind: "country" as const,
+      label: country.label,
+      badge: "Country",
+      countryId: country.value,
+      countryName: country.label,
+    }));
+    const subdivisionItems = (countryRegions.data ?? []).map((region) => {
+      const country = countryById.get(region.country_id);
+      return {
+        key: optionKey("subdivision", region.id),
+        kind: "subdivision" as const,
+        label: country ? `${region.name}, ${country.label}` : region.name,
+        badge: country?.country_id === "US" ? "State" : "State / Province",
+        countryId: region.country_id,
+        countryName: country?.label,
+        regionName: region.name,
+      };
+    });
+    const teamRegionItems = new Map<string, RegionOption>();
+    (data?.data ?? cachedTeams ?? []).forEach((team) => {
+      const label = team.location?.region?.trim();
+      if (!label) return;
+      const key = optionKey("vex-region", label);
+      if (!teamRegionItems.has(key)) {
+        teamRegionItems.set(key, {
+          key,
+          kind: "vex-region",
+          label,
+          badge: "Region",
+          vexLabel: label,
+        });
+      }
+    });
+
+    return [...countryItems, ...subdivisionItems, ...teamRegionItems.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [cachedTeams, countryOptions, countryRegions.data, countryById, data]);
+  const selectedRegionOptions = regionOptions.filter((option) => selectedRegionKeys.includes(option.key));
+  const regionButtonLabel =
+    selectedRegionOptions.length === 0
+      ? "All regions"
+      : selectedRegionOptions.length === 1
+        ? selectedRegionOptions[0].label
+        : `${selectedRegionOptions.length} regions`;
+  const visibleRegionOptions = regionOptions.filter((option) => {
+    if (option.kind !== regionTab) return false;
+    const needle = regionSearch.trim().toLowerCase();
+    if (!needle) return true;
+    return [option.label, option.badge, option.countryName, option.regionName, option.vexLabel].filter(Boolean).join(" ").toLowerCase().includes(needle);
+  });
+  const toggleRegion = (key: string) => {
+    setSelectedRegionKeys((keys) => (keys.includes(key) ? keys.filter((item) => item !== key) : [...keys, key]));
+    setPage(1);
+  };
+  const clearRegions = () => {
+    setSelectedRegionKeys([]);
+    setPage(1);
+  };
+
+  const localQuickResults = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return [];
+    return rankTeamsForSearch(
+      quickSourceTeams.filter((team) => {
+        if (!teamMatchesRegionOptions(team, selectedRegionOptions)) return false;
+        const haystack = [team.number, team.team_name, team.organization, team.grade, team.registered ? "registered" : "inactive", locationLine(team)]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(needle);
+      }),
+      search,
+    )
+      .slice(0, 5);
+  }, [quickSourceTeams, search, selectedRegionOptions]);
+
+  const quickResults = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return [];
+    return rankTeamsForSearch(
+      uniqueTeams([...localQuickResults, ...quickData]).filter((team) => {
+        if (!teamMatchesRegionOptions(team, selectedRegionOptions)) return false;
+        const haystack = [team.number, team.team_name, team.organization, team.grade, team.registered ? "registered" : "inactive", locationLine(team)]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(needle);
+      }),
+      search,
+    ).slice(0, 5);
+  }, [localQuickResults, quickData, search, selectedRegionOptions]);
+
+  const sortedTeams = useMemo(() => [...(data?.data ?? [])].sort(isSearchingTeams ? compareTeamsForSearch(committedSearch) : compareTeamsNatural), [committedSearch, data, isSearchingTeams]);
+
+  const tableTeams = useMemo(
+    () => (isSearchingTeams ? sortedTeams : data?.data ?? []).filter((team) => teamMatchesRegionOptions(team, selectedRegionOptions)),
+    [data, isSearchingTeams, selectedRegionOptions, sortedTeams],
+  );
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, program, region, registered]);
+  }, [submittedSearch, program, selectedRegionKeys, registered]);
 
-  const tableTeams = isSearchingTeams ? sortedTeams : data?.data ?? [];
+  useEffect(() => {
+    if (selectedRegionKeys.length && regionOptions.length) {
+      const availableKeys = new Set(regionOptions.map((option) => option.key));
+      setSelectedRegionKeys((keys) => keys.filter((key) => availableKeys.has(key)));
+    }
+  }, [selectedRegionKeys, regionOptions]);
+
+  useEffect(() => {
+    if (!search.trim()) setQuickData([]);
+  }, [search]);
+
+  useEffect(() => {
+    let live = true;
+    const needle = debouncedQuickSearch.trim();
+    if (!needle) {
+      setQuickData([]);
+      setQuickLoading(false);
+      return () => {
+        live = false;
+      };
+    }
+
+    setQuickLoading(true);
+    api
+      .teams({
+        ...baseQuery,
+        teamSearch: needle,
+        page: 1,
+        per_page: 50,
+      })
+      .then((result) => {
+        if (live) setQuickData(rankTeamsForSearch(result.data, needle));
+      })
+      .catch(() => {
+        if (live) setQuickData([]);
+      })
+      .finally(() => {
+        if (live) setQuickLoading(false);
+      });
+
+    return () => {
+      live = false;
+    };
+  }, [baseQuery, debouncedQuickSearch]);
+
+  const submitSearch = () => {
+    const nextSearch = search.trim();
+    setSubmittedSearch(nextSearch);
+    setPage(1);
+    setQuickOpen(false);
+    const nextParams = new URLSearchParams(window.location.search);
+    if (nextSearch) nextParams.set("search", nextSearch);
+    else nextParams.delete("search");
+    const nextUrl = `${window.location.pathname}${nextParams.toString() ? `?${nextParams.toString()}` : ""}`;
+    window.history.replaceState(null, "", nextUrl);
+  };
 
   return (
     <section className="page">
@@ -1502,19 +1796,64 @@ function TeamsPage() {
         search={search}
         setSearch={(value) => {
           setSearch(value);
-          setPage(1);
+          setQuickOpen(!!value.trim());
         }}
+        onSubmit={submitSearch}
+        onFocus={() => setQuickOpen(!!search.trim())}
         program={program}
         setProgram={(value) => {
           setProgram(value);
           setPage(1);
         }}
-        region={region}
-        setRegion={(value) => {
-          setRegion(value);
-          setPage(1);
-        }}
         placeholder="Search team number, name, or region"
+        quickResults={quickResults}
+        quickLoading={quickLoading}
+        quickOpen={quickOpen}
+        onPickTeam={(team) => {
+          setSearch(team.number);
+          setSubmittedSearch(team.number);
+          setPage(1);
+          setQuickOpen(false);
+          window.history.replaceState(null, "", `${window.location.pathname}?search=${encodeURIComponent(team.number)}`);
+        }}
+        regionControl={
+          <div className="team-region-filter picker-menu">
+            <button type="button" onClick={() => setRegionMenuOpen((open) => !open)} aria-expanded={regionMenuOpen}>
+              {regionButtonLabel}
+            </button>
+            {regionMenuOpen && (
+              <div className="picker-menu-list region-menu-list team-region-menu-list">
+                <div className="picker-tabs">
+                  <button type="button" className={regionTab === "country" ? "active" : ""} onClick={() => setRegionTab("country")}>
+                    Countries
+                  </button>
+                  <button type="button" className={regionTab === "subdivision" ? "active" : ""} onClick={() => setRegionTab("subdivision")}>
+                    State / Province
+                  </button>
+                  <button type="button" className={regionTab === "vex-region" ? "active" : ""} onClick={() => setRegionTab("vex-region")}>
+                    Region
+                  </button>
+                </div>
+                <input className="picker-search" value={regionSearch} onChange={(event) => setRegionSearch(event.target.value)} placeholder="Search regions" />
+                <div className="picker-menu-actions">
+                  <button type="button" onClick={clearRegions}>
+                    Clear
+                  </button>
+                </div>
+                <div className="region-option-list">
+                  {visibleRegionOptions.map((option) => (
+                    <label key={option.key}>
+                      <input type="checkbox" checked={selectedRegionKeys.includes(option.key)} onChange={() => toggleRegion(option.key)} />
+                      <span>{option.label}</span>
+                      <small>{option.badge}</small>
+                    </label>
+                  ))}
+                </div>
+                {!visibleRegionOptions.length && <div className="picker-menu-empty">No matches.</div>}
+              </div>
+            )}
+          </div>
+        }
       >
         <select
           value={registered}
@@ -1531,8 +1870,7 @@ function TeamsPage() {
       <Panel title="Team List" icon={<Users />}>
         <Status loading={loading} error={error} />
         {refreshing && !loading && <div className="notice subtle">Updating cached teams...</div>}
-        <TeamTable teams={tableTeams} loading={loading} localPageSize={isSearchingTeams ? undefined : 50} />
-        {isSearchingTeams ? <Pager meta={data?.meta} onPage={setPage} /> : null}
+        <TeamTable teams={tableTeams} loading={loading} localPageSize={50} />
       </Panel>
     </section>
   );
@@ -1634,7 +1972,19 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
 
 function TeamRowMatchesPreview({ teamId, eventId }: { teamId: number; eventId?: number }) {
   const { data, loading, error } = useAsync(
-    () => api.teamMatches(teamId, { "event[]": eventId ? [eventId] : undefined, per_page: eventId ? 250 : 6, page: 1 }),
+    async () => {
+      if (eventId) return api.teamMatches(teamId, { "event[]": [eventId], per_page: 250, page: 1 });
+
+      const firstPage = await api.teamMatches(teamId, { per_page: 50, page: 1 });
+      const lastPage = firstPage.meta.last_page;
+      const pages = [lastPage - 1, lastPage].filter((page, index, allPages) => page > 1 && allPages.indexOf(page) === index);
+      const recentPages = pages.length ? await Promise.all(pages.map((page) => api.teamMatches(teamId, { per_page: 50, page }))) : [];
+      const matches = uniqueMatches([firstPage, ...recentPages].flatMap((page) => page.data))
+        .sort((a, b) => matchTimestampMs(b) - matchTimestampMs(a) || compareMatchesDisplay(b, a))
+        .slice(0, 6);
+
+      return { ...firstPage, data: matches };
+    },
     [teamId, eventId],
   );
   const matches = data?.data ?? [];
@@ -1678,28 +2028,80 @@ function TeamRowMatchesPreview({ teamId, eventId }: { teamId: number; eventId?: 
 function SearchFilters({
   search,
   setSearch,
+  onSubmit,
+  onFocus,
   program,
   setProgram,
-  region,
-  setRegion,
   placeholder,
+  quickResults,
+  quickLoading,
+  quickOpen,
+  onPickTeam,
+  regionControl,
   children,
 }: {
   search: string;
   setSearch: (value: string) => void;
+  onSubmit: () => void;
+  onFocus: () => void;
   program: string;
   setProgram: (value: string) => void;
-  region: string;
-  setRegion: (value: string) => void;
   placeholder: string;
+  quickResults: Team[];
+  quickLoading: boolean;
+  quickOpen: boolean;
+  onPickTeam: (team: Team) => void;
+  regionControl: ReactNode;
   children?: ReactNode;
 }) {
   return (
-    <div className="filters">
-      <label>
-        <Search size={16} />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={placeholder} />
-      </label>
+    <form
+      className="filters team-filters"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className="team-search-wrap">
+        <label>
+          <Search size={16} />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onFocus={onFocus}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                onSubmit();
+                return;
+              }
+              if (event.key === "Escape") {
+                event.currentTarget.blur();
+              }
+            }}
+            placeholder={placeholder}
+          />
+        </label>
+        <button type="submit" className="team-search-submit" aria-label="Search teams">
+          <Search size={16} />
+        </button>
+        {quickOpen && !!search.trim() && (
+          <div className="team-quick-results">
+            {quickLoading && <div className="team-quick-empty">Searching...</div>}
+            {!quickLoading &&
+              quickResults.map((team) => (
+                <button type="button" key={team.id} onMouseDown={(event) => event.preventDefault()} onClick={() => onPickTeam(team)}>
+                  <span>
+                    <strong>{team.number}</strong>
+                    {team.team_name && <span> - {team.team_name}</span>}
+                  </span>
+                  <small>{[team.program?.name, team.grade, locationLine(team)].filter(Boolean).join(" · ")}</small>
+                </button>
+              ))}
+            {!quickLoading && !quickResults.length && <div className="team-quick-empty">No quick matches.</div>}
+          </div>
+        )}
+      </div>
       <select value={program} onChange={(event) => setProgram(event.target.value)}>
         {programOptions.map((option) => (
           <option key={option.value || "all"} value={option.value}>
@@ -1707,9 +2109,9 @@ function SearchFilters({
           </option>
         ))}
       </select>
-      <input value={region} onChange={(event) => setRegion(event.target.value)} placeholder="Region or country" />
+      {regionControl}
       {children}
-    </div>
+    </form>
   );
 }
 
@@ -1879,6 +2281,7 @@ function TeamDetail({ id }: { id: string }) {
   const [tab, setTab] = useState("events");
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const [dateDirection, setDateDirection] = useState<DateDirection>("asc");
+  const [focusedEventId, setFocusedEventId] = useState<number | null>(null);
   const [matchesBySeason, setMatchesBySeason] = useState<Record<number, AsyncBucket<Match>>>({});
   const [rankingsBySeason, setRankingsBySeason] = useState<Record<number, AsyncBucket<Ranking>>>({});
   const [skillsBySeason, setSkillsBySeason] = useState<Record<number, AsyncBucket<Skill>>>({});
@@ -2060,7 +2463,10 @@ function TeamDetail({ id }: { id: string }) {
 
       <Tabs
         active={tab}
-        onChange={setTab}
+        onChange={(nextTab) => {
+          if (nextTab === "matches") setFocusedEventId(null);
+          setTab(nextTab);
+        }}
         tabs={[
           ["events", `Events ${seasonEvents.length || ""}`, <CalendarDays size={15} />],
           ["matches", "Matches", <Gamepad2 size={15} />],
@@ -2082,7 +2488,22 @@ function TeamDetail({ id }: { id: string }) {
           Showing {selectedSeason.label} only. Change season to review another year.
         </div>
       )}
-      {!activeStatus.loading && tab === "events" && <EventTable events={seasonEvents} loading={events.loading} />}
+      {!activeStatus.loading && tab === "events" && (
+        <TeamEventTable
+          events={seasonEvents}
+          loading={events.loading}
+          matches={selectedMatches.data}
+          rankings={selectedRankings.data}
+          skills={selectedSkills.data}
+          awards={selectedAwards.data}
+          focusTeamId={team.id}
+          detailsLoading={selectedMatches.loading || selectedRankings.loading || selectedSkills.loading || selectedAwards.loading}
+          onViewMatches={(eventId) => {
+            setFocusedEventId(eventId);
+            setTab("matches");
+          }}
+        />
+      )}
       {!activeStatus.loading && tab === "matches" && (
         <TeamMatchesByEvent
           matches={selectedMatches.data}
@@ -2090,6 +2511,7 @@ function TeamDetail({ id }: { id: string }) {
           seasonId={selectedSeasonId}
           focusTeamId={team.id}
           direction={dateDirection}
+          focusedEventId={focusedEventId}
         />
       )}
       {!activeStatus.loading && tab === "rankings" && (
@@ -2158,26 +2580,481 @@ function EventGroupTitle({ eventRef, event, count }: { eventRef: { id: number; n
   );
 }
 
+const qfSeedPairs = [
+  [1, 8],
+  [4, 5],
+  [2, 7],
+  [3, 6],
+];
+
+function isTeamInAlliance(alliance: Alliance | undefined, teamId: number) {
+  return !!alliance?.teams.some((entry) => entry.team.id === teamId);
+}
+
+function teamAllianceColor(match: Match, teamId: number) {
+  return match.alliances.find((alliance) => isTeamInAlliance(alliance, teamId))?.color;
+}
+
+function teamMatchOutcome(match: Match, teamId: number) {
+  const color = teamAllianceColor(match, teamId);
+  const { winner } = matchWinner(match);
+  if (!color || winner === "-" || winner === "Tie") return null;
+  return winner.toLowerCase() === color.toLowerCase() ? "W" : "L";
+}
+
+function teamNameFromMatch(match: Match, teamId: number) {
+  for (const alliance of match.alliances) {
+    const entry = alliance.teams.find((team) => team.team.id === teamId);
+    if (entry) return entry.team.name;
+  }
+  return "Team";
+}
+
+function ordinal(value: number) {
+  const mod100 = value % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
+  const mod10 = value % 10;
+  if (mod10 === 1) return `${value}st`;
+  if (mod10 === 2) return `${value}nd`;
+  if (mod10 === 3) return `${value}rd`;
+  return `${value}th`;
+}
+
+function divisionFinalWins(matches: Match[], teamId: number) {
+  const byDivision = new Map<number, { division: IdInfo; wins: number; losses: number; teamName: string; finalIds: Set<number> }>();
+
+  matches
+    .filter((match) => playoffRoundKey(match) === "f" && match.alliances.some((alliance) => isTeamInAlliance(alliance, teamId)))
+    .forEach((match) => {
+      const outcome = teamMatchOutcome(match, teamId);
+      if (!outcome) return;
+      const existing = byDivision.get(match.division.id) ?? {
+        division: match.division,
+        wins: 0,
+        losses: 0,
+        teamName: teamNameFromMatch(match, teamId),
+        finalIds: new Set<number>(),
+      };
+      existing.finalIds.add(match.id);
+      if (outcome === "W") existing.wins += 1;
+      if (outcome === "L") existing.losses += 1;
+      byDivision.set(match.division.id, existing);
+    });
+
+  return new Map(
+    [...byDivision.entries()]
+      .filter(([, result]) => result.wins > result.losses)
+      .map(([divisionId, result]) => [divisionId, result]),
+  );
+}
+
+function lastFinalIdsByDivision(matches: Match[]) {
+  const finals = new Map<number, Match[]>();
+  matches
+    .filter((match) => playoffRoundKey(match) === "f")
+    .forEach((match) => finals.set(match.division.id, [...(finals.get(match.division.id) ?? []), match]));
+
+  return new Map(
+    [...finals.entries()].map(([divisionId, divisionFinals]) => [
+      divisionId,
+      [...divisionFinals].sort((a, b) => (b.instance ?? 0) - (a.instance ?? 0) || b.matchnum - a.matchnum)[0]?.id,
+    ]),
+  );
+}
+
+function playoffImportance(match: Match) {
+  const key = playoffRoundKey(match);
+  if (key === "f") return 4;
+  if (key === "sf") return 3;
+  if (key === "qf") return 2;
+  if (key === "r16") return 1;
+  return 0;
+}
+
+function playoffMatchesForTeam(matches: Match[], teamId: number) {
+  const preferredDivisionId = preferredTeamDivisionId(matches, teamId);
+  return matches
+    .filter((match) => playoffImportance(match) > 0 && match.alliances.some((alliance) => isTeamInAlliance(alliance, teamId)))
+    .sort((a, b) => compareMatchesDisplay(a, b, preferredDivisionId));
+}
+
+function inferElimAlliance(matches: Match[], teamId: number) {
+  const bracketGroups: Array<{ key: "r16" | "qf"; seeds: number[][] }> = [
+    { key: "r16", seeds: r16SeedPairs },
+    { key: "qf", seeds: qfSeedPairs },
+  ];
+
+  for (const bracket of bracketGroups) {
+    const bracketMatches = matches
+      .filter((match) => playoffRoundKey(match) === bracket.key)
+      .sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum);
+
+    for (const match of bracketMatches) {
+      const seedPair = bracket.seeds[(match.instance ?? 1) - 1];
+      if (!seedPair) continue;
+      const red = match.alliances.find((alliance) => alliance.color === "red");
+      const blue = match.alliances.find((alliance) => alliance.color === "blue");
+      const alliance = isTeamInAlliance(red, teamId) ? red : isTeamInAlliance(blue, teamId) ? blue : undefined;
+      if (!alliance) continue;
+
+      return {
+        seed: alliance.color === "red" ? seedPair[0] : seedPair[1],
+        teams: alliance.teams.map((entry) => entry.team),
+      };
+    }
+  }
+
+  return null;
+}
+
+function ElimAllianceNotice({ alliance, focusTeamId }: { alliance: { seed: number; teams: IdInfo[] }; focusTeamId: number }) {
+  const viewedTeam = alliance.teams.find((team) => team.id === focusTeamId);
+  const captain = alliance.teams[0];
+  if (!viewedTeam || !captain) return null;
+
+  const seedText = `${ordinal(alliance.seed)} seed`;
+  if (captain.id === focusTeamId) {
+    const pickedTeams = alliance.teams.filter((team) => team.id !== focusTeamId).map((team) => team.name);
+    return (
+      <>
+        <strong>{viewedTeam.name}</strong> picked {pickedTeams.length ? pickedTeams.join(" · ") : "their alliance"} as {seedText}.
+      </>
+    );
+  }
+
+  return (
+    <>
+      {captain.name} picked <strong>{viewedTeam.name}</strong> as {seedText}.
+    </>
+  );
+}
+
+function firstElimAllianceNotice(matches: Match[], teamId: number) {
+  const checkedDivisions = new Set<number>();
+  for (const match of matches.filter((item) => playoffImportance(item) > 0)) {
+    if (checkedDivisions.has(match.division.id)) continue;
+    checkedDivisions.add(match.division.id);
+    const divisionMatches = matches.filter((item) => item.division.id === match.division.id);
+    const alliance = inferElimAlliance(divisionMatches, teamId);
+    if (alliance) return { matchId: match.id, alliance };
+  }
+  return null;
+}
+
+function bestSkillEntries(skills: Skill[]) {
+  const byType = new Map<string, Skill>();
+  skills.forEach((skill) => {
+    const key = skill.type.toLowerCase();
+    const existing = byType.get(key);
+    if (!existing || (skill.score ?? -1) > (existing.score ?? -1)) byType.set(key, skill);
+  });
+  return {
+    driver: byType.get("driver"),
+    programming: byType.get("programming") ?? byType.get("program"),
+  };
+}
+
+function skillSummary(skills: Skill[]) {
+  const { driver, programming } = bestSkillEntries(skills);
+  const ranks = [driver?.rank, programming?.rank].filter((rank): rank is number => rank !== null && rank !== undefined);
+  const combined = (driver?.score ?? 0) + (programming?.score ?? 0);
+  return {
+    rank: ranks.length ? Math.min(...ranks) : null,
+    driver,
+    programming,
+    combined: driver || programming ? combined : null,
+  };
+}
+
+function SkillScoreAttempt({ label, entry }: { label: string; entry?: Skill }) {
+  return (
+    <span className="skill-score-attempt">
+      <strong>{label}</strong> {entry?.score ?? "-"} <strong>Attempts</strong> {entry?.attempts ?? "-"}
+    </span>
+  );
+}
+
+function TeamEventTable({
+  events,
+  loading,
+  matches,
+  rankings,
+  skills,
+  awards,
+  focusTeamId,
+  detailsLoading,
+  onViewMatches,
+}: {
+  events: Event[];
+  loading: boolean;
+  matches: Match[];
+  rankings: Ranking[];
+  skills: Skill[];
+  awards: Award[];
+  focusTeamId: number;
+  detailsLoading: boolean;
+  onViewMatches: (eventId: number) => void;
+}) {
+  const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setExpandedEventId(null);
+  }, [events]);
+
+  return (
+    <table className="team-event-table">
+      <thead>
+        <tr>
+          <th>Event</th>
+          <th>Program</th>
+          <th>Location</th>
+          <th>Dates</th>
+          <th>Level</th>
+        </tr>
+      </thead>
+      {loading ? (
+        <LoadingTable columns={5} />
+      ) : (
+        <tbody>
+          {events.map((event) => {
+            const expanded = expandedEventId === event.id;
+            const eventMatches = matches.filter((match) => match.event.id === event.id);
+            const eventRankings = rankings.filter((ranking) => ranking.event.id === event.id);
+            const eventSkills = skills.filter((skill) => skill.event.id === event.id);
+            const eventAwards = awards.filter((award) => award.event.id === event.id);
+
+            return (
+              <Fragment key={event.id}>
+                <tr className="team-event-row" onClick={() => setExpandedEventId(expanded ? null : event.id)}>
+                  <td>
+                    <Link href={`/event/${event.id}`} onClick={(clickEvent) => clickEvent.stopPropagation()}>
+                      {event.name}
+                    </Link>
+                    <div className="muted">{event.sku}</div>
+                  </td>
+                  <td>
+                    <ProgramBadge program={event.program} />
+                  </td>
+                  <td>{locationLine(event)}</td>
+                  <td>
+                    <span className="date-range">{formatEventDateRange(event.start, event.end)}</span>
+                  </td>
+                  <td>
+                    <span className={`event-priority priority-${eventCategory(event).rank}`}>{eventCategory(event).label}</span>
+                  </td>
+                </tr>
+                {expanded && (
+                  <tr className="team-event-detail-row">
+                    <td colSpan={5}>
+                      <TeamEventDetail
+                        matches={eventMatches}
+                        rankings={eventRankings}
+                        skills={eventSkills}
+                        awards={eventAwards}
+                        focusTeamId={focusTeamId}
+                        loading={detailsLoading}
+                        onViewMatches={() => onViewMatches(event.id)}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+          {!events.length && (
+            <tr>
+              <td colSpan={5}>
+                <Empty />
+              </td>
+            </tr>
+          )}
+        </tbody>
+      )}
+    </table>
+  );
+}
+
+function TeamEventDetail({
+  matches,
+  rankings,
+  skills,
+  awards,
+  focusTeamId,
+  loading,
+  onViewMatches,
+}: {
+  matches: Match[];
+  rankings: Ranking[];
+  skills: Skill[];
+  awards: Award[];
+  focusTeamId: number;
+  loading: boolean;
+  onViewMatches: () => void;
+}) {
+  const ranking = rankings[0];
+  const skillsRow = skillSummary(skills);
+  const elimMatches = playoffMatchesForTeam(matches, focusTeamId);
+  const elimAlliance = inferElimAlliance(matches, focusTeamId);
+
+  return (
+    <div className="team-event-detail">
+      {loading && !matches.length && !rankings.length && !skills.length && !awards.length && <div className="muted">Loading event details...</div>}
+      <div className="team-event-summary-grid">
+        <div className="team-event-awards">
+          <div className="team-event-awards-head">
+            <strong>Awards</strong>
+            {elimAlliance && (
+              <span className="team-elim-seed">
+                Seed {elimAlliance.seed}
+                <span>{elimAlliance.teams.map((team) => team.name).join(" · ")}</span>
+              </span>
+            )}
+          </div>
+          <div className="winner-row">
+            {awards.length ? (
+              sortAwards(awards).map((award) => (
+                <span key={award.id} className="winner-pill">
+                  {award.title.replace(/\s*\([^)]*\)\s*$/, "")}
+                </span>
+              ))
+            ) : (
+              <span className="muted">No awards</span>
+            )}
+          </div>
+        </div>
+        <div className="team-event-metrics">
+          <div className="metric-line">
+            <strong>Ranking</strong>
+            <span>
+              <b>Rank</b> {ranking?.rank ?? "-"}
+            </span>
+            <span>
+              <b>Record</b> {ranking ? `${ranking.wins ?? 0}-${ranking.losses ?? 0}-${ranking.ties ?? 0}` : "-"}
+            </span>
+            <span>
+              <b>WP</b> {ranking?.wp ?? "-"}
+            </span>
+            <span>
+              <b>AP</b> {ranking?.ap ?? "-"}
+            </span>
+            <span>
+              <b>SP</b> {ranking?.sp ?? "-"}
+            </span>
+          </div>
+          <div className="metric-line">
+            <strong>Skills</strong>
+            <span>
+              <b>Rank</b> {skillsRow.rank ?? "-"}
+            </span>
+            <span>
+              Combined <b>{skillsRow.combined ?? "-"}</b>
+            </span>
+            <span>
+              Driver <b>{skillsRow.driver?.score ?? "-"}</b> Attempts <b>{skillsRow.driver?.attempts ?? "-"}</b>
+            </span>
+            <span>
+              Programming <b>{skillsRow.programming?.score ?? "-"}</b> Attempts <b>{skillsRow.programming?.attempts ?? "-"}</b>
+            </span>
+          </div>
+        </div>
+      </div>
+      {elimMatches.length ? (
+        <TeamEventMatchPreview matches={elimMatches.slice(0, 3)} focusTeamId={focusTeamId} onViewMatches={onViewMatches} />
+      ) : (
+        <div className="team-event-no-elims">
+          <span className="muted">No elimination matches for this team at this event.</span>
+          {matches.length > 0 && (
+            <button type="button" className="view-all-matches" onClick={onViewMatches}>
+              View all matches...
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches }: { matches: Match[]; focusTeamId: number; onViewMatches: () => void }) {
+  const divisionWins = divisionFinalWins(matches, focusTeamId);
+  const lastFinalIds = lastFinalIdsByDivision(matches);
+  const elimAllianceNotice = firstElimAllianceNotice(matches, focusTeamId);
+
+  return (
+    <table className="team-event-match-preview">
+      <tbody>
+        {matches.map((match) => {
+          const { red, blue, redScore, blueScore, winner } = matchWinner(match);
+          const outcome = teamMatchOutcome(match, focusTeamId);
+          const divisionWin = lastFinalIds.get(match.division.id) === match.id ? divisionWins.get(match.division.id) : undefined;
+          return (
+            <Fragment key={match.id}>
+              {elimAllianceNotice?.matchId === match.id && (
+                <tr className="elim-alliance-notice-row">
+                  <td colSpan={4}>
+                    <ElimAllianceNotice alliance={elimAllianceNotice.alliance} focusTeamId={focusTeamId} />
+                  </td>
+                </tr>
+              )}
+              <tr>
+                <td className="truncate-cell">
+                  <span className="team-match-name">
+                    {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
+                    <span>{match.name}</span>
+                  </span>
+                </td>
+                <td className={`red-alliance-cell ${winner === "Red" ? "winning-alliance-cell" : ""}`}>
+                  <AllianceTeamLinks teams={red?.teams} focusTeamId={focusTeamId} />
+                </td>
+                <td className={`blue-alliance-cell ${winner === "Blue" ? "winning-alliance-cell" : ""}`}>
+                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} />
+                </td>
+                <td className="score-cell">
+                  <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
+                  <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
+                </td>
+              </tr>
+              {divisionWin && (
+                <tr className="division-win-row">
+                  <td colSpan={4}>{divisionWin.teamName} won {divisionWin.division.name} division!</td>
+                </tr>
+              )}
+            </Fragment>
+          );
+        })}
+        <tr>
+          <td colSpan={4}>
+            <button type="button" className="view-all-matches" onClick={onViewMatches}>
+              View all matches...
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 function TeamMatchesByEvent({
   matches,
   eventIndex,
   seasonId,
   focusTeamId,
   direction,
+  focusedEventId,
 }: {
   matches: Match[];
   eventIndex: Map<number, Event>;
   seasonId: number | null;
   focusTeamId: number;
   direction: DateDirection;
+  focusedEventId?: number | null;
 }) {
   const groups = groupItemsByEvent(matches, eventIndex, seasonId, direction);
 
   return (
     <Panel title="Matches" icon={<Gamepad2 />}>
       <div className="event-groups">
-        {groups.map((group, index) => (
-          <details key={group.eventRef.id} className="event-group" open={index === 0}>
+        {groups.map((group) => (
+          <details key={group.eventRef.id} className="event-group" open={focusedEventId === group.eventRef.id}>
             <summary>
               <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} />
             </summary>
@@ -2191,7 +3068,10 @@ function TeamMatchesByEvent({
 }
 
 function TeamMatchTable({ matches, focusTeamId }: { matches: Match[]; focusTeamId: number }) {
-  const sortedMatches = [...matches].sort((a, b) => a.round - b.round || (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum);
+  const sortedMatches = [...matches].sort((a, b) => compareMatchesDisplay(a, b, preferredTeamDivisionId(matches, focusTeamId)));
+  const divisionWins = divisionFinalWins(sortedMatches, focusTeamId);
+  const lastFinalIds = lastFinalIdsByDivision(sortedMatches);
+  const elimAllianceNotice = firstElimAllianceNotice(sortedMatches, focusTeamId);
 
   return (
     <table>
@@ -2206,24 +3086,43 @@ function TeamMatchTable({ matches, focusTeamId }: { matches: Match[]; focusTeamI
       <tbody>
         {sortedMatches.map((match) => {
           const { red, blue, redScore, blueScore, winner } = matchWinner(match);
+          const outcome = teamMatchOutcome(match, focusTeamId);
+          const divisionWin = lastFinalIds.get(match.division.id) === match.id ? divisionWins.get(match.division.id) : undefined;
 
           return (
-            <tr key={match.id}>
-              <td>
-                {match.name}
-                {match.division?.name && <span className="muted inline-muted">{match.division.name}</span>}
-              </td>
-              <td className={winner === "Red" ? "winner-cell" : ""}>
-                <AllianceTeamLinks teams={red?.teams} focusTeamId={focusTeamId} />
-              </td>
-              <td className={winner === "Blue" ? "winner-cell" : ""}>
-                <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} />
-              </td>
-              <td>
-                <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
-                <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
-              </td>
-            </tr>
+            <Fragment key={match.id}>
+              {elimAllianceNotice?.matchId === match.id && (
+                <tr className="elim-alliance-notice-row">
+                  <td colSpan={4}>
+                    <ElimAllianceNotice alliance={elimAllianceNotice.alliance} focusTeamId={focusTeamId} />
+                  </td>
+                </tr>
+              )}
+              <tr>
+                <td>
+                  <span className="team-match-name">
+                    {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
+                    <span>{match.name}</span>
+                    {match.division?.name && <span className="muted inline-muted">{match.division.name}</span>}
+                  </span>
+                </td>
+                <td className={`red-alliance-cell ${winner === "Red" ? "winning-alliance-cell" : ""}`}>
+                  <AllianceTeamLinks teams={red?.teams} focusTeamId={focusTeamId} />
+                </td>
+                <td className={`blue-alliance-cell ${winner === "Blue" ? "winning-alliance-cell" : ""}`}>
+                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} />
+                </td>
+                <td>
+                  <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
+                  <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
+                </td>
+              </tr>
+              {divisionWin && (
+                <tr className="division-win-row">
+                  <td colSpan={4}>{divisionWin.teamName} won {divisionWin.division.name} division!</td>
+                </tr>
+              )}
+            </Fragment>
           );
         })}
       </tbody>
@@ -2323,14 +3222,15 @@ function TeamSkillsByEvent({
           <tr>
             <th>Event</th>
             <th>Rank</th>
-            <th>Scores</th>
-            <th>Attempts</th>
             <th>Total</th>
+            <th>Driver</th>
+            <th>Programming</th>
           </tr>
         </thead>
         <tbody>
           {groups.map((group) => {
             const entries = group.entries.sort((a, b) => a.type.localeCompare(b.type));
+            const { driver, programming } = bestSkillEntries(entries);
             const rank = entries.reduce<number | null>((best, entry) => {
               if (entry.rank === null || entry.rank === undefined) return best;
               return best === null ? entry.rank : Math.min(best, entry.rank);
@@ -2344,25 +3244,13 @@ function TeamSkillsByEvent({
                   <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
                 </td>
                 <td>{rank ?? "-"}</td>
-                <td>
-                  <span className="skill-parts">
-                    {entries.map((entry) => (
-                      <span key={`${group.eventRef.id}-${entry.type}`}>
-                        <strong className="capitalize">{entry.type}</strong> {entry.score ?? "-"}
-                      </span>
-                    ))}
-                  </span>
-                </td>
-                <td>
-                  <span className="skill-parts">
-                    {entries.map((entry) => (
-                      <span key={`${group.eventRef.id}-${entry.type}-attempts`}>
-                        <strong className="capitalize">{entry.type}</strong> {entry.attempts ?? "-"}
-                      </span>
-                    ))}
-                  </span>
-                </td>
                 <td>{total || "-"}</td>
+                <td>
+                  <SkillScoreAttempt label="Driver" entry={driver} />
+                </td>
+                <td>
+                  <SkillScoreAttempt label="Programming" entry={programming} />
+                </td>
               </tr>
             );
           })}
@@ -2407,7 +3295,7 @@ function TeamAwardsByEvent({
                 <article className="award-item" key={award.id}>
                   <h3>{award.title}</h3>
                   <div className="winner-row">
-                    {(award.teamWinners ?? []).map((winner) => (
+                    {awardTeamWinners(award).map((winner) => (
                       <Link
                         key={`${award.id}-${winner.team.id}`}
                         href={`/team/${winner.team.id}`}
@@ -2416,7 +3304,7 @@ function TeamAwardsByEvent({
                         {winner.team.name}
                       </Link>
                     ))}
-                    {(award.individualWinners ?? []).map((winner) => (
+                    {awardIndividualWinners(award).map((winner) => (
                       <span key={winner} className="winner-pill">
                         {winner}
                       </span>
@@ -2446,10 +3334,10 @@ function EventHighlights({ awards }: { awards: HighlightAward[] }) {
             <div className="event-highlight-body">
               <strong>{highlight.label}</strong>
               <div>
-                {(highlight.award.teamWinners ?? []).map((winner) => (
+                {awardTeamWinners(highlight.award).map((winner) => (
                   <TeamMiniLink key={`${highlight.award.id}-${winner.team.id}`} team={winner.team} />
                 ))}
-                {(highlight.award.individualWinners ?? []).map((winner) => (
+                {awardIndividualWinners(highlight.award).map((winner) => (
                   <span key={winner}>{winner}</span>
                 ))}
               </div>
@@ -2493,7 +3381,7 @@ function MatchesTable({
   const qualificationMatches = matches
     .filter((match) => match.round === 2)
     .sort((a, b) => (qualificationDirection === "asc" ? 1 : -1) * (a.matchnum - b.matchnum));
-  const playoffMatches = matches.filter((match) => match.round >= 3).sort((a, b) => a.round - b.round || a.matchnum - b.matchnum);
+  const playoffMatches = matches.filter((match) => playoffImportance(match) > 0).sort(compareMatchesDisplay);
   const playoffGroups = playoffMatches.reduce<Map<string, Match[]>>((groups, match) => {
     const key = playoffRoundKey(match);
     groups.set(key, [...(groups.get(key) ?? []), match]);
@@ -2528,7 +3416,7 @@ function MatchesTable({
             <section className="playoff-round" key={key}>
               <h3>{playoffRoundLabel(key)}</h3>
               <ResultsMatchTable
-                matches={(playoffGroups.get(key) ?? []).sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum)}
+                matches={(playoffGroups.get(key) ?? []).sort(compareMatchesDisplay)}
                 emptyText="No playoff matches returned."
                 timestampMap={timestampMap}
                 presetSupported={presetSupported}
@@ -2926,14 +3814,15 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
           <tr>
             <th>Rank</th>
             <th>Team</th>
-            <th>Scores</th>
-            <th>Attempts</th>
             <th>Total</th>
+            <th>Driver</th>
+            <th>Programming</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
             const entries = [...row.entries].sort((a, b) => a.type.localeCompare(b.type));
+            const { driver, programming } = bestSkillEntries(entries);
             const total = entries.reduce((sum, entry) => sum + (entry.score ?? 0), 0);
 
             return (
@@ -2942,25 +3831,13 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
                 <td>
                   <Link href={`/team/${row.team.id}`}>{row.team.name}</Link>
                 </td>
-                <td>
-                  <span className="skill-parts">
-                    {entries.map((entry) => (
-                      <span key={`${row.team.id}-${entry.type}`}>
-                        <strong className="capitalize">{entry.type}</strong> {entry.score ?? "-"}
-                      </span>
-                    ))}
-                  </span>
-                </td>
-                <td>
-                  <span className="skill-parts">
-                    {entries.map((entry) => (
-                      <span key={`${row.team.id}-${entry.type}-attempts`}>
-                        <strong className="capitalize">{entry.type}</strong> {entry.attempts ?? "-"}
-                      </span>
-                    ))}
-                  </span>
-                </td>
                 <td>{total || "-"}</td>
+                <td>
+                  <SkillScoreAttempt label="Driver" entry={driver} />
+                </td>
+                <td>
+                  <SkillScoreAttempt label="Programming" entry={programming} />
+                </td>
               </tr>
             );
           })}
@@ -2987,12 +3864,12 @@ function AwardsList({ awards }: { awards: Award[] }) {
           <article className="award-item" key={award.id}>
             <h3>{award.title}</h3>
             <div className="winner-row">
-              {(award.teamWinners ?? []).map((winner) => (
+              {awardTeamWinners(award).map((winner) => (
                 <Link key={`${award.id}-${winner.team.id}`} href={`/team/${winner.team.id}`} className="winner-pill">
                   {winner.team.name}
                 </Link>
               ))}
-              {(award.individualWinners ?? []).map((winner) => (
+              {awardIndividualWinners(award).map((winner) => (
                 <span key={winner} className="winner-pill">
                   {winner}
                 </span>
