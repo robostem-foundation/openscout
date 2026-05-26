@@ -21,7 +21,7 @@ import {
   Users,
   Youtube,
 } from "lucide-react";
-import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, KeyboardEvent, MouseEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team } from "./types";
@@ -38,6 +38,7 @@ const today = new Date();
 const oneDay = 24 * 60 * 60 * 1000;
 const vexProgramIds = [1, 4, 41, 57];
 const teamCacheRefreshMs = 30 * 60 * 1000;
+const globalEventSearchCacheMs = 5 * 60 * 1000;
 type EventCategory = "Worlds" | "Signature" | "Championship" | "Other";
 type EventSort = "smart" | "date" | "type" | "name" | "program" | "location";
 type EventWindow = "near" | "upcoming" | "next30" | "next90" | "past30" | "allSeason";
@@ -45,6 +46,7 @@ type EventFilterLayout = "sidebar" | "inline";
 type RegionOptionKind = "country" | "subdivision" | "vex-region";
 type DateDirection = "asc" | "desc";
 type TeamDataKind = "matches" | "rankings" | "skills" | "awards";
+type HomeEventTab = "popular" | "upcoming" | "today" | "signatures" | "near";
 type AsyncBucket<T> = {
   data: T[];
   loading: boolean;
@@ -76,6 +78,7 @@ type TeamCacheEntry = {
 };
 
 const teamListCache = new Map<string, TeamCacheEntry>();
+let globalEventSearchCache: { data?: Event[]; updatedAt: number; promise?: Promise<Event[]> } = { updatedAt: 0 };
 
 function emptyBucket<T>(): AsyncBucket<T> {
   return { data: [], loading: false, error: null };
@@ -165,6 +168,191 @@ function useDebouncedValue<T>(value: T, delay = 250) {
   }, [value, delay]);
 
   return debouncedValue;
+}
+
+async function loadGlobalEventSearchEvents() {
+  const now = Date.now();
+  if (globalEventSearchCache.data && now - globalEventSearchCache.updatedAt < globalEventSearchCacheMs) {
+    return globalEventSearchCache.data;
+  }
+  if (globalEventSearchCache.promise) return globalEventSearchCache.promise;
+
+  const promise = collectAllPages<Event>((page) =>
+    api.events({
+      per_page: 250,
+      page,
+      start: dateOnly(addDays(today, -90)),
+      end: dateOnly(addDays(today, 365)),
+      "program[]": vexProgramIds,
+    }),
+  ).then((result) => {
+    globalEventSearchCache = { data: result.data, updatedAt: Date.now() };
+    return result.data;
+  });
+
+  globalEventSearchCache = { ...globalEventSearchCache, promise };
+
+  try {
+    return await promise;
+  } catch (error) {
+    globalEventSearchCache = { data: globalEventSearchCache.data, updatedAt: globalEventSearchCache.updatedAt };
+    throw error;
+  }
+}
+
+function GlobalSearch({ className = "" }: { className?: string }) {
+  const [query, setQuery] = useState("");
+  const debounced = useDebouncedValue(query.trim(), 220);
+  const [open, setOpen] = useState(false);
+
+  // Teams results
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(false);
+
+  // Events results
+  const [events, setEvents] = useState<Event[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Fire both searches independently when debounced query changes
+  useEffect(() => {
+    if (!debounced) {
+      setTeams([]);
+      setEvents([]);
+      setTeamsLoading(false);
+      setEventsLoading(false);
+      return;
+    }
+
+    let live = true;
+
+    setTeamsLoading(true);
+    Promise.all([
+      api.teams({ teamSearch: debounced, per_page: 50 }),
+      /^\d+[a-z]?$/i.test(debounced) ? api.robotEventsTeams({ number: debounced, "program[]": vexProgramIds, per_page: 20 }) : Promise.resolve(null),
+    ])
+      .then(([rseTeams, exactTeams]) => {
+        if (!live) return;
+        setTeams(rankTeamsForSearch(uniqueTeams([...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 5));
+      })
+      .catch(() => { if (live) setTeams([]); })
+      .finally(() => { if (live) setTeamsLoading(false); });
+
+    setEventsLoading(true);
+    loadGlobalEventSearchEvents()
+      .then((searchEvents) => {
+        if (!live) return;
+        setEvents(filterAndSortEvents(searchEvents, { search: debounced, hideCanceled: true, sort: "smart" }).slice(0, 5));
+      })
+      .catch(() => { if (live) setEvents([]); })
+      .finally(() => { if (live) setEventsLoading(false); });
+
+    return () => { live = false; };
+  }, [debounced]);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: globalThis.MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const searchTerm = query.trim();
+  const showDropdown = open && !!searchTerm;
+
+  const handleSelect = useCallback((href: string) => {
+    setOpen(false);
+    setQuery("");
+    navigate(href);
+  }, []);
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") setOpen(false);
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (query.trim()) {
+        setOpen(false);
+        navigate(`/events?search=${encodeURIComponent(query.trim())}`);
+      }
+    }
+  };
+
+  return (
+    <div className={`global-search-wrap ${className}`.trim()} ref={wrapRef}>
+      <div className="global-search-input-row">
+        <Search size={16} className="global-search-icon" />
+        <input
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={handleKeyDown}
+          placeholder="Search teams or events..."
+          className="global-search-input"
+        />
+      </div>
+
+      {showDropdown && (
+        <div className="global-search-dropdown">
+          {/* Teams section */}
+          <div className="gs-section-label">Teams</div>
+          {teamsLoading && !teams.length && (
+            <div className="gs-loading">Loading...</div>
+          )}
+          {teams.map((team) => (
+            <button
+              key={team.id}
+              type="button"
+              className="gs-result"
+              onMouseDown={() => handleSelect(`/team/${team.id}`)}
+            >
+              <span className="gs-result-main">{team.number} - {team.team_name ?? "Unnamed Team"}</span>
+              <span className="gs-result-sub">{locationLine(team)}</span>
+            </button>
+          ))}
+          {!teamsLoading && !teams.length && (
+            <div className="gs-empty">No teams found.</div>
+          )}
+          <button
+            type="button"
+            className="gs-find-more"
+            onMouseDown={() => handleSelect(`/teams?search=${encodeURIComponent(searchTerm)}`)}
+          >
+            Find more teams...
+          </button>
+
+          {/* Events section */}
+          <div className="gs-section-label">Events</div>
+          {eventsLoading && !events.length && (
+            <div className="gs-loading">Loading...</div>
+          )}
+          {events.map((event) => (
+            <button
+              key={event.id}
+              type="button"
+              className="gs-result"
+              onMouseDown={() => handleSelect(`/event/${event.id}`)}
+            >
+              <span className="gs-result-main">{event.name}</span>
+              <span className="gs-result-sub">{event.sku} · {locationLine(event)}</span>
+            </button>
+          ))}
+          {!eventsLoading && !events.length && (
+            <div className="gs-empty">No events found.</div>
+          )}
+          <button
+            type="button"
+            className="gs-find-more"
+            onMouseDown={() => handleSelect(`/events?search=${encodeURIComponent(searchTerm)}`)}
+          >
+            Find more events...
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 async function collectAllPages<T>(loader: (page: number) => Promise<Paginated<T>>) {
@@ -826,6 +1014,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
               </Link>
             ))}
           </nav>
+          <GlobalSearch className="topbar-search" />
         </div>
       </header>
       <main>{children}</main>
@@ -841,8 +1030,44 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
   );
 }
 
+const skillsLeaderboards = [
+  {
+    label: "VEX V5 High School Skills",
+    url: "https://events.vex.com/robot-competitions/vex-robotics-competition/standings/skills?grade_level=High%20School",
+    className: "v5 high",
+  },
+  {
+    label: "VEX V5 Middle School Skills",
+    url: "https://events.vex.com/robot-competitions/vex-robotics-competition/standings/skills?grade_level=Middle%20School",
+    className: "v5 middle",
+  },
+  {
+    label: "VEX IQ Middle School Skills",
+    url: "https://events.vex.com/robot-competitions/vex-iq-competition/standings/skills?grade_level=Middle%20School",
+    className: "iq middle",
+  },
+  {
+    label: "VEX IQ Elementary School Skills",
+    url: "https://events.vex.com/robot-competitions/vex-iq-competition/standings/skills?grade_level=Elementary",
+    className: "iq elementary",
+  },
+  {
+    label: "VEX U Skills",
+    url: "https://events.vex.com/robot-competitions/college-competition/standings/skills",
+    className: "vexu",
+  },
+];
+
+const homeEventTabs: Array<{ label: string; value: HomeEventTab }> = [
+  { label: "Popular", value: "popular" },
+  { label: "Upcoming", value: "upcoming" },
+  { label: "Today's Events", value: "today" },
+  { label: "Signatures", value: "signatures" },
+  { label: "Near Today", value: "near" },
+];
+
 function Home() {
-  const [search, setSearch] = useState("");
+  const [homeEventTab, setHomeEventTab] = useState<HomeEventTab>("upcoming");
   const { data: events, loading: eventsLoading, error: eventsError } = useAsync(
     () =>
       api.events({
@@ -853,81 +1078,89 @@ function Home() {
       }),
     [],
   );
-  const { data: rankings, loading: rankingsLoading } = useAsync(() => api.superscore("v5rc", { per_page: 8 }), []);
-  const homeEvents = useMemo(
-    () => filterAndSortEvents(events?.data ?? [], { hideCanceled: true, sort: "smart" }).slice(0, 60),
+  const baseHomeEvents = useMemo(
+    () => filterAndSortEvents(events?.data ?? [], { hideCanceled: true, sort: "smart" }),
     [events],
   );
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    const q = search.trim();
-    if (!q) return;
-    if (/^\d+[a-z]?$/i.test(q)) {
-      navigate(`/teams?search=${encodeURIComponent(q)}`);
-      return;
+  const homeEvents = useMemo(() => {
+    if (homeEventTab === "popular") return [];
+    if (homeEventTab === "today") {
+      return baseHomeEvents
+        .filter((event) => {
+          const start = new Date(event.start ?? 0).getTime();
+          const end = new Date(event.end ?? event.start ?? 0).getTime();
+          const now = today.getTime();
+          return start <= now && now <= end + oneDay;
+        })
+        .slice(0, 60);
     }
-    navigate(`/events?search=${encodeURIComponent(q)}`);
-  }
+    if (homeEventTab === "signatures") {
+      return baseHomeEvents.filter((event) => eventCategory(event).label === "Signature").sort((a, b) => compareEvents(a, b, "date")).slice(0, 60);
+    }
+    if (homeEventTab === "near") return baseHomeEvents.slice(0, 60);
+    return baseHomeEvents
+      .filter((event) => new Date(event.start ?? 0).getTime() >= today.getTime())
+      .sort((a, b) => compareEvents(a, b, "date"))
+      .slice(0, 60);
+  }, [baseHomeEvents, homeEventTab]);
 
   return (
     <section className="page">
-      <div className="beta-link">
-        <a href="https://robostem-api.org/" target="_blank" rel="noreferrer">
-          RoboStem DB API
-        </a>
-      </div>
-      <div className="hero">
-        <h2>Welcome to The VEX Alliance's coverage of VEX Robotics Competition data!</h2>
-        <h4>Match results, rankings, skills, awards, and team histories powered by RoboStem DB.</h4>
-        <form className="global-search" onSubmit={submit}>
-          <Search size={16} />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search a team number, event, city, or SKU" />
-          <button>Search</button>
-        </form>
-        <div className="home-actions">
-          <Link href="/events" className="button-link">
-            Events
-          </Link>
-          <Link href="/teams" className="button-link secondary">
-            Teams
-          </Link>
-        </div>
-      </div>
+      <div className="home-dashboard">
+        <aside className="home-sidebar">
+          <Panel title="Skills Leaderboards" icon={<Trophy />}>
+            <div className="skills-leaderboard-list">
+              {skillsLeaderboards.map((lb) => (
+                <a
+                  key={lb.url}
+                  href={lb.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`skills-lb-btn ${lb.className}`}
+                >
+                  <span>{lb.label}</span>
+                  <ExternalLink size={13} />
+                </a>
+              ))}
+            </div>
+          </Panel>
 
-      <div className="home-grid">
-        <Panel title={`VEX Robotics Competition Events ${homeEvents.length || ""}`} icon={<CalendarDays />}>
+          <Panel title="Search" icon={<Search />}>
+            <div className="home-search-panel">
+              <GlobalSearch className="home-global-search" />
+              <div className="home-actions">
+                <Link href="/events" className="button-link secondary">
+                  <CalendarDays size={15} />
+                  Events
+                </Link>
+                <Link href="/teams" className="button-link secondary">
+                  <Users size={15} />
+                  Teams
+                </Link>
+              </div>
+            </div>
+          </Panel>
+        </aside>
+
+        <Panel
+          title="VEX Robotics Competition Events"
+          icon={<CalendarDays />}
+          action={<Link href="/events">See all events</Link>}
+        >
+          <div className="home-event-tabs">
+            {homeEventTabs.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                className={homeEventTab === tab.value ? "active" : ""}
+                onClick={() => setHomeEventTab(tab.value)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
           <Status loading={eventsLoading} error={eventsError} />
           <EventTable events={homeEvents} loading={eventsLoading} compact showPriority />
-        </Panel>
-        <Panel title="V5RC SuperScore Leaders" icon={<Trophy />}>
-          <table>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Team</th>
-                <th>SuperScore</th>
-                <th>EPA</th>
-              </tr>
-            </thead>
-            {rankingsLoading ? (
-              <LoadingTable columns={4} />
-            ) : (
-              <tbody>
-                {(rankings?.data ?? []).map((row) => (
-                  <tr key={row.team.id}>
-                    <td>{row.rank}</td>
-                    <td>
-                      <Link href={`/team/${row.team.id}`}>{row.team.number}</Link>
-                      <div className="muted">{row.team.name}</div>
-                    </td>
-                    <td>{formatNumber(row.superscore, 2)}</td>
-                    <td>{formatNumber(row.epa?.total, 2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            )}
-          </table>
         </Panel>
       </div>
     </section>
@@ -946,12 +1179,15 @@ function Metric({ icon, label, value }: { icon: ReactNode; label: string; value:
   );
 }
 
-function Panel({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
+function Panel({ title, icon, children, action }: { title: ReactNode; icon: ReactNode; children: ReactNode; action?: ReactNode }) {
   return (
     <section className="panel">
       <h2>
-        {icon}
-        {title}
+        <span className="panel-heading-title">
+          {icon}
+          {title}
+        </span>
+        {action && <span className="panel-heading-action">{action}</span>}
       </h2>
       {children}
     </section>
@@ -986,6 +1222,7 @@ function EventsPage() {
   const [selectedSeasonIds, setSelectedSeasonIds] = useState<number[]>([]);
   const [seasonSelectionTouched, setSeasonSelectionTouched] = useState(false);
   const [seasonMenuOpen, setSeasonMenuOpen] = useState(false);
+  const [lastOpenedMenu, setLastOpenedMenu] = useState<"region" | "season" | null>(null);
   const [hideCanceled, setHideCanceled] = useState(true);
   const [page, setPage] = useState(1);
   const selectedProgramKey = selectedProgramIds.join(",");
@@ -1282,11 +1519,11 @@ function EventsPage() {
         <div className="filter-field">
           <span>Region</span>
           <div className="picker-menu">
-            <button type="button" onClick={() => setRegionMenuOpen((open) => !open)} aria-expanded={regionMenuOpen}>
+            <button type="button" onClick={() => { setRegionMenuOpen((open) => !open); setLastOpenedMenu("region"); }} aria-expanded={regionMenuOpen}>
               {regionButtonLabel}
             </button>
             {regionMenuOpen && (
-              <div className="picker-menu-list region-menu-list">
+              <div className="picker-menu-list region-menu-list" style={{ zIndex: lastOpenedMenu === "region" ? 20 : 10 }}>
                 <div className="picker-tabs">
                   <button type="button" className={regionTab === "country" ? "active" : ""} onClick={() => setRegionTab("country")}>
                     Countries
@@ -1345,12 +1582,12 @@ function EventsPage() {
         </div>
         <div className="filter-field">
           <span>Seasons</span>
-          <div className="picker-menu">
-            <button type="button" onClick={() => setSeasonMenuOpen((open) => !open)} aria-expanded={seasonMenuOpen}>
+          <div className="picker-menu season-picker-menu">
+            <button type="button" onClick={() => { setSeasonMenuOpen((open) => !open); setLastOpenedMenu("season"); }} aria-expanded={seasonMenuOpen}>
               {seasonButtonLabel}
             </button>
             {seasonMenuOpen && (
-              <div className="picker-menu-list">
+              <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "season" ? 20 : 10 }}>
                 <div className="picker-menu-actions">
                   <button type="button" onClick={selectAllSeasons}>
                     All
