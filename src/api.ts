@@ -62,6 +62,7 @@ export const api = {
     robotEventsJson<Paginated<Ranking>>(`events/${id}/divisions/${division}/rankings`, query),
   eventSkills: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Skill>>(`events/${id}/skills`, query),
   eventAwards: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Award>>(`events/${id}/awards`, query),
+  robotEventsTeams: (query: Query = {}) => robotEventsJson<Paginated<Team>>("teams", query),
   teams: (query: Query = {}) => rseJson<Paginated<Team>>("teams", query),
   team: (id: string | number) => robotEventsJson<Team>(`teams/${id}`),
   teamEvents: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Event>>(`teams/${id}/events`, query),
