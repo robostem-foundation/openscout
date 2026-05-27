@@ -3,8 +3,10 @@ import {
   Award as AwardIcon,
   BarChart3,
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   ExternalLink,
   Gamepad2,
   ListFilter,
@@ -13,6 +15,7 @@ import {
   PanelRight,
   Pause,
   Play,
+  RotateCw,
   Search,
   Shield,
   Star,
@@ -37,10 +40,10 @@ const programOptions = [
 const today = new Date();
 const oneDay = 24 * 60 * 60 * 1000;
 const vexProgramIds = [1, 4, 41, 57];
-const teamCacheRefreshMs = 30 * 60 * 1000;
+const teamCacheRefreshMs = 24 * 60 * 60 * 1000;
 const globalEventSearchCacheMs = 5 * 60 * 1000;
 type EventCategory = "Worlds" | "Signature" | "Championship" | "Other";
-type EventSort = "smart" | "date" | "type" | "name" | "program" | "location";
+type EventSort = "smart" | "date" | "type" | "name" | "program" | "location" | "past-season";
 type EventWindow = "near" | "upcoming" | "next30" | "next90" | "past30" | "allSeason";
 type EventFilterLayout = "sidebar" | "inline";
 type RegionOptionKind = "country" | "subdivision" | "vex-region";
@@ -375,13 +378,63 @@ function cachedTeamsKey(program: string, registered: string) {
   return JSON.stringify({ program, registered });
 }
 
-async function loadCachedTeams(cacheKey: string, query: Parameters<typeof api.teams>[0]) {
+// The full team list for one program is large (~6 MB for V5RC), which exceeds
+// the localStorage quota. IndexedDB persists it across reloads so the cached
+// list shows instantly instead of re-fetching every page load.
+const TEAMS_DB_NAME = "vex-teams-cache";
+const TEAMS_STORE = "teams";
+let teamsDbPromise: Promise<IDBDatabase> | null = null;
+
+function openTeamsDb(): Promise<IDBDatabase> {
+  if (teamsDbPromise) return teamsDbPromise;
+  teamsDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(TEAMS_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(TEAMS_STORE)) db.createObjectStore(TEAMS_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return teamsDbPromise;
+}
+
+async function idbGetTeams(key: string): Promise<{ data: Paginated<Team>; updatedAt: number } | undefined> {
+  try {
+    const db = await openTeamsDb();
+    return await new Promise((resolve, reject) => {
+      const request = db.transaction(TEAMS_STORE, "readonly").objectStore(TEAMS_STORE).get(key);
+      request.onsuccess = () => resolve(request.result as { data: Paginated<Team>; updatedAt: number } | undefined);
+      request.onerror = () => reject(request.error);
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+async function idbSetTeams(key: string, entry: { data: Paginated<Team>; updatedAt: number }): Promise<void> {
+  try {
+    const db = await openTeamsDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(TEAMS_STORE, "readwrite");
+      tx.objectStore(TEAMS_STORE).put({ data: entry.data, updatedAt: entry.updatedAt }, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // Storage may be unavailable (private mode / quota) — fall back to in-memory only.
+  }
+}
+
+async function loadCachedTeams(cacheKey: string, query: Parameters<typeof api.teams>[0], force = false) {
   const cached = teamListCache.get(cacheKey);
-  if (cached?.promise) return cached.promise;
+  if (!force && cached?.promise) return cached.promise;
 
   const promise = collectAllPages<Team>((page) => api.teams({ ...query, page })).then((result) => {
     const sortedResult = { ...result, data: [...result.data].sort(compareTeamsNatural) };
-    teamListCache.set(cacheKey, { data: sortedResult, updatedAt: Date.now() });
+    const updatedAt = Date.now();
+    teamListCache.set(cacheKey, { data: sortedResult, updatedAt });
+    void idbSetTeams(cacheKey, { data: sortedResult, updatedAt });
     return sortedResult;
   });
 
@@ -413,6 +466,17 @@ function formatEventDateRange(start?: string | null, end?: string | null) {
 function formatNumber(value?: number | null, digits = 1) {
   if (value === undefined || value === null || Number.isNaN(value)) return "-";
   return value.toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
+function formatRelativeTime(timestamp: number) {
+  const diff = Date.now() - timestamp;
+  if (diff < 60_000) return "just now";
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 function locationLine(eventOrTeam: { location?: Event["location"] | Team["location"] }) {
@@ -468,6 +532,13 @@ function compareEvents(a: Event, b: Event, sort: EventSort) {
   if (sort === "name") return a.name.localeCompare(b.name);
   if (sort === "program") return (a.program.code ?? "").localeCompare(b.program.code ?? "") || a.name.localeCompare(b.name);
   if (sort === "location") return locationLine(a).localeCompare(locationLine(b)) || a.name.localeCompare(b.name);
+  if (sort === "past-season") {
+    return (
+      aCategory.rank - bCategory.rank ||
+      new Date(b.start ?? 0).getTime() - new Date(a.start ?? 0).getTime() ||
+      a.name.localeCompare(b.name)
+    );
+  }
 
   return new Date(a.start ?? 0).getTime() - new Date(b.start ?? 0).getTime() || aCategory.rank - bCategory.rank;
 }
@@ -554,6 +625,14 @@ function gradeCode(grade?: string | null) {
   if (value.includes("middle")) return "MS";
   if (value.includes("high")) return "HS";
   return grade || "-";
+}
+
+function eventGradeCode(event: Event): "HS" | "MS" | "ES" | "All" {
+  const name = event.name ?? "";
+  if (/high\s*school/i.test(name)) return "HS";
+  if (/middle\s*school/i.test(name)) return "MS";
+  if (/elementary/i.test(name)) return "ES";
+  return "All";
 }
 
 function optionKey(kind: RegionOptionKind, id: string | number) {
@@ -659,10 +738,133 @@ function awardIndividualWinners(award: Award) {
   return [];
 }
 
+function isIqProgramInfo(program?: { id?: number; code?: string | null; name?: string | null } | null) {
+  if (!program) return false;
+  if (program.id === 41) return true;
+  return /VIQ|IQ/i.test(`${program.code ?? ""} ${program.name ?? ""}`);
+}
+
 function isIqProgram(event?: Event | null) {
-  const code = event?.program.code ?? "";
-  const name = event?.program.name ?? "";
-  return /VIQ|IQ/i.test(`${code} ${name}`);
+  return isIqProgramInfo(event?.program);
+}
+
+const IQ_FINALS_ROUND = 15;
+
+function isIqFinalsMatch(match: Match) {
+  return match.round === IQ_FINALS_ROUND;
+}
+
+// In IQ Teamwork, the two partner teams share one score. They normally match;
+// if they differ, the lower/zero side's team was disqualified.
+function iqMatchResult(match: Match): { score: number | null; dqColor: string | null } {
+  const red = match.alliances.find((alliance) => alliance.color === "red");
+  const blue = match.alliances.find((alliance) => alliance.color === "blue");
+  const r = red?.score;
+  const b = blue?.score;
+  if (r === null || r === undefined) {
+    if (b === null || b === undefined) return { score: null, dqColor: null };
+  }
+  const rv = r ?? 0;
+  const bv = b ?? 0;
+  const bothScored = r !== null && r !== undefined && b !== null && b !== undefined;
+  const dqColor = bothScored && rv !== bv ? (rv < bv ? "red" : "blue") : null;
+  return { score: Math.max(rv, bv), dqColor };
+}
+
+function iqDropCount(played: number) {
+  if (played < 4) return 0;
+  if (played < 8) return 1;
+  if (played < 12) return 2;
+  return 3;
+}
+
+// Compute a team's IQ ranking stats from its qualification matches. Avg/High are
+// taken from the API ranking when available; Low (lowest kept) and the dropped
+// scores are derived from the team's own per-match scores using the drop rule.
+function iqTeamQualStats(qualMatches: Match[], teamId: number, ranking?: Ranking | null) {
+  const scores: Array<{ matchnum: number; score: number }> = [];
+  qualMatches
+    .filter((match) => match.round === 2)
+    .forEach((match) => {
+      const alliance = match.alliances.find((entry) => isTeamInAlliance(entry, teamId));
+      if (!alliance || alliance.score === null || alliance.score === undefined) return;
+      scores.push({ matchnum: match.matchnum, score: alliance.score });
+    });
+  const played = scores.length;
+  const sorted = [...scores].sort((a, b) => a.score - b.score || a.matchnum - b.matchnum);
+  const dropCount = Math.min(iqDropCount(played), played);
+  const dropped = sorted.slice(0, dropCount);
+  const kept = sorted.slice(dropCount);
+  const allScores = scores.map((entry) => entry.score);
+  const high = ranking?.high_score ?? (allScores.length ? Math.max(...allScores) : null);
+  const low = kept.length ? Math.min(...kept.map((entry) => entry.score)) : null;
+  const avg =
+    ranking?.average_points ?? (kept.length ? kept.reduce((sum, entry) => sum + entry.score, 0) / kept.length : null);
+  return { played, high, low, avg, dropped };
+}
+
+// IQ alliances are the partner pairs that appear in the finals, seeded by their
+// finals score (descending). Tiebreaker replays of the same pair are de-duped.
+function iqFinalsAlliances(matches: Match[]): Array<[number, string[]]> {
+  const byPair = new Map<string, { teams: string[]; score: number }>();
+  matches
+    .filter((match) => isIqFinalsMatch(match))
+    .forEach((match) => {
+      const red = match.alliances.find((alliance) => alliance.color === "red");
+      const blue = match.alliances.find((alliance) => alliance.color === "blue");
+      const teams = [
+        ...(red?.teams.map((entry) => entry.team.name) ?? []),
+        ...(blue?.teams.map((entry) => entry.team.name) ?? []),
+      ].filter(Boolean);
+      if (!teams.length) return;
+      const score = Math.max(red?.score ?? 0, blue?.score ?? 0);
+      const key = [...teams].sort().join("|");
+      const existing = byPair.get(key);
+      if (!existing || score > existing.score) byPair.set(key, { teams, score });
+    });
+  return [...byPair.values()]
+    .sort((a, b) => b.score - a.score)
+    .map((row, index) => [index + 1, row.teams] as [number, string[]]);
+}
+
+// Label finals matches "Finals 1", "Finals 2"... in order; a repeat of the same
+// pair (a replay) is labeled "Tiebreaker".
+function iqFinalsLabels(matches: Match[]): Map<number, string> {
+  const labels = new Map<number, string>();
+  const seen = new Set<string>();
+  let counter = 0;
+  matches
+    .filter((match) => isIqFinalsMatch(match))
+    .sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum)
+    .forEach((match) => {
+      const teams = match.alliances.flatMap((alliance) => alliance.teams.map((entry) => entry.team.name)).filter(Boolean);
+      const key = [...teams].sort().join("|");
+      if (seen.has(key)) {
+        labels.set(match.id, "Tiebreaker");
+      } else {
+        seen.add(key);
+        counter += 1;
+        labels.set(match.id, `Finals ${counter}`);
+      }
+    });
+  return labels;
+}
+
+// For a team's IQ event: its finals partner pair (red team first) and seed.
+function iqTeamFinals(matches: Match[], teamId: number) {
+  const finals = matches
+    .filter((match) => isIqFinalsMatch(match))
+    .sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum);
+  const match = finals.find((entry) => entry.alliances.some((alliance) => isTeamInAlliance(alliance, teamId)));
+  if (!match) return null;
+  const red = match.alliances.find((alliance) => alliance.color === "red");
+  const blue = match.alliances.find((alliance) => alliance.color === "blue");
+  const teams = [...(red?.teams.map((entry) => entry.team) ?? []), ...(blue?.teams.map((entry) => entry.team) ?? [])];
+  if (!teams.length) return null;
+  const key = [...teams.map((team) => team.name)].sort().join("|");
+  const ranked = iqFinalsAlliances(matches);
+  const seedEntry = ranked.find(([, names]) => [...names].sort().join("|") === key);
+  return { seed: seedEntry?.[0] ?? null, teams };
 }
 
 function highlightAwards(awards: Award[], event?: Event | null): HighlightAward[] {
@@ -767,6 +969,21 @@ function matchTimestampMs(match: Match) {
   return value ? new Date(value).getTime() || 0 : 0;
 }
 
+function formatMatchClock(match: Match) {
+  const value = match.scheduled ?? match.started;
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function matchDayKey(match: Match) {
+  const value = match.scheduled ?? match.started;
+  if (!value) return null;
+  const isoDate = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+  return isoDate ? isoDate[1] : null;
+}
+
 function uniqueMatches(matches: Match[]) {
   const seen = new Set<number>();
   return matches.filter((match) => {
@@ -844,10 +1061,12 @@ function filterAndSortEvents(events: Event[], options: {
   seasonIds?: number[];
   hideCanceled?: boolean;
   sort?: EventSort;
+  grades?: string[];
 }) {
   const needle = (options.search ?? "").trim().toLowerCase();
   const seasonIds = options.seasonIds ?? [];
   const programIds = options.programIds ?? [];
+  const grades = options.grades ?? [];
 
   return events
     .filter((event) => {
@@ -879,6 +1098,7 @@ function filterAndSortEvents(events: Event[], options: {
       }
       if (!eventMatchesRegionOptions(event, options.regionOptions ?? [])) return false;
       if (options.hideCanceled && /cancel+ed|canceled/i.test(event.name)) return false;
+      if (grades.length && !grades.includes(eventGradeCode(event))) return false;
       return vexProgramIds.includes(event.program.id);
     })
     .sort((a, b) => compareEvents(a, b, options.sort ?? "smart"));
@@ -953,7 +1173,7 @@ function TeamMiniLink({ team, className }: { team: { id: number; name: string };
   );
 }
 
-function AllianceTeamLinks({ teams, focusTeamId }: { teams?: Match["alliances"][number]["teams"]; focusTeamId?: number }) {
+function AllianceTeamLinks({ teams, focusTeamId, dq }: { teams?: Match["alliances"][number]["teams"]; focusTeamId?: number; dq?: boolean }) {
   if (!teams?.length) return <>-</>;
 
   return (
@@ -962,6 +1182,7 @@ function AllianceTeamLinks({ teams, focusTeamId }: { teams?: Match["alliances"][
         const focusClass = focusTeamId ? (entry.team.id === focusTeamId ? "team-chip team-chip-focus" : "team-chip team-chip-muted") : undefined;
         return <TeamMiniLink key={entry.team.id} team={entry.team} className={focusClass} />;
       })}
+      {dq && <span className="dq-badge">DQ</span>}
     </span>
   );
 }
@@ -991,7 +1212,7 @@ function FavoriteButton({ id, kind }: { id: number | string; kind: "team" | "eve
 
 function Layout({ children, path }: { children: ReactNode; path: string }) {
   const nav = [
-    ["/", "The VEX Alliance"],
+    ["/", "stemScout"],
     ["/events", "Events"],
     ["/teams", "Teams"],
     ["/insights", "Insights"],
@@ -1005,7 +1226,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
             <span className="brand-mark">
               <Shield size={25} />
             </span>
-            <span>The VEX Alliance</span>
+            <span>stemScout</span>
           </Link>
           <nav>
             {nav.slice(1).map(([href, label]) => (
@@ -1066,21 +1287,94 @@ const homeEventTabs: Array<{ label: string; value: HomeEventTab }> = [
   { label: "Near Today", value: "near" },
 ];
 
+function ProgramPicker({
+  selectedProgramIds,
+  onChange,
+  triggerLabel = "Change program",
+}: {
+  selectedProgramIds: string[];
+  onChange: (ids: string[]) => void;
+  triggerLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [multi, setMulti] = useState(selectedProgramIds.length !== 1);
+  const options = programOptions.filter((option) => option.value);
+
+  const toggle = (id: string) => {
+    if (!multi) {
+      onChange([id]);
+      setOpen(false);
+    } else {
+      onChange(selectedProgramIds.includes(id) ? selectedProgramIds.filter((value) => value !== id) : [...selectedProgramIds, id]);
+    }
+  };
+
+  return (
+    <span className="home-program-picker">
+      <button type="button" className="change-program-btn" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
+        {triggerLabel}
+      </button>
+      {open && (
+        <div className="picker-menu-list" style={{ zIndex: 20 }}>
+          <div className="picker-multi-row">
+            <label className="picker-multi-toggle">
+              <input
+                type="checkbox"
+                checked={multi}
+                onChange={(event) => {
+                  setMulti(event.target.checked);
+                  if (!event.target.checked && selectedProgramIds.length !== 1) {
+                    onChange(selectedProgramIds.length ? selectedProgramIds.slice(0, 1) : [options[0].value]);
+                  }
+                }}
+              />
+              <span>Select multiple</span>
+            </label>
+            <button type="button" className="picker-menu-close" onClick={() => setOpen(false)} aria-label="Close">
+              &times;
+            </button>
+          </div>
+          {multi && (
+            <div className="picker-menu-actions">
+              <button type="button" onClick={() => onChange(options.map((option) => option.value))}>All</button>
+              <button type="button" onClick={() => onChange([])}>Clear</button>
+            </div>
+          )}
+          {options.map((option) =>
+            multi ? (
+              <label key={option.value}>
+                <input type="checkbox" checked={selectedProgramIds.includes(option.value)} onChange={() => toggle(option.value)} />
+                <span>{option.label}</span>
+              </label>
+            ) : (
+              <button key={option.value} type="button" className={selectedProgramIds.includes(option.value) ? "active" : ""} onClick={() => toggle(option.value)}>
+                <span>{option.label}</span>
+              </button>
+            ),
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
 function Home() {
   const [homeEventTab, setHomeEventTab] = useState<HomeEventTab>("upcoming");
+  const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>(() => programOptions.filter((option) => option.value).map((option) => option.value));
+  const programKey = selectedProgramIds.join(",");
   const { data: events, loading: eventsLoading, error: eventsError } = useAsync(
     () =>
       api.events({
         start: dateOnly(addDays(today, -30)),
         end: dateOnly(addDays(today, 120)),
         per_page: 100,
-        "program[]": vexProgramIds,
+        "program[]": selectedProgramIds.length ? selectedProgramIds : vexProgramIds,
       }),
-    [],
+    [programKey],
   );
   const baseHomeEvents = useMemo(
-    () => filterAndSortEvents(events?.data ?? [], { hideCanceled: true, sort: "smart" }),
-    [events],
+    () => filterAndSortEvents(events?.data ?? [], { hideCanceled: true, sort: "smart", programIds: selectedProgramIds }),
+    [events, selectedProgramIds],
   );
   const homeEvents = useMemo(() => {
     if (homeEventTab === "popular") return [];
@@ -1143,7 +1437,12 @@ function Home() {
         </aside>
 
         <Panel
-          title="VEX Robotics Competition Events"
+          title={
+            <>
+              VEX Robotics Competition Events
+              <ProgramPicker selectedProgramIds={selectedProgramIds} onChange={setSelectedProgramIds} />
+            </>
+          }
           icon={<CalendarDays />}
           action={<Link href="/events">See all events</Link>}
         >
@@ -1160,7 +1459,7 @@ function Home() {
             ))}
           </div>
           <Status loading={eventsLoading} error={eventsError} />
-          <EventTable events={homeEvents} loading={eventsLoading} compact showPriority />
+          <EventTable events={homeEvents} loading={eventsLoading} compact showPriority showProgram />
         </Panel>
       </div>
     </section>
@@ -1194,6 +1493,31 @@ function Panel({ title, icon, children, action }: { title: ReactNode; icon: Reac
   );
 }
 
+const EVENT_FILTER_KEY = "vex-events-filters";
+
+type SavedEventFilters = {
+  level: string;
+  selectedRegionKeys: string[];
+  eventWindow: EventWindow;
+  sort: EventSort;
+  selectedSeasonIds: number[];
+  seasonSelectionTouched: boolean;
+  hideCanceled: boolean;
+  filterLayout: EventFilterLayout;
+  seasonMultiSelect: boolean;
+  programMultiSelect: boolean;
+  pastSeasonDateDir: "asc" | "desc";
+  selectedGrades: string[];
+};
+
+function readEventFilters(): Partial<SavedEventFilters> {
+  try {
+    return JSON.parse(window.localStorage.getItem(EVENT_FILTER_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
 function EventsPage() {
   const params = new URLSearchParams(window.location.search);
   const [quickSearch, setQuickSearch] = useState(params.get("search") ?? "");
@@ -1210,38 +1534,46 @@ function EventsPage() {
     }
   });
   const [programMenuOpen, setProgramMenuOpen] = useState(false);
-  const [level, setLevel] = useState("");
-  const [selectedRegionKeys, setSelectedRegionKeys] = useState<string[]>([]);
+  const [level, setLevel] = useState<string>(() => readEventFilters().level ?? "");
+  const [selectedRegionKeys, setSelectedRegionKeys] = useState<string[]>(() => readEventFilters().selectedRegionKeys ?? []);
   const [regionMenuOpen, setRegionMenuOpen] = useState(false);
   const [regionTab, setRegionTab] = useState<RegionOptionKind>("country");
   const [regionSearch, setRegionSearch] = useState("");
-  const [eventWindow, setEventWindow] = useState<EventWindow>("near");
-  const [sort, setSort] = useState<EventSort>("smart");
+  const [eventWindow, setEventWindow] = useState<EventWindow>(() => readEventFilters().eventWindow ?? "near");
+  const [sort, setSort] = useState<EventSort>(() => readEventFilters().sort ?? "smart");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
-  const [filterLayout, setFilterLayout] = useState<EventFilterLayout>("sidebar");
-  const [selectedSeasonIds, setSelectedSeasonIds] = useState<number[]>([]);
-  const [seasonSelectionTouched, setSeasonSelectionTouched] = useState(false);
+  const [filterLayout, setFilterLayout] = useState<EventFilterLayout>(() => readEventFilters().filterLayout ?? "sidebar");
+  const [selectedSeasonIds, setSelectedSeasonIds] = useState<number[]>(() => readEventFilters().selectedSeasonIds ?? []);
+  const [seasonSelectionTouched, setSeasonSelectionTouched] = useState<boolean>(() => readEventFilters().seasonSelectionTouched ?? false);
   const [seasonMenuOpen, setSeasonMenuOpen] = useState(false);
-  const [lastOpenedMenu, setLastOpenedMenu] = useState<"region" | "season" | null>(null);
-  const [hideCanceled, setHideCanceled] = useState(true);
+  const [seasonMultiSelect, setSeasonMultiSelect] = useState<boolean>(() => readEventFilters().seasonMultiSelect ?? false);
+  const [programMultiSelect, setProgramMultiSelect] = useState<boolean>(() => readEventFilters().programMultiSelect ?? false);
+  const [pastSeasonDateDir, setPastSeasonDateDir] = useState<"asc" | "desc">(() => readEventFilters().pastSeasonDateDir ?? "asc");
+  const [selectedGrades, setSelectedGrades] = useState<string[]>(() => readEventFilters().selectedGrades ?? []);
+  const [gradeMenuOpen, setGradeMenuOpen] = useState(false);
+  const [lastOpenedMenu, setLastOpenedMenu] = useState<"region" | "season" | "program" | "sort" | "grade" | null>(null);
+  const [hideCanceled, setHideCanceled] = useState<boolean>(() => readEventFilters().hideCanceled ?? true);
   const [page, setPage] = useState(1);
   const selectedProgramKey = selectedProgramIds.join(",");
   const selectedSeasonKey = selectedSeasonIds.join(",");
-  const queryKey = `${eventWindow}:${selectedProgramKey}:${level}:${selectedSeasonKey}`;
+  const queryKey = `${eventWindow}:${selectedProgramKey}:${selectedSeasonKey}`;
   const dateWindow = eventWindowDates(eventWindow);
   const seasons = useAsync(() => collectAllPages<Season>((page) => api.robotEventsSeasons({ page, per_page: 250 })), []);
   const countries = useAsync(() => api.robotEventsCountries(), []);
   const countryRegions = useAsync(() => api.robotEventsRegions(), []);
   const { data, loading, error } = useAsync(
-    () =>
-      api.events({
+    () => {
+      const q = {
         start: dateWindow.start,
         end: dateWindow.end,
         "program[]": selectedProgramIds.length ? selectedProgramIds : undefined,
-        "level[]": level === "Championship" ? ["National", "State", "Regional"] : level && level !== "Other" ? [level] : undefined,
         "season[]": selectedSeasonIds.length ? selectedSeasonIds : undefined,
         per_page: 250,
-      }),
+      };
+      return eventWindow === "allSeason"
+        ? collectAllPages((p) => api.events({ ...q, page: p }))
+        : api.events(q);
+    },
     [queryKey],
   );
   const seasonOptions = useMemo(() => {
@@ -1253,6 +1585,8 @@ function EventsPage() {
   }, [seasons.data, selectedProgramIds]);
   const allSeasonIds = useMemo(() => seasonOptions.map((season) => season.id), [seasonOptions]);
   const allSeasonsSelected = !!seasonOptions.length && sameNumberSet(selectedSeasonIds, allSeasonIds);
+  const currentSeasonId = seasonOptions[0]?.id;
+  const isPastSeasonView = !!currentSeasonId && selectedSeasonIds.length > 0 && !selectedSeasonIds.includes(currentSeasonId);
   const selectedProgramLabels = programOptions
     .filter((option) => option.value && selectedProgramIds.includes(option.value))
     .map((option) => option.label);
@@ -1262,6 +1596,13 @@ function EventsPage() {
       : selectedProgramIds.length === 1
         ? selectedProgramLabels[0] ?? "Program"
         : `${selectedProgramIds.length} programs`;
+  const gradeOptions = ["HS", "MS", "ES"] as const;
+  const gradeButtonLabel =
+    selectedGrades.length === 0 || selectedGrades.length === gradeOptions.length
+      ? "All grades"
+      : selectedGrades.length === 1
+        ? selectedGrades[0]!
+        : `${selectedGrades.length} grades`;
   const countryOptions = useMemo(() => dedupeCountryGroups(countries.data ?? []), [countries.data]);
   const sortOptions: Array<{ label: string; value: EventSort }> = [
     { label: "Smart Sort", value: "smart" },
@@ -1333,9 +1674,10 @@ function EventsPage() {
         regionOptions: selectedRegionOptions,
         seasonIds: selectedSeasonIds,
         hideCanceled,
-        sort,
+        grades: selectedGrades,
+        sort: isPastSeasonView ? "past-season" : sort,
       }),
-    [data, selectedProgramIds, level, selectedRegionOptions, selectedSeasonIds, hideCanceled, sort],
+    [data, selectedProgramIds, level, selectedRegionOptions, selectedSeasonIds, hideCanceled, selectedGrades, sort, isPastSeasonView],
   );
   const quickResults = useMemo(() => {
     const needle = quickSearch.trim().toLowerCase();
@@ -1360,7 +1702,7 @@ function EventsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedProgramIds, level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds, hideCanceled]);
+  }, [selectedProgramIds, level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds, hideCanceled, selectedGrades]);
 
   useEffect(() => {
     setQuickSearchLimit(3);
@@ -1369,7 +1711,11 @@ function EventsPage() {
 
   useEffect(() => {
     window.localStorage.setItem("vex-events-programs", JSON.stringify(selectedProgramIds));
-  }, [selectedProgramIds]);
+    window.localStorage.setItem(EVENT_FILTER_KEY, JSON.stringify({
+      level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds,
+      seasonSelectionTouched, hideCanceled, filterLayout, seasonMultiSelect, programMultiSelect, pastSeasonDateDir, selectedGrades,
+    } satisfies SavedEventFilters));
+  }, [level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds, seasonSelectionTouched, hideCanceled, filterLayout, seasonMultiSelect, programMultiSelect, pastSeasonDateDir, selectedGrades, selectedProgramIds]);
 
   useEffect(() => {
     if (!seasonOptions.length) return;
@@ -1396,10 +1742,25 @@ function EventsPage() {
 
   const toggleSeason = (seasonId: number) => {
     setSeasonSelectionTouched(true);
-    setSelectedSeasonIds((ids) => (ids.includes(seasonId) ? ids.filter((id) => id !== seasonId) : [...ids, seasonId]));
+    if (!seasonMultiSelect) {
+      setSelectedSeasonIds([seasonId]);
+      setSeasonMenuOpen(false);
+      if (currentSeasonId && seasonId !== currentSeasonId) {
+        setEventWindow("allSeason");
+      } else {
+        setEventWindow("near");
+      }
+    } else {
+      setSelectedSeasonIds((ids) => (ids.includes(seasonId) ? ids.filter((id) => id !== seasonId) : [...ids, seasonId]));
+    }
   };
   const toggleProgram = (programId: string) => {
-    setSelectedProgramIds((ids) => (ids.includes(programId) ? ids.filter((id) => id !== programId) : [...ids, programId]));
+    if (!programMultiSelect) {
+      setSelectedProgramIds([programId]);
+      setProgramMenuOpen(false);
+    } else {
+      setSelectedProgramIds((ids) => (ids.includes(programId) ? ids.filter((id) => id !== programId) : [...ids, programId]));
+    }
     setSeasonSelectionTouched(false);
     setSelectedSeasonIds([]);
   };
@@ -1420,6 +1781,23 @@ function EventsPage() {
   const clearSeasons = () => {
     setSeasonSelectionTouched(true);
     setSelectedSeasonIds([]);
+  };
+  const resetFilters = () => {
+    window.localStorage.removeItem(EVENT_FILTER_KEY);
+    window.localStorage.removeItem("vex-events-programs");
+    setSelectedProgramIds(["1"]);
+    setLevel("");
+    setSelectedRegionKeys([]);
+    setEventWindow("near");
+    setSort("smart");
+    setSelectedSeasonIds([]);
+    setSeasonSelectionTouched(false);
+    setHideCanceled(true);
+    setFilterLayout("sidebar");
+    setSeasonMultiSelect(false);
+    setProgramMultiSelect(false);
+    setPastSeasonDateDir("asc");
+    setSelectedGrades([]);
   };
   const setQuickFilter = (nextLevel: string, nextWindow: EventWindow, nextSort: EventSort = "smart") => {
     setLevel(nextLevel);
@@ -1459,7 +1837,7 @@ function EventsPage() {
           <button className={eventWindow === "near" ? "active" : ""} onClick={() => setEventWindow("near")}>
             Near today
           </button>
-          <button className={eventWindow === "upcoming" ? "active" : ""} onClick={() => { setEventWindow("upcoming"); setSort("date"); }}>
+          <button className={eventWindow === "upcoming" ? "active" : ""} onClick={() => setEventWindow("upcoming")}>
             Upcoming
           </button>
           <button className={eventWindow === "allSeason" ? "active" : ""} onClick={() => setEventWindow("allSeason")}>
@@ -1473,13 +1851,13 @@ function EventsPage() {
           <button className={!level ? "active" : ""} onClick={() => setLevel("")}>
             All
           </button>
-          <button className={level === "World" ? "active" : ""} onClick={() => setQuickFilter("World", eventWindow, "date")}>
+          <button className={level === "World" ? "active" : ""} onClick={() => setQuickFilter("World", eventWindow)}>
             Worlds
           </button>
-          <button className={level === "Signature" ? "active" : ""} onClick={() => setQuickFilter("Signature", eventWindow, "date")}>
+          <button className={level === "Signature" ? "active" : ""} onClick={() => setQuickFilter("Signature", eventWindow)}>
             Signature
           </button>
-          <button className={level === "Championship" ? "active" : ""} onClick={() => setQuickFilter("Championship", eventWindow, "date")}>
+          <button className={level === "Championship" ? "active" : ""} onClick={() => setQuickFilter("Championship", eventWindow)}>
             Championships
           </button>
           <button className={level === "Other" ? "active" : ""} onClick={() => setLevel("Other")}>
@@ -1489,31 +1867,146 @@ function EventsPage() {
       </div>
       <div className="event-filter-fields">
         <div className="filter-field">
-          <span>Programs</span>
-          <div className="picker-menu">
-            <button type="button" onClick={() => setProgramMenuOpen((open) => !open)} aria-expanded={programMenuOpen}>
-              {programButtonLabel}
+          <span>
+            Seasons
+            {isPastSeasonView && currentSeasonId && (
+              <button
+                type="button"
+                className="back-to-season-btn"
+                onClick={() => {
+                  setSeasonSelectionTouched(true);
+                  setSelectedSeasonIds([currentSeasonId]);
+                  setEventWindow("near");
+                }}
+              >
+                Back to {seasonOptions[0]?.label}
+              </button>
+            )}
+          </span>
+          <div className="picker-menu season-picker-menu">
+            <button type="button" onClick={() => { setSeasonMenuOpen((open) => !open); setLastOpenedMenu("season"); }} aria-expanded={seasonMenuOpen}>
+              {seasonButtonLabel}
             </button>
-            {programMenuOpen && (
-              <div className="picker-menu-list">
-                <div className="picker-menu-actions">
-                  <button type="button" onClick={selectAllPrograms}>
-                    All
-                  </button>
-                  <button type="button" onClick={clearPrograms}>
-                    Clear
-                  </button>
-                </div>
-                {programOptions
-                  .filter((option) => option.value)
-                  .map((option) => (
-                    <label key={option.value}>
-                      <input type="checkbox" checked={selectedProgramIds.includes(option.value)} onChange={() => toggleProgram(option.value)} />
-                      <span>{option.label}</span>
+            {seasonMenuOpen && (
+              <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "season" ? 20 : 10 }}>
+                <label className="picker-multi-toggle">
+                  <input
+                    type="checkbox"
+                    checked={seasonMultiSelect}
+                    onChange={(e) => {
+                      setSeasonMultiSelect(e.target.checked);
+                      if (!e.target.checked && selectedSeasonIds.length > 1) {
+                        setSelectedSeasonIds(selectedSeasonIds.slice(0, 1));
+                      }
+                    }}
+                  />
+                  <span>Select multiple</span>
+                </label>
+                {seasonMultiSelect && (
+                  <div className="picker-menu-actions">
+                    <button type="button" onClick={selectAllSeasons}>All</button>
+                    <button type="button" onClick={clearSeasons}>Clear</button>
+                  </div>
+                )}
+                {seasonOptions.map((season) =>
+                  seasonMultiSelect ? (
+                    <label key={season.id}>
+                      <input type="checkbox" checked={selectedSeasonIds.includes(season.id)} onChange={() => toggleSeason(season.id)} />
+                      <span>{season.label}</span>
+                      {season.program && <small>{season.program}</small>}
                     </label>
-                  ))}
+                  ) : (
+                    <button key={season.id} type="button" className={selectedSeasonIds.includes(season.id) ? "active" : ""} onClick={() => toggleSeason(season.id)}>
+                      <span>{season.label}</span>
+                      {season.program && <small>{season.program}</small>}
+                    </button>
+                  )
+                )}
+                {!seasonOptions.length && <div className="picker-menu-empty">Loading seasons...</div>}
               </div>
             )}
+          </div>
+        </div>
+        <div className="filter-field-pair">
+          <div className="filter-field">
+            <span>Programs</span>
+            <div className="picker-menu">
+              <button type="button" onClick={() => { setProgramMenuOpen((open) => !open); setLastOpenedMenu("program"); }} aria-expanded={programMenuOpen}>
+                {programButtonLabel}
+              </button>
+              {programMenuOpen && (
+                <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "program" ? 20 : 10 }}>
+                  <label className="picker-multi-toggle">
+                    <input
+                      type="checkbox"
+                      checked={programMultiSelect}
+                      onChange={(e) => {
+                        setProgramMultiSelect(e.target.checked);
+                        if (!e.target.checked && selectedProgramIds.length > 1) {
+                          setSelectedProgramIds(selectedProgramIds.slice(0, 1));
+                          setSeasonSelectionTouched(false);
+                          setSelectedSeasonIds([]);
+                        }
+                      }}
+                    />
+                    <span>Select multiple</span>
+                  </label>
+                  {programMultiSelect && (
+                    <div className="picker-menu-actions">
+                      <button type="button" onClick={selectAllPrograms}>All</button>
+                      <button type="button" onClick={clearPrograms}>Clear</button>
+                    </div>
+                  )}
+                  {programOptions
+                    .filter((option) => option.value)
+                    .map((option) =>
+                      programMultiSelect ? (
+                        <label key={option.value}>
+                          <input type="checkbox" checked={selectedProgramIds.includes(option.value)} onChange={() => toggleProgram(option.value)} />
+                          <span>{option.label}</span>
+                        </label>
+                      ) : (
+                        <button key={option.value} type="button" className={selectedProgramIds.includes(option.value) ? "active" : ""} onClick={() => toggleProgram(option.value)}>
+                          <span>{option.label}</span>
+                        </button>
+                      )
+                    )}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="filter-field">
+            <span>Grade</span>
+            <div className="picker-menu">
+              <button type="button" onClick={() => { setGradeMenuOpen((open) => !open); setLastOpenedMenu("grade"); }} aria-expanded={gradeMenuOpen}>
+                {gradeButtonLabel}
+              </button>
+              {gradeMenuOpen && (
+                <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "grade" ? 20 : 10 }}>
+                  <div className="picker-menu-actions">
+                    <button type="button" onClick={() => setSelectedGrades([])}>All</button>
+                    <button type="button" onClick={() => setSelectedGrades([])}>Clear</button>
+                  </div>
+                  {gradeOptions.map((g) => (
+                    <label key={g}>
+                      <input
+                        type="checkbox"
+                        checked={selectedGrades.length === 0 || selectedGrades.includes(g)}
+                        onChange={() =>
+                          setSelectedGrades((prev) => {
+                            // If currently "all" (empty = all), clicking one grade means exclude others
+                            const effective = prev.length === 0 ? [...gradeOptions] : prev;
+                            const next = effective.includes(g) ? effective.filter((x) => x !== g) : [...effective, g];
+                            return next.length === gradeOptions.length ? [] : next;
+                          })
+                        }
+                      />
+                      <span>{g === "HS" ? "High School" : g === "MS" ? "Middle School" : "Elementary"}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="filter-field">
@@ -1558,11 +2051,11 @@ function EventsPage() {
         <div className="filter-field">
           <span>Sort</span>
           <div className="picker-menu">
-            <button type="button" onClick={() => setSortMenuOpen((open) => !open)} aria-expanded={sortMenuOpen}>
+            <button type="button" onClick={() => { setSortMenuOpen((open) => !open); setLastOpenedMenu("sort"); }} aria-expanded={sortMenuOpen}>
               {sortLabel}
             </button>
             {sortMenuOpen && (
-              <div className="picker-menu-list">
+              <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "sort" ? 20 : 10 }}>
                 {sortOptions.map((option) => (
                   <button
                     key={option.value}
@@ -1576,34 +2069,6 @@ function EventsPage() {
                     <span>{option.label}</span>
                   </button>
                 ))}
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="filter-field">
-          <span>Seasons</span>
-          <div className="picker-menu season-picker-menu">
-            <button type="button" onClick={() => { setSeasonMenuOpen((open) => !open); setLastOpenedMenu("season"); }} aria-expanded={seasonMenuOpen}>
-              {seasonButtonLabel}
-            </button>
-            {seasonMenuOpen && (
-              <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "season" ? 20 : 10 }}>
-                <div className="picker-menu-actions">
-                  <button type="button" onClick={selectAllSeasons}>
-                    All
-                  </button>
-                  <button type="button" onClick={clearSeasons}>
-                    Clear
-                  </button>
-                </div>
-                {seasonOptions.map((season) => (
-                  <label key={season.id}>
-                    <input type="checkbox" checked={selectedSeasonIds.includes(season.id)} onChange={() => toggleSeason(season.id)} />
-                    <span>{season.label}</span>
-                    {season.program && <small>{season.program}</small>}
-                  </label>
-                ))}
-                {!seasonOptions.length && <div className="picker-menu-empty">Loading seasons...</div>}
               </div>
             )}
           </div>
@@ -1666,29 +2131,168 @@ function EventsPage() {
               </div>
             )}
           </div>
-          <EventTable events={pageEvents} loading={loading} showPriority showSeason={!selectedSeasonIds.length || allSeasonsSelected} />
-          {!loading && (
-            <div className="pager">
-              <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
-                <ChevronLeft size={16} />
-              </button>
-              <span>
-                Page {page.toLocaleString()} of {totalPages.toLocaleString()}
-              </span>
-              <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} aria-label="Next page">
-                <ChevronRight size={16} />
-              </button>
-            </div>
+          {isPastSeasonView ? (
+            <PastSeasonEventView
+              events={visibleEvents}
+              loading={loading}
+              showSeason={!selectedSeasonIds.length || allSeasonsSelected}
+              showGrade
+              dateDir={pastSeasonDateDir}
+              onDateDirToggle={() => setPastSeasonDateDir((d) => (d === "asc" ? "desc" : "asc"))}
+            />
+          ) : (
+            <>
+              <EventTable events={pageEvents} loading={loading} showPriority showGrade showSeason={!selectedSeasonIds.length || allSeasonsSelected} />
+              {!loading && (
+                <div className="pager">
+                  <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span>
+                    Page {page.toLocaleString()} of {totalPages.toLocaleString()}
+                  </span>
+                  <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} aria-label="Next page">
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </Panel>
         {filterLayout === "sidebar" && (
           <aside className="event-filter-sidebar">
-            <div className="event-filter-sidebar-title">Filters</div>
+            <div className="event-filter-sidebar-title">
+              Filters
+              <button type="button" className="reset-filters-btn" onClick={resetFilters}>Reset to defaults</button>
+            </div>
             {filterControls}
           </aside>
         )}
       </div>
     </section>
+  );
+}
+
+const TIER_COLLAPSE_THRESHOLD = 3;
+
+function TierSection({
+  label,
+  events,
+  collapsible,
+  showSeason,
+  showGrade,
+  loading,
+  dateSortDir,
+  onDateSortToggle,
+  paginate = false,
+}: {
+  label: string;
+  events: Event[];
+  collapsible: boolean;
+  showSeason?: boolean;
+  showGrade?: boolean;
+  loading: boolean;
+  dateSortDir?: "asc" | "desc";
+  onDateSortToggle?: () => void;
+  paginate?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 40;
+
+  // Reset page when event list changes length (filter/sort change)
+  const eventsLength = events.length;
+  useEffect(() => { setPage(1); }, [eventsLength]);
+
+  const totalPages = paginate ? Math.max(1, Math.ceil(events.length / pageSize)) : 1;
+  const showFade = !paginate && collapsible && events.length > TIER_COLLAPSE_THRESHOLD && !expanded;
+  const displayEvents = paginate
+    ? events.slice((page - 1) * pageSize, page * pageSize)
+    : showFade ? events.slice(0, TIER_COLLAPSE_THRESHOLD) : events;
+
+  return (
+    <div className="tier-section">
+      <h3 className="tier-section-title">
+        {label} <span className="tier-count">({events.length})</span>
+      </h3>
+      <div className={`tier-collapse${showFade ? " is-collapsed" : ""}`}>
+        <EventTable events={displayEvents} loading={loading} showSeason={showSeason} showGrade={showGrade} dateSortDir={dateSortDir} onDateSortToggle={onDateSortToggle} />
+        {showFade && (
+          <button className="alliance-show-all" onClick={() => setExpanded(true)}>
+            Show all {events.length} <ChevronDown size={15} />
+          </button>
+        )}
+        {collapsible && expanded && (
+          <button className="alliance-show-all alliance-show-less" onClick={() => setExpanded(false)}>
+            <ChevronUp size={18} />
+          </button>
+        )}
+      </div>
+      {paginate && totalPages > 1 && (
+        <div className="pager">
+          <span className="tier-pagination-note">Other Events only — top tiers use expand/collapse</span>
+          <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
+            <ChevronLeft size={16} />
+          </button>
+          <span>Page {page} of {totalPages}</span>
+          <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} aria-label="Next page">
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PastSeasonEventView({
+  events,
+  loading,
+  showSeason,
+  showGrade,
+  dateDir,
+  onDateDirToggle,
+}: {
+  events: Event[];
+  loading: boolean;
+  showSeason?: boolean;
+  showGrade?: boolean;
+  dateDir: "asc" | "desc";
+  onDateDirToggle: () => void;
+}) {
+  const tiers: Array<{ label: string; category: EventCategory; collapsible: boolean; paginate: boolean }> = [
+    { label: "World Championships", category: "Worlds", collapsible: true, paginate: false },
+    { label: "Signature Events", category: "Signature", collapsible: true, paginate: false },
+    { label: "Championships", category: "Championship", collapsible: true, paginate: false },
+    { label: "Other Events", category: "Other", collapsible: false, paginate: true },
+  ];
+
+  return (
+    <div className="past-season-view">
+      {tiers.map((tier) => {
+        const tierEvents = events
+          .filter((e) => eventCategory(e).label === tier.category)
+          .sort((a, b) => {
+            const tA = new Date(a.start ?? 0).getTime();
+            const tB = new Date(b.start ?? 0).getTime();
+            return (dateDir === "desc" ? tB - tA : tA - tB) || a.name.localeCompare(b.name);
+          });
+        if (!loading && !tierEvents.length) return null;
+        return (
+          <TierSection
+            key={tier.category}
+            label={tier.label}
+            events={tierEvents}
+            collapsible={tier.collapsible}
+            paginate={tier.paginate}
+            showSeason={showSeason}
+            showGrade={showGrade}
+            loading={loading && !tierEvents.length}
+            dateSortDir={dateDir}
+            onDateSortToggle={onDateDirToggle}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -1698,16 +2302,24 @@ function EventTable({
   compact = false,
   showPriority = false,
   showSeason = false,
+  showGrade = false,
+  showProgram: showProgramProp,
+  dateSortDir,
+  onDateSortToggle,
 }: {
   events: Event[];
   loading: boolean;
   compact?: boolean;
   showPriority?: boolean;
   showSeason?: boolean;
+  showGrade?: boolean;
+  showProgram?: boolean;
+  dateSortDir?: "asc" | "desc";
+  onDateSortToggle?: () => void;
 }) {
-  const showProgram = !compact;
+  const showProgram = showProgramProp ?? !compact;
   const showLevel = !compact && !showPriority;
-  const columnCount = 3 + (showPriority ? 1 : 0) + (showProgram ? 1 : 0) + (showSeason ? 1 : 0) + (showLevel ? 1 : 0);
+  const columnCount = 3 + (showPriority ? 1 : 0) + (showProgram ? 1 : 0) + (showSeason ? 1 : 0) + (showLevel ? 1 : 0) + (showGrade ? 1 : 0);
 
   return (
     <table>
@@ -1716,9 +2328,18 @@ function EventTable({
           <th>Event</th>
           {showPriority && <th>Priority</th>}
           {showProgram && <th>Program</th>}
+          {showGrade && <th className="grade-col">Grade</th>}
           {showSeason && <th>Season</th>}
           <th>Location</th>
-          <th>Dates</th>
+          <th>
+            {onDateSortToggle ? (
+              <button type="button" className="sort-col-btn" onClick={onDateSortToggle}>
+                Dates {dateSortDir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
+            ) : (
+              "Dates"
+            )}
+          </th>
           {showLevel && <th>Level</th>}
         </tr>
       </thead>
@@ -1740,6 +2361,11 @@ function EventTable({
               {showProgram && (
                 <td>
                   <ProgramBadge program={event.program} />
+                </td>
+              )}
+              {showGrade && (
+                <td className="grade-col">
+                  <span className={`event-grade-badge grade-${eventGradeCode(event)}`}>{eventGradeCode(event)}</span>
                 </td>
               )}
               {showSeason && <td>{shortSeasonName(event.season.name)}</td>}
@@ -1786,6 +2412,8 @@ function TeamsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const reloadTeamsRef = useRef<() => void>(() => {});
   const cacheKey = cachedTeamsKey(program, registered);
   const committedSearch = submittedSearch.trim();
   const isSearchingTeams = !!committedSearch;
@@ -1802,7 +2430,7 @@ function TeamsPage() {
   useEffect(() => {
     let live = true;
 
-    const loadTeams = async ({ background = false } = {}) => {
+    const loadTeams = async ({ background = false, force = false } = {}) => {
       setError(null);
       if (!background) setLoading(true);
       if (background) setRefreshing(true);
@@ -1817,12 +2445,19 @@ function TeamsPage() {
                 per_page: 250,
               }),
             )
-          : await loadCachedTeams(cacheKey, {
-              ...baseQuery,
-              per_page: 250,
-            });
+          : await loadCachedTeams(
+              cacheKey,
+              {
+                ...baseQuery,
+                per_page: 250,
+              },
+              force,
+            );
 
-        if (live) setData(isSearchingTeams ? { ...result, data: rankTeamsForSearch(result.data, committedSearch) } : result);
+        if (live) {
+          setData(isSearchingTeams ? { ...result, data: rankTeamsForSearch(result.data, committedSearch) } : result);
+          if (!isSearchingTeams) setLastUpdated(teamListCache.get(cacheKey)?.updatedAt ?? Date.now());
+        }
       } catch (err) {
         if (live) setError((err as Error).message);
       } finally {
@@ -1833,6 +2468,10 @@ function TeamsPage() {
       }
     };
 
+    reloadTeamsRef.current = () => {
+      void loadTeams({ background: true, force: true });
+    };
+
     if (isSearchingTeams) {
       loadTeams();
       return () => {
@@ -1840,19 +2479,30 @@ function TeamsPage() {
       };
     }
 
-    const cached = teamListCache.get(cacheKey);
-    const cacheAge = cached?.updatedAt ? Date.now() - cached.updatedAt : Number.POSITIVE_INFINITY;
+    (async () => {
+      let cached = teamListCache.get(cacheKey);
+      // Hydrate the in-memory cache from IndexedDB so a reload shows data instantly.
+      if (!cached?.data) {
+        const stored = await idbGetTeams(cacheKey);
+        if (stored?.data) {
+          teamListCache.set(cacheKey, stored);
+          cached = stored;
+        }
+      }
 
-    if (cached?.data) {
-      setData(cached.data);
-      setLoading(false);
-    }
+      if (cached?.data && live) {
+        setData(cached.data);
+        setLastUpdated(cached.updatedAt || null);
+        setLoading(false);
+      }
 
-    if (!cached?.data || cacheAge >= teamCacheRefreshMs) {
-      loadTeams({ background: !!cached?.data });
-    }
+      const cacheAge = cached?.updatedAt ? Date.now() - cached.updatedAt : Number.POSITIVE_INFINITY;
+      if (!cached?.data || cacheAge >= teamCacheRefreshMs) {
+        void loadTeams({ background: !!cached?.data });
+      }
+    })();
 
-    const interval = window.setInterval(() => loadTeams({ background: true }), teamCacheRefreshMs);
+    const interval = window.setInterval(() => void loadTeams({ background: true }), teamCacheRefreshMs);
 
     return () => {
       live = false;
@@ -2104,7 +2754,27 @@ function TeamsPage() {
           <option value="false">Inactive</option>
         </select>
       </SearchFilters>
-      <Panel title="Team List" icon={<Users />}>
+      <Panel
+        title="Team List"
+        icon={<Users />}
+        action={
+          !isSearchingTeams && (
+            <span className="teams-cache-controls">
+              {lastUpdated && <span className="teams-cache-time">Updated {formatRelativeTime(lastUpdated)}</span>}
+              <button
+                type="button"
+                className="teams-reload-btn"
+                onClick={() => reloadTeamsRef.current()}
+                disabled={refreshing}
+                title="Reload team list now"
+              >
+                <RotateCw size={13} className={refreshing ? "spin" : ""} />
+                {refreshing ? "Reloading..." : "Reload"}
+              </button>
+            </span>
+          )
+        }
+      >
         <Status loading={loading} error={error} />
         {refreshing && !loading && <div className="notice subtle">Updating cached teams...</div>}
         <TeamTable teams={tableTeams} loading={loading} localPageSize={50} />
@@ -2134,7 +2804,14 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
             <th>Level</th>
             <th>Organization</th>
             <th>Location</th>
-            <th>Status</th>
+            <th>
+              <span
+                className="status-disclaimer"
+                data-tooltip="Push Back Season registration status. Override registrations will be updated soon."
+              >
+                Status
+              </span>
+            </th>
           </tr>
         </thead>
         {loading ? (
@@ -2324,17 +3001,16 @@ function SearchFilters({
         </button>
         {quickOpen && !!search.trim() && (
           <div className="team-quick-results">
-            {quickLoading && <div className="team-quick-empty">Searching...</div>}
-            {!quickLoading &&
-              quickResults.map((team) => (
-                <button type="button" key={team.id} onMouseDown={(event) => event.preventDefault()} onClick={() => onPickTeam(team)}>
-                  <span>
-                    <strong>{team.number}</strong>
-                    {team.team_name && <span> - {team.team_name}</span>}
-                  </span>
-                  <small>{[team.program?.name, team.grade, locationLine(team)].filter(Boolean).join(" · ")}</small>
-                </button>
-              ))}
+            {quickResults.map((team) => (
+              <button type="button" key={team.id} onMouseDown={(event) => event.preventDefault()} onClick={() => onPickTeam(team)}>
+                <span>
+                  <strong>{team.number}</strong>
+                  {team.team_name && <span> - {team.team_name}</span>}
+                </span>
+                <small>{[team.program?.name, team.grade, locationLine(team)].filter(Boolean).join(" · ")}</small>
+              </button>
+            ))}
+            {quickLoading && !quickResults.length && <div className="team-quick-empty">Searching...</div>}
             {!quickLoading && !quickResults.length && <div className="team-quick-empty">No quick matches.</div>}
           </div>
         )}
@@ -2380,31 +3056,31 @@ function EventDetail({ id }: { id: string }) {
   );
   const matches = useAsync(
     async () => {
-      if (!event || tab !== "matches") return null;
+      if (!event) return null;
       return collectAllPages<Match>((page) => api.eventMatches(id, division, { per_page: 250, page }));
     },
-    [id, division, event?.id, tab],
+    [id, division, event?.id],
   );
   const rankings = useAsync(
     async () => {
-      if (!event || tab !== "rankings") return null;
+      if (!event) return null;
       return collectAllPages<Ranking>((page) => api.eventRankings(id, division, { per_page: 250, page }));
     },
-    [id, division, event?.id, tab],
+    [id, division, event?.id],
   );
   const skills = useAsync(
     async () => {
-      if (!event || tab !== "skills") return null;
+      if (!event) return null;
       return collectAllPages<Skill>((page) => api.eventSkills(id, { per_page: 250, page }));
     },
-    [id, event?.id, tab],
+    [id, event?.id],
   );
   const teams = useAsync(
     async () => {
-      if (!event || tab !== "teams") return null;
+      if (!event) return null;
       return collectAllPages<Team>((page) => api.eventTeams(id, { per_page: 250, page }));
     },
-    [id, event?.id, tab],
+    [id, event?.id],
   );
   const preset = useAsync(
     async () => {
@@ -2500,9 +3176,10 @@ function EventDetail({ id }: { id: string }) {
           presetLoading={preset.loading || (preset.data?.exists ? matchTimestamps.loading : false)}
           presetUrl={presetUrl}
           onOpenMatch={(match, timestamp) => setPlayback({ match, timestamp })}
+          isIq={isIqProgram(event)}
         />
       )}
-      {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} />}
+      {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} matches={matches.data?.data ?? []} />}
       {tab === "skills" && <SkillsTable skills={skills.data?.data ?? []} />}
       {tab === "awards" && <AwardsList awards={awards.data?.data ?? []} />}
       {tab === "teams" && !teams.loading && teams.data && (
@@ -2676,6 +3353,8 @@ function TeamDetail({ id }: { id: string }) {
     );
   }
 
+  const isIq = isIqProgramInfo(team.program);
+
   return (
     <section className="page">
       <div className="profile-header">
@@ -2734,6 +3413,7 @@ function TeamDetail({ id }: { id: string }) {
           skills={selectedSkills.data}
           awards={selectedAwards.data}
           focusTeamId={team.id}
+          isIq={isIq}
           detailsLoading={selectedMatches.loading || selectedRankings.loading || selectedSkills.loading || selectedAwards.loading}
           onViewMatches={(eventId) => {
             setFocusedEventId(eventId);
@@ -2749,10 +3429,11 @@ function TeamDetail({ id }: { id: string }) {
           focusTeamId={team.id}
           direction={dateDirection}
           focusedEventId={focusedEventId}
+          isIq={isIq}
         />
       )}
       {!activeStatus.loading && tab === "rankings" && (
-        <TeamRankingsByEvent rankings={selectedRankings.data} eventIndex={eventIndex} seasonId={selectedSeasonId} direction={dateDirection} />
+        <TeamRankingsByEvent rankings={selectedRankings.data} matches={selectedMatches.data} eventIndex={eventIndex} seasonId={selectedSeasonId} direction={dateDirection} focusTeamId={team.id} isIq={isIq} />
       )}
       {!activeStatus.loading && tab === "skills" && <TeamSkillsByEvent skills={selectedSkills.data} eventIndex={eventIndex} seasonId={selectedSeasonId} direction={dateDirection} />}
       {!activeStatus.loading && tab === "awards" && (
@@ -3019,6 +3700,7 @@ function TeamEventTable({
   skills,
   awards,
   focusTeamId,
+  isIq = false,
   detailsLoading,
   onViewMatches,
 }: {
@@ -3029,6 +3711,7 @@ function TeamEventTable({
   skills: Skill[];
   awards: Award[];
   focusTeamId: number;
+  isIq?: boolean;
   detailsLoading: boolean;
   onViewMatches: (eventId: number) => void;
 }) {
@@ -3089,6 +3772,7 @@ function TeamEventTable({
                         skills={eventSkills}
                         awards={eventAwards}
                         focusTeamId={focusTeamId}
+                        isIq={isIq}
                         loading={detailsLoading}
                         onViewMatches={() => onViewMatches(event.id)}
                       />
@@ -3117,6 +3801,7 @@ function TeamEventDetail({
   skills,
   awards,
   focusTeamId,
+  isIq = false,
   loading,
   onViewMatches,
 }: {
@@ -3125,13 +3810,21 @@ function TeamEventDetail({
   skills: Skill[];
   awards: Award[];
   focusTeamId: number;
+  isIq?: boolean;
   loading: boolean;
   onViewMatches: () => void;
 }) {
   const ranking = rankings[0];
   const skillsRow = skillSummary(skills);
-  const elimMatches = playoffMatchesForTeam(matches, focusTeamId);
-  const elimAlliance = inferElimAlliance(matches, focusTeamId);
+  const iqFinals = isIq ? iqTeamFinals(matches, focusTeamId) : null;
+  const iqStats = isIq ? iqTeamQualStats(matches, focusTeamId, ranking) : null;
+  const iqFinalsMatches = isIq
+    ? matches
+        .filter((match) => isIqFinalsMatch(match) && match.alliances.some((alliance) => isTeamInAlliance(alliance, focusTeamId)))
+        .sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum)
+    : [];
+  const elimMatches = isIq ? iqFinalsMatches : playoffMatchesForTeam(matches, focusTeamId);
+  const elimAlliance = isIq ? null : inferElimAlliance(matches, focusTeamId);
 
   return (
     <div className="team-event-detail">
@@ -3140,10 +3833,19 @@ function TeamEventDetail({
         <div className="team-event-awards">
           <div className="team-event-awards-head">
             <strong>Awards</strong>
-            {elimAlliance && (
+            {!isIq && elimAlliance && (
               <span className="team-elim-seed">
                 Seed {elimAlliance.seed}
                 <span>{elimAlliance.teams.map((team) => team.name).join(" · ")}</span>
+              </span>
+            )}
+            {isIq && iqFinals && iqFinals.seed && (
+              <span className="team-elim-seed">
+                {ordinal(iqFinals.seed)} seed
+                <span>
+                  {iqFinals.teams[0]?.name} (higher)
+                  {iqFinals.teams[1] ? ` & ${iqFinals.teams[1].name}` : ""}
+                </span>
               </span>
             )}
           </div>
@@ -3160,24 +3862,42 @@ function TeamEventDetail({
           </div>
         </div>
         <div className="team-event-metrics">
-          <div className="metric-line">
-            <strong>Ranking</strong>
-            <span>
-              <b>Rank</b> {ranking?.rank ?? "-"}
-            </span>
-            <span>
-              <b>Record</b> {ranking ? `${ranking.wins ?? 0}-${ranking.losses ?? 0}-${ranking.ties ?? 0}` : "-"}
-            </span>
-            <span>
-              <b>WP</b> {ranking?.wp ?? "-"}
-            </span>
-            <span>
-              <b>AP</b> {ranking?.ap ?? "-"}
-            </span>
-            <span>
-              <b>SP</b> {ranking?.sp ?? "-"}
-            </span>
-          </div>
+          {isIq ? (
+            <div className="metric-line">
+              <strong>Ranking</strong>
+              <span>
+                <b>Rank</b> {ranking?.rank ?? "-"}
+              </span>
+              <span>
+                <b>Avg</b> {formatNumber(iqStats?.avg)}
+              </span>
+              <span>
+                <b>High</b> {iqStats?.high ?? "-"}
+              </span>
+              <span>
+                <b>Low</b> {iqStats?.low ?? "-"}
+              </span>
+            </div>
+          ) : (
+            <div className="metric-line">
+              <strong>Ranking</strong>
+              <span>
+                <b>Rank</b> {ranking?.rank ?? "-"}
+              </span>
+              <span>
+                <b>Record</b> {ranking ? `${ranking.wins ?? 0}-${ranking.losses ?? 0}-${ranking.ties ?? 0}` : "-"}
+              </span>
+              <span>
+                <b>WP</b> {ranking?.wp ?? "-"}
+              </span>
+              <span>
+                <b>AP</b> {ranking?.ap ?? "-"}
+              </span>
+              <span>
+                <b>SP</b> {ranking?.sp ?? "-"}
+              </span>
+            </div>
+          )}
           <div className="metric-line">
             <strong>Skills</strong>
             <span>
@@ -3196,10 +3916,10 @@ function TeamEventDetail({
         </div>
       </div>
       {elimMatches.length ? (
-        <TeamEventMatchPreview matches={elimMatches.slice(0, 3)} focusTeamId={focusTeamId} onViewMatches={onViewMatches} />
+        <TeamEventMatchPreview matches={elimMatches.slice(0, 3)} focusTeamId={focusTeamId} onViewMatches={onViewMatches} isIq={isIq} />
       ) : (
         <div className="team-event-no-elims">
-          <span className="muted">No elimination matches for this team at this event.</span>
+          <span className="muted">{isIq ? "No finals matches for this team at this event." : "No elimination matches for this team at this event."}</span>
           {matches.length > 0 && (
             <button type="button" className="view-all-matches" onClick={onViewMatches}>
               View all matches...
@@ -3211,18 +3931,20 @@ function TeamEventDetail({
   );
 }
 
-function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches }: { matches: Match[]; focusTeamId: number; onViewMatches: () => void }) {
+function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = false }: { matches: Match[]; focusTeamId: number; onViewMatches: () => void; isIq?: boolean }) {
   const divisionWins = divisionFinalWins(matches, focusTeamId);
   const lastFinalIds = lastFinalIdsByDivision(matches);
-  const elimAllianceNotice = firstElimAllianceNotice(matches, focusTeamId);
+  const elimAllianceNotice = isIq ? null : firstElimAllianceNotice(matches, focusTeamId);
 
   return (
     <table className="team-event-match-preview">
       <tbody>
         {matches.map((match) => {
           const { red, blue, redScore, blueScore, winner } = matchWinner(match);
-          const outcome = teamMatchOutcome(match, focusTeamId);
+          const iqResult = isIq ? iqMatchResult(match) : null;
+          const outcome = isIq ? null : teamMatchOutcome(match, focusTeamId);
           const divisionWin = lastFinalIds.get(match.division.id) === match.id ? divisionWins.get(match.division.id) : undefined;
+          const displayName = isIq && isIqFinalsMatch(match) ? "Finals" : match.name;
           return (
             <Fragment key={match.id}>
               {elimAllianceNotice?.matchId === match.id && (
@@ -3236,21 +3958,27 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches }: { matche
                 <td className="truncate-cell">
                   <span className="team-match-name">
                     {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
-                    <span>{match.name}</span>
+                    <span>{displayName}</span>
                   </span>
                 </td>
-                <td className={`red-alliance-cell ${winner === "Red" ? "winning-alliance-cell" : ""}`}>
-                  <AllianceTeamLinks teams={red?.teams} focusTeamId={focusTeamId} />
+                <td className={`red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
+                  <AllianceTeamLinks teams={red?.teams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "red"} />
                 </td>
-                <td className={`blue-alliance-cell ${winner === "Blue" ? "winning-alliance-cell" : ""}`}>
-                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} />
+                <td className={`blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
+                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "blue"} />
                 </td>
-                <td className="score-cell">
-                  <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
-                  <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
-                </td>
+                {isIq ? (
+                  <td className="score-cell">
+                    <span className="score iq-score">{iqResult?.score ?? "-"}</span>
+                  </td>
+                ) : (
+                  <td className="score-cell">
+                    <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
+                    <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
+                  </td>
+                )}
               </tr>
-              {divisionWin && (
+              {!isIq && divisionWin && (
                 <tr className="division-win-row">
                   <td colSpan={4}>{divisionWin.teamName} won {divisionWin.division.name} division!</td>
                 </tr>
@@ -3277,6 +4005,7 @@ function TeamMatchesByEvent({
   focusTeamId,
   direction,
   focusedEventId,
+  isIq = false,
 }: {
   matches: Match[];
   eventIndex: Map<number, Event>;
@@ -3284,6 +4013,7 @@ function TeamMatchesByEvent({
   focusTeamId: number;
   direction: DateDirection;
   focusedEventId?: number | null;
+  isIq?: boolean;
 }) {
   const groups = groupItemsByEvent(matches, eventIndex, seasonId, direction);
 
@@ -3295,7 +4025,7 @@ function TeamMatchesByEvent({
             <summary>
               <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} />
             </summary>
-            <TeamMatchTable matches={group.items} focusTeamId={focusTeamId} />
+            <TeamMatchTable matches={group.items} focusTeamId={focusTeamId} isIq={isIq} />
           </details>
         ))}
         {!groups.length && <Empty>No matches returned for this season.</Empty>}
@@ -3304,27 +4034,29 @@ function TeamMatchesByEvent({
   );
 }
 
-function TeamMatchTable({ matches, focusTeamId }: { matches: Match[]; focusTeamId: number }) {
+function TeamMatchTable({ matches, focusTeamId, isIq = false }: { matches: Match[]; focusTeamId: number; isIq?: boolean }) {
   const sortedMatches = [...matches].sort((a, b) => compareMatchesDisplay(a, b, preferredTeamDivisionId(matches, focusTeamId)));
   const divisionWins = divisionFinalWins(sortedMatches, focusTeamId);
   const lastFinalIds = lastFinalIdsByDivision(sortedMatches);
-  const elimAllianceNotice = firstElimAllianceNotice(sortedMatches, focusTeamId);
+  const elimAllianceNotice = isIq ? null : firstElimAllianceNotice(sortedMatches, focusTeamId);
 
   return (
     <table>
       <thead>
         <tr>
           <th>Match</th>
-          <th>Red Alliance</th>
-          <th>Blue Alliance</th>
+          <th>{isIq ? "Team" : "Red Alliance"}</th>
+          <th>{isIq ? "Team" : "Blue Alliance"}</th>
           <th>Score</th>
         </tr>
       </thead>
       <tbody>
         {sortedMatches.map((match) => {
           const { red, blue, redScore, blueScore, winner } = matchWinner(match);
-          const outcome = teamMatchOutcome(match, focusTeamId);
+          const iqResult = isIq ? iqMatchResult(match) : null;
+          const outcome = isIq ? null : teamMatchOutcome(match, focusTeamId);
           const divisionWin = lastFinalIds.get(match.division.id) === match.id ? divisionWins.get(match.division.id) : undefined;
+          const displayName = isIq && isIqFinalsMatch(match) ? "Finals" : match.name;
 
           return (
             <Fragment key={match.id}>
@@ -3339,22 +4071,28 @@ function TeamMatchTable({ matches, focusTeamId }: { matches: Match[]; focusTeamI
                 <td>
                   <span className="team-match-name">
                     {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
-                    <span>{match.name}</span>
+                    <span>{displayName}</span>
                     {match.division?.name && <span className="muted inline-muted">{match.division.name}</span>}
                   </span>
                 </td>
-                <td className={`red-alliance-cell ${winner === "Red" ? "winning-alliance-cell" : ""}`}>
-                  <AllianceTeamLinks teams={red?.teams} focusTeamId={focusTeamId} />
+                <td className={`red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
+                  <AllianceTeamLinks teams={red?.teams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "red"} />
                 </td>
-                <td className={`blue-alliance-cell ${winner === "Blue" ? "winning-alliance-cell" : ""}`}>
-                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} />
+                <td className={`blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
+                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "blue"} />
                 </td>
-                <td>
-                  <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
-                  <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
-                </td>
+                {isIq ? (
+                  <td>
+                    <span className="score iq-score">{iqResult?.score ?? "-"}</span>
+                  </td>
+                ) : (
+                  <td>
+                    <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
+                    <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
+                  </td>
+                )}
               </tr>
-              {divisionWin && (
+              {!isIq && divisionWin && (
                 <tr className="division-win-row">
                   <td colSpan={4}>{divisionWin.teamName} won {divisionWin.division.name} division!</td>
                 </tr>
@@ -3369,16 +4107,79 @@ function TeamMatchTable({ matches, focusTeamId }: { matches: Match[]; focusTeamI
 
 function TeamRankingsByEvent({
   rankings,
+  matches = [],
   eventIndex,
   seasonId,
   direction,
+  focusTeamId,
+  isIq = false,
 }: {
   rankings: Ranking[];
+  matches?: Match[];
   eventIndex: Map<number, Event>;
   seasonId: number | null;
   direction: DateDirection;
+  focusTeamId?: number;
+  isIq?: boolean;
 }) {
   const groups = groupItemsByEvent(rankings, eventIndex, seasonId, direction);
+  const matchesByEvent = useMemo(() => {
+    const map = new Map<number, Match[]>();
+    matches.forEach((match) => {
+      map.set(match.event.id, [...(map.get(match.event.id) ?? []), match]);
+    });
+    return map;
+  }, [matches]);
+
+  if (isIq) {
+    return (
+      <Panel title="Rankings" icon={<BarChart3 />}>
+        <table>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Division</th>
+              <th>Rank</th>
+              <th>Avg</th>
+              <th>High</th>
+              <th>Low</th>
+              <th>Dropped scores</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.flatMap((group) =>
+              group.items.map((row) => {
+                const stats = iqTeamQualStats(matchesByEvent.get(group.eventRef.id) ?? [], focusTeamId ?? row.team.id, row);
+                return (
+                  <tr key={row.id}>
+                    <td>
+                      <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                      <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
+                    </td>
+                    <td>{row.division?.name ?? "-"}</td>
+                    <td>{row.rank}</td>
+                    <td>{formatNumber(stats.avg)}</td>
+                    <td>{stats.high ?? "-"}</td>
+                    <td>{stats.low ?? "-"}</td>
+                    <td>
+                      <DroppedScores dropped={stats.dropped} />
+                    </td>
+                  </tr>
+                );
+              }),
+            )}
+            {!groups.length && (
+              <tr>
+                <td colSpan={7}>
+                  <Empty>No rankings returned for this season.</Empty>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </Panel>
+    );
+  }
 
   return (
     <Panel title="Rankings" icon={<BarChart3 />}>
@@ -3606,6 +4407,7 @@ function MatchesTable({
   presetLoading,
   presetUrl,
   onOpenMatch,
+  isIq = false,
 }: {
   matches: Match[];
   timestampMap: Map<number, MatchTimestamp>;
@@ -3613,8 +4415,10 @@ function MatchesTable({
   presetLoading: boolean;
   presetUrl: string | null;
   onOpenMatch: (match: Match, timestamp: MatchTimestamp) => void;
+  isIq?: boolean;
 }) {
   const [qualificationDirection, setQualificationDirection] = useState<DateDirection>("asc");
+  const [bracketOpen, setBracketOpen] = useState(false);
   const qualificationMatches = matches
     .filter((match) => match.round === 2)
     .sort((a, b) => (qualificationDirection === "asc" ? 1 : -1) * (a.matchnum - b.matchnum));
@@ -3626,6 +4430,17 @@ function MatchesTable({
   }, new Map());
   const allianceRows = allianceRowsFromMatches(matches);
   const playoffOrder = ["r16", "qf", "sf", "f"];
+
+  const dayKeys = [...new Set(matches.map(matchDayKey).filter((key): key is string => !!key))].sort();
+  const dayNumbers = dayKeys.length > 1 ? new Map(dayKeys.map((key, index) => [key, index + 1] as const)) : undefined;
+
+  // IQ Teamwork: cooperative format. Finals are round 15; "alliances" are the
+  // finals partner pairs seeded by score; there is no elimination bracket.
+  const iqFinals = isIq
+    ? matches.filter((match) => isIqFinalsMatch(match)).sort(compareMatchesDisplay)
+    : [];
+  const iqFinalsLabelMap = isIq ? iqFinalsLabels(matches) : undefined;
+  const iqAllianceRows = isIq ? iqFinalsAlliances(matches) : [];
 
   return (
     <div className="results-layout">
@@ -3641,30 +4456,61 @@ function MatchesTable({
           presetLoading={presetLoading}
           presetUrl={presetUrl}
           onOpenMatch={onOpenMatch}
+          dayNumbers={dayNumbers}
+          isIq={isIq}
         />
       </section>
       <section className="results-column">
-        <h2>Alliances</h2>
-        <AllianceSelectionTable alliances={allianceRows} />
-        <h2>Playoff Results</h2>
-        {playoffOrder
-          .filter((key) => playoffGroups.has(key))
-          .map((key) => (
-            <section className="playoff-round" key={key}>
-              <h3>{playoffRoundLabel(key)}</h3>
-              <ResultsMatchTable
-                matches={(playoffGroups.get(key) ?? []).sort(compareMatchesDisplay)}
-                emptyText="No playoff matches returned."
-                timestampMap={timestampMap}
-                presetSupported={presetSupported}
-                presetLoading={presetLoading}
-                presetUrl={presetUrl}
-                onOpenMatch={onOpenMatch}
-              />
-            </section>
-          ))}
-        {!playoffMatches.length && <Empty>No playoff matches returned.</Empty>}
+        <div className="alliances-header">
+          <h2>Alliances</h2>
+          {!isIq && playoffMatches.length > 0 && (
+            <button className="bracket-open-btn" onClick={() => setBracketOpen(true)}>
+              See elimination bracket
+            </button>
+          )}
+        </div>
+        <AllianceSelectionTable alliances={isIq ? iqAllianceRows : allianceRows} iq={isIq} />
+        {isIq ? (
+          <>
+            <h2>Finals matches</h2>
+            <ResultsMatchTable
+              matches={iqFinals}
+              emptyText="No finals matches returned."
+              timestampMap={timestampMap}
+              presetSupported={presetSupported}
+              presetLoading={presetLoading}
+              presetUrl={presetUrl}
+              onOpenMatch={onOpenMatch}
+              dayNumbers={dayNumbers}
+              isIq
+              labelFor={(match) => iqFinalsLabelMap?.get(match.id)}
+            />
+          </>
+        ) : (
+          <>
+            <h2>Elimination Results</h2>
+            {playoffOrder
+              .filter((key) => playoffGroups.has(key))
+              .map((key) => (
+                <section className="playoff-round" key={key}>
+                  <h3>{playoffRoundLabel(key)}</h3>
+                  <ResultsMatchTable
+                    matches={(playoffGroups.get(key) ?? []).sort(compareMatchesDisplay)}
+                    emptyText="No playoff matches returned."
+                    timestampMap={timestampMap}
+                    presetSupported={presetSupported}
+                    presetLoading={presetLoading}
+                    presetUrl={presetUrl}
+                    onOpenMatch={onOpenMatch}
+                    dayNumbers={dayNumbers}
+                  />
+                </section>
+              ))}
+            {!playoffMatches.length && <Empty>No playoff matches returned.</Empty>}
+          </>
+        )}
       </section>
+      {!isIq && bracketOpen && <EliminationBracketOverlay matches={playoffMatches} onClose={() => setBracketOpen(false)} />}
     </div>
   );
 }
@@ -3679,6 +4525,9 @@ function ResultsMatchTable({
   presetLoading,
   presetUrl,
   onOpenMatch,
+  dayNumbers,
+  isIq = false,
+  labelFor,
 }: {
   matches: Match[];
   emptyText: string;
@@ -3689,6 +4538,9 @@ function ResultsMatchTable({
   presetLoading?: boolean;
   presetUrl?: string | null;
   onOpenMatch?: (match: Match, timestamp: MatchTimestamp) => void;
+  dayNumbers?: Map<string, number>;
+  isIq?: boolean;
+  labelFor?: (match: Match) => string | undefined;
 }) {
   return (
     <table className="results-match-table">
@@ -3724,27 +4576,49 @@ function ResultsMatchTable({
               )}
             </span>
           </th>
-          <th>Red Alliance</th>
-          <th>Blue Alliance</th>
+          <th>{isIq ? "Team" : "Red Alliance"}</th>
+          <th>{isIq ? "Team" : "Blue Alliance"}</th>
           <th>Score</th>
         </tr>
       </thead>
       <tbody>
-        {matches.map((match) => {
+        {matches.map((match, index) => {
           const { red, blue, redScore, blueScore, winner } = matchWinner(match);
           const redTeams = red?.teams ?? [];
           const blueTeams = blue?.teams ?? [];
+          const iqResult = isIq ? iqMatchResult(match) : null;
           const timestamp = timestampMap?.get(match.id);
+          const matchClock = formatMatchClock(match);
           const canPlay = presetSupported && timestamp && timestamp.timestamp !== null && timestamp.videoId;
+          const displayName = labelFor?.(match) ?? match.name;
+
+          let dayDivider: ReactNode = null;
+          if (dayNumbers && index > 0) {
+            const dayKey = matchDayKey(match);
+            const prevDayKey = matchDayKey(matches[index - 1]);
+            if (dayKey && prevDayKey && dayKey !== prevDayKey) {
+              const currentDay = dayNumbers.get(dayKey);
+              const prevDay = dayNumbers.get(prevDayKey);
+              if (currentDay && prevDay) {
+                dayDivider = (
+                  <tr className="match-day-divider-row">
+                    <td colSpan={5}>End of Day {Math.min(currentDay, prevDay)}</td>
+                  </tr>
+                );
+              }
+            }
+          }
 
           return (
-            <tr key={match.id}>
+            <Fragment key={match.id}>
+              {dayDivider}
+              <tr>
               <td className="play-cell">
                 {canPlay ? (
                   <button
                     className="play-dot active"
                     onClick={() => onOpenMatch?.(match, timestamp)}
-                    title={`Play ${match.name}`}
+                    title={`Play ${displayName}`}
                   />
                 ) : (
                   <span className="play-dot disabled" />
@@ -3752,25 +4626,33 @@ function ResultsMatchTable({
               </td>
               <td className="result-match-name">
                 <span className="result-match-line">
-                  <span className="result-match-label">{match.name}</span>
-                  {match.round === 2 && match.field && (
+                  <span className="result-match-label">{displayName}</span>
+                  {matchClock && <span className="result-match-time">{matchClock}</span>}
+                  {match.field && (
                     <span className="result-field-name">
                       {match.field}
                     </span>
                   )}
                 </span>
               </td>
-              <td className={`alliance-cell red-alliance-cell ${winner === "Red" ? "winning-alliance-cell" : ""}`}>
-                <AllianceTeamLinks teams={redTeams} />
+              <td className={`alliance-cell red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
+                <AllianceTeamLinks teams={redTeams} dq={iqResult?.dqColor === "red"} />
               </td>
-              <td className={`alliance-cell blue-alliance-cell ${winner === "Blue" ? "winning-alliance-cell" : ""}`}>
-                <AllianceTeamLinks teams={blueTeams} />
+              <td className={`alliance-cell blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
+                <AllianceTeamLinks teams={blueTeams} dq={iqResult?.dqColor === "blue"} />
               </td>
-              <td className="score-cell">
-                <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
-                <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
-              </td>
-            </tr>
+              {isIq ? (
+                <td className="score-cell">
+                  <span className="score iq-score">{iqResult?.score ?? "-"}</span>
+                </td>
+              ) : (
+                <td className="score-cell">
+                  <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
+                  <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
+                </td>
+              )}
+              </tr>
+            </Fragment>
           );
         })}
         {!matches.length && (
@@ -3940,34 +4822,303 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
   );
 }
 
-function AllianceSelectionTable({ alliances }: { alliances: Array<[number, string[]]> }) {
-  if (!alliances.length) return <Empty>No alliance selections returned.</Empty>;
+type BracketTeam = { id: number; name: string };
+type BracketSlot = { seed: number | null; teams: BracketTeam[]; score: number | null; winner: boolean };
+type BracketNode = { id: string; label: string; red: BracketSlot; blue: BracketSlot };
+type BracketRound = { key: string; nodes: BracketNode[] };
 
+function allianceTeamKey(teams: BracketTeam[]) {
+  return teams
+    .map((team) => team.name?.toLowerCase().trim())
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}
+
+function buildBracketSeedMap(matches: Match[]) {
+  const seedMap = new Map<string, number>();
+  const assignFromRound = (key: "r16" | "qf", pairs: number[][]) => {
+    matches
+      .filter((match) => playoffRoundKey(match) === key)
+      .forEach((match) => {
+        const pair = pairs[(match.instance ?? 1) - 1];
+        if (!pair) return;
+        const red = match.alliances.find((alliance) => alliance.color === "red");
+        const blue = match.alliances.find((alliance) => alliance.color === "blue");
+        if (red) {
+          const key = allianceTeamKey(red.teams.map((entry) => entry.team));
+          if (key && !seedMap.has(key)) seedMap.set(key, pair[0]);
+        }
+        if (blue) {
+          const key = allianceTeamKey(blue.teams.map((entry) => entry.team));
+          if (key && !seedMap.has(key)) seedMap.set(key, pair[1]);
+        }
+      });
+  };
+  assignFromRound("r16", r16SeedPairs);
+  assignFromRound("qf", qfSeedPairs);
+  return seedMap;
+}
+
+function seedForTeams(seedMap: Map<string, number>, teams: BracketTeam[]) {
+  const key = allianceTeamKey(teams);
+  return key && seedMap.has(key) ? seedMap.get(key) ?? null : null;
+}
+
+const bracketRoundShort: Record<string, string> = { r16: "R16", qf: "QF", sf: "SF", f: "Finals" };
+
+function buildBracketSlotNode(slotMatches: Match[], seedMap: Map<string, number>, label: string, id: string): BracketNode {
+  const ordered = [...slotMatches].sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum);
+  const sample = ordered[ordered.length - 1];
+  const redTeams = sample.alliances.find((alliance) => alliance.color === "red")?.teams.map((entry) => entry.team) ?? [];
+  const blueTeams = sample.alliances.find((alliance) => alliance.color === "blue")?.teams.map((entry) => entry.team) ?? [];
+
+  if (ordered.length === 1) {
+    const { winner, redScore, blueScore } = matchWinner(sample);
+    return {
+      id,
+      label,
+      red: { seed: seedForTeams(seedMap, redTeams), teams: redTeams, score: redScore ?? null, winner: winner === "Red" },
+      blue: { seed: seedForTeams(seedMap, blueTeams), teams: blueTeams, score: blueScore ?? null, winner: winner === "Blue" },
+    };
+  }
+
+  let redWins = 0;
+  let blueWins = 0;
+  ordered.forEach((match) => {
+    const { winner } = matchWinner(match);
+    if (winner === "Red") redWins += 1;
+    else if (winner === "Blue") blueWins += 1;
+  });
+  return {
+    id,
+    label,
+    red: { seed: seedForTeams(seedMap, redTeams), teams: redTeams, score: redWins, winner: redWins > blueWins },
+    blue: { seed: seedForTeams(seedMap, blueTeams), teams: blueTeams, score: blueWins, winner: blueWins > redWins },
+  };
+}
+
+function buildBracketRounds(matches: Match[]): BracketRound[] {
+  const seedMap = buildBracketSeedMap(matches);
+  const rounds: BracketRound[] = [];
+
+  (["r16", "qf", "sf", "f"] as const).forEach((key) => {
+    const roundMatches = matches.filter((match) => playoffRoundKey(match) === key);
+    if (!roundMatches.length) return;
+
+    const byInstance = new Map<number, Match[]>();
+    roundMatches.forEach((match) => {
+      const instance = match.instance ?? 1;
+      byInstance.set(instance, [...(byInstance.get(instance) ?? []), match]);
+    });
+
+    const nodes = [...byInstance.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([instance, slotMatches]) =>
+        buildBracketSlotNode(
+          slotMatches,
+          seedMap,
+          key === "f" ? (slotMatches.length > 1 ? `Finals (Bo${slotMatches.length})` : "Finals") : `${bracketRoundShort[key]} #${instance}`,
+          `${key}-${instance}`,
+        ),
+      );
+
+    rounds.push({ key, nodes });
+  });
+
+  return rounds;
+}
+
+function BracketSlotRow({ slot, color }: { slot: BracketSlot; color: "red" | "blue" }) {
   return (
-    <table className="alliance-selection-table">
-      <thead>
-        <tr>
-          <th>Seed</th>
-          <th>Captain</th>
-          <th>Pick 1</th>
-        </tr>
-      </thead>
-      <tbody>
-        {alliances.map(([seed, teams]) => (
-          <tr key={`${seed}-${teams.join("-")}`}>
-            <td>Seed {seed}</td>
-            {Array.from({ length: 2 }).map((_, teamIndex) => (
-              <td key={teamIndex}>{teams[teamIndex] ?? ""}</td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className={`bracket-slot bracket-slot-${color} ${slot.winner ? "bracket-slot-winner" : ""}`}>
+      <span className="bracket-seed">{slot.seed ?? ""}</span>
+      <span className="bracket-teams">
+        {slot.teams.length ? (
+          slot.teams.map((team) => <TeamMiniLink key={team.id} team={team} />)
+        ) : (
+          <span className="bracket-tbd">—</span>
+        )}
+      </span>
+      <span className="bracket-score">{slot.score ?? ""}</span>
+    </div>
   );
 }
 
-function RankingsTable({ rankings }: { rankings: Ranking[] }) {
+function BracketConnectors({ count }: { count: number }) {
+  return (
+    <div className="bracket-connector">
+      {Array.from({ length: count }).map((_, index) => (
+        <div className="bracket-connector-cell" key={index}>
+          <span className="conn-top" />
+          <span className="conn-bottom" />
+          <span className="conn-vert" />
+          <span className="conn-out" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EliminationBracket({ matches }: { matches: Match[] }) {
+  const rounds = useMemo(() => buildBracketRounds(matches), [matches]);
+  if (!rounds.length) return <Empty>No elimination matches returned.</Empty>;
+
+  return (
+    <div className="bracket">
+      {rounds.map((round, roundIndex) => (
+        <Fragment key={round.key}>
+          <div className="bracket-round">
+            {round.nodes.map((node) => (
+              <div className="bracket-match" key={node.id}>
+                <div className="bracket-box">
+                  <div className="bracket-box-label">{node.label}</div>
+                  <div className="bracket-box-slots">
+                    <BracketSlotRow slot={node.red} color="red" />
+                    <BracketSlotRow slot={node.blue} color="blue" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {roundIndex < rounds.length - 1 && <BracketConnectors count={Math.ceil(round.nodes.length / 2)} />}
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+function EliminationBracketOverlay({ matches, onClose }: { matches: Match[]; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="video-overlay bracket-overlay" onClick={onClose}>
+      <div className="bracket-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="bracket-modal-header">
+          <strong>Elimination Bracket</strong>
+          <button className="video-close-btn" onClick={onClose} aria-label="Close">&times;</button>
+        </div>
+        <div className="bracket-modal-body">
+          <EliminationBracket matches={matches} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AllianceSelectionTable({ alliances, iq = false }: { alliances: Array<[number, string[]]>; iq?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!alliances.length) return <Empty>{iq ? "No finals alliances returned." : "No alliance selections returned."}</Empty>;
+
+  const collapsible = alliances.length > 2;
+  const showFade = collapsible && !expanded;
+  const visibleAlliances = showFade ? alliances.slice(0, 3) : alliances;
+
+  return (
+    <div className={`alliance-collapse ${showFade ? "is-collapsed" : ""}`}>
+      <table className="alliance-selection-table">
+        <thead>
+          <tr>
+            <th>Seed</th>
+            <th>{iq ? "Team" : "Captain"}</th>
+            <th>{iq ? "Team" : "Pick 1"}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visibleAlliances.map(([seed, teams], rowIndex) => (
+            <tr
+              key={`${seed}-${teams.join("-")}`}
+              className={showFade && rowIndex === 2 ? "alliance-row-fade" : ""}
+            >
+              <td>Seed {seed}</td>
+              {Array.from({ length: 2 }).map((_, teamIndex) => (
+                <td key={teamIndex}>{teams[teamIndex] ?? ""}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {showFade && (
+        <button className="alliance-show-all" onClick={() => setExpanded(true)}>
+          Show all seeds
+          <ChevronDown size={15} />
+        </button>
+      )}
+      {collapsible && expanded && (
+        <button className="alliance-show-all alliance-show-less" onClick={() => setExpanded(false)} aria-label="Show fewer seeds">
+          <ChevronUp size={18} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DroppedScores({ dropped }: { dropped: Array<{ matchnum: number; score: number }> }) {
+  if (!dropped.length) return <span className="muted">-</span>;
+  return (
+    <span className="dropped-scores">
+      {dropped.map((entry, index) => (
+        <span key={entry.matchnum} className="dropped-score-item">
+          Q{entry.matchnum} ({entry.score}){index < dropped.length - 1 ? "," : ""}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ranking[]; isIq?: boolean; matches?: Match[] }) {
   const sortedRankings = [...rankings].sort((a, b) => a.rank - b.rank);
+
+  if (isIq) {
+    return (
+      <Panel title="Rankings" icon={<BarChart3 />}>
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Team</th>
+              <th>Avg</th>
+              <th>High</th>
+              <th>Low</th>
+              <th>Dropped scores</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedRankings.map((row) => {
+              const stats = iqTeamQualStats(matches, row.team.id, row);
+              return (
+                <tr key={row.id}>
+                  <td>{row.rank}</td>
+                  <td className="team-cell">
+                    <Link href={`/team/${row.team.id}`}>{row.team.name}</Link>
+                  </td>
+                  <td>{formatNumber(stats.avg)}</td>
+                  <td>{stats.high ?? "-"}</td>
+                  <td>{stats.low ?? "-"}</td>
+                  <td>
+                    <DroppedScores dropped={stats.dropped} />
+                  </td>
+                </tr>
+              );
+            })}
+            {!sortedRankings.length && (
+              <tr>
+                <td colSpan={6}>
+                  <Empty>No rankings returned.</Empty>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </Panel>
+    );
+  }
 
   return (
     <Panel title="Rankings" icon={<BarChart3 />}>
@@ -4187,7 +5338,7 @@ function InsightsPage() {
 function NotFound() {
   return (
     <section className="page">
-      <PageTitle icon={<ExternalLink />} title="Page Not Found" subtitle="That VEX Alliance route does not exist yet." />
+      <PageTitle icon={<ExternalLink />} title="Page Not Found" subtitle="That stemScout route does not exist yet." />
       <Link href="/" className="button-link">
         Go home
       </Link>
