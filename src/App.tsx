@@ -556,6 +556,18 @@ function eventCategory(event: Event): { label: EventCategory; rank: number } {
   return { label: "Other", rank: 3 };
 }
 
+// Scrimmages are practice events that shouldn't count toward performance trends.
+function isScrimmageEvent(event?: Event | null) {
+  if (!event) return false;
+  if (normalizeText(event.event_type).includes("scrimmage")) return true;
+  return normalizeText(event.name).includes("scrimmage");
+}
+
+// Signature events and championships (incl. Worlds) get a star marker on charts.
+function isMarqueeEvent(event?: Event | null) {
+  return event ? eventCategory(event).label !== "Other" : false;
+}
+
 function eventDistance(event: Event) {
   const start = new Date(event.start ?? 0).getTime();
   const end = new Date(event.end ?? event.start ?? 0).getTime();
@@ -3351,10 +3363,21 @@ function useMeasuredWidth() {
 
 type ChartSeries = { name: string; color: string; values: Array<number | null> };
 
+function starPoints(cx: number, cy: number, outer: number, inner: number) {
+  const pts: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const angle = -Math.PI / 2 + (i * Math.PI) / 5;
+    pts.push(`${(cx + r * Math.cos(angle)).toFixed(2)},${(cy + r * Math.sin(angle)).toFixed(2)}`);
+  }
+  return pts.join(" ");
+}
+
 function TrendChart({
   labels,
   tips,
   series,
+  markers,
   height = 140,
   area = false,
   yFormat = (n: number) => String(Math.round(n)),
@@ -3365,6 +3388,7 @@ function TrendChart({
   labels: string[];
   tips?: string[];
   series: ChartSeries[];
+  markers?: boolean[];
   height?: number;
   area?: boolean;
   yFormat?: (n: number) => string;
@@ -3455,9 +3479,24 @@ function TrendChart({
               <g key={si}>
                 {area && areaPath && <path d={areaPath} fill={s.color} className="about-chart-area" />}
                 <path d={linePath} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-                {pts.map((p, i) =>
-                  p ? <circle key={i} cx={p.x} cy={p.y} r={hover === i ? 4.5 : 3} fill="#fff" stroke={s.color} strokeWidth={2} /> : null,
-                )}
+                {pts.map((p, i) => {
+                  if (!p) return null;
+                  const big = hover === i;
+                  if (markers?.[i]) {
+                    const outer = big ? 7 : 5.5;
+                    return (
+                      <polygon
+                        key={i}
+                        points={starPoints(p.x, p.y, outer, outer * 0.42)}
+                        fill="#fff"
+                        stroke={s.color}
+                        strokeWidth={2}
+                        strokeLinejoin="round"
+                      />
+                    );
+                  }
+                  return <circle key={i} cx={p.x} cy={p.y} r={big ? 4.5 : 3} fill="#fff" stroke={s.color} strokeWidth={2} />;
+                })}
               </g>
             );
           })}
@@ -3570,6 +3609,7 @@ function TeamAboutTab({
       return ev?.start ? new Date(ev.start).getTime() : 0;
     };
     return [...rankings]
+      .filter((r) => !isScrimmageEvent(eventIndex.get(r.event.id)))
       .sort((a, b) => dateOf(a.event.id) - dateOf(b.event.id))
       .map((r) => {
         const wins = r.wins ?? 0;
@@ -3580,6 +3620,7 @@ function TeamAboutTab({
         return {
           name: eventIndex.get(r.event.id)?.name ?? r.event.name ?? `Event ${r.event.id}`,
           date: dateOf(r.event.id),
+          marquee: isMarqueeEvent(eventIndex.get(r.event.id)),
           wins,
           losses,
           ties,
@@ -3601,6 +3642,7 @@ function TeamAboutTab({
     };
     const byEvent = new Map<number, { driver: number; prog: number }>();
     skills.forEach((s) => {
+      if (isScrimmageEvent(eventIndex.get(s.event.id))) return;
       const cur = byEvent.get(s.event.id) ?? { driver: 0, prog: 0 };
       const score = s.score ?? 0;
       if ((s.type ?? "").toLowerCase().includes("driver")) cur.driver = Math.max(cur.driver, score);
@@ -3611,6 +3653,7 @@ function TeamAboutTab({
       .map(([eventId, v]) => ({
         name: eventIndex.get(eventId)?.name ?? `Event ${eventId}`,
         date: dateOf(eventId),
+        marquee: isMarqueeEvent(eventIndex.get(eventId)),
         driver: v.driver,
         prog: v.prog,
         combined: v.driver + v.prog,
@@ -3727,6 +3770,7 @@ function TeamAboutTab({
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => r.name)}
                   series={[{ name: "Win rate", color: "#337ab7", values: rankRows.map((r) => r.winRate * 100) }]}
+                  markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
                   yCeil={100}
                   yFormat={(v) => `${Math.round(v)}%`}
@@ -3753,6 +3797,7 @@ function TeamAboutTab({
                     { name: "Driver", color: "#337ab7", values: skillRows.map((r) => r.driver) },
                     { name: "Autonomous", color: "#8e44ad", values: skillRows.map((r) => r.prog) },
                   ]}
+                  markers={skillRows.map((r) => r.marquee)}
                   yFloor={0}
                 />
               </div>
@@ -3767,6 +3812,7 @@ function TeamAboutTab({
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => r.name)}
                   series={[{ name: "Avg score", color: "#5cb85c", values: rankRows.map((r) => r.avgPoints) }]}
+                  markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
                   yFormat={(v) => v.toFixed(1)}
                 />
@@ -3781,6 +3827,7 @@ function TeamAboutTab({
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => r.name)}
                   series={[{ name: "Avg WP", color: "#f0ad4e", values: rankRows.map((r) => r.avgWp) }]}
+                  markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
                   yFormat={(v) => v.toFixed(1)}
                 />
@@ -3796,6 +3843,7 @@ function TeamAboutTab({
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => `${r.name} — ${r.awp} AWP`)}
                   series={[{ name: "AWP", color: "#5cb85c", values: rankRows.map((r) => r.awp) }]}
+                  markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
                 />
               </div>
