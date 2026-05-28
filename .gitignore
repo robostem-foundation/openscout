@@ -5,5 +5,9 @@ dist/
 server-dist/
 .DS_Store
 npm-debug.log*
+.vercel/
 
 .codex/environments/
+
+# Internal planning docs (not for the repo)
+ACCOUNTS_PLAN.md
