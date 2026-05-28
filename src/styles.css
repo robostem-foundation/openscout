@@ -3758,3 +3758,276 @@ td.quick-look-col {
 .terms-body ul li {
   margin-bottom: 6px;
 }
+
+/* ---------------------------------------------------------------------------
+   Team About tab
+--------------------------------------------------------------------------- */
+.about-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.about-profile {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0 28px;
+  margin: 0;
+  padding: 4px 15px 10px;
+}
+
+.about-panel-body {
+  padding: 12px 15px 14px;
+}
+
+.about-profile-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.about-profile-row dt {
+  color: #777;
+  font-size: 13px;
+}
+
+.about-profile-row dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 500;
+  color: #333;
+}
+
+.about-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.about-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #bbb;
+}
+
+.about-status.active {
+  color: #3c763d;
+}
+
+.about-status.active::before {
+  background: #5cb85c;
+}
+
+.about-status.inactive {
+  color: #999;
+}
+
+.about-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.about-stat {
+  padding: 12px 15px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.about-stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #777;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.about-stat-label svg {
+  color: #aaa;
+}
+
+.about-stat-value {
+  display: block;
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.15;
+  color: #2c3e50;
+}
+
+.about-stat-sub {
+  display: block;
+  margin-top: 2px;
+  color: #999;
+  font-size: 12px;
+}
+
+.about-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.about-charts .panel {
+  margin: 0;
+}
+
+.about-chart {
+  position: relative;
+  width: 100%;
+}
+
+.about-chart svg {
+  display: block;
+}
+
+.about-chart-grid {
+  stroke: #eee;
+  stroke-width: 1;
+}
+
+.about-chart-ylabel {
+  fill: #aaa;
+  font-size: 10px;
+}
+
+.about-chart-guide {
+  stroke: #ccc;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.about-chart-area {
+  opacity: 0.12;
+}
+
+.about-chart-xaxis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  color: #999;
+  font-size: 11px;
+}
+
+.about-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 0 12px;
+  color: #999;
+  font-size: 13px;
+  text-align: center;
+}
+
+.about-chart-tip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 12px));
+  padding: 7px 9px;
+  background: #2c3e50;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  max-width: 220px;
+}
+
+.about-chart-tip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid #2c3e50;
+}
+
+.about-chart-tip.below {
+  transform: translate(-50%, 14px);
+}
+
+.about-chart-tip.below::after {
+  top: -5px;
+  bottom: auto;
+  border-top: none;
+  border-bottom: 5px solid #2c3e50;
+}
+
+.about-chart-tip strong {
+  display: block;
+  margin-bottom: 3px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.about-chart-tip span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #dfe6ee;
+}
+
+.about-chart-tip i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.about-chart-tip b {
+  color: #fff;
+  font-weight: 600;
+}
+
+.about-legend {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 6px;
+  color: #777;
+  font-size: 12px;
+}
+
+.about-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.about-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+@media (max-width: 760px) {
+  .about-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .about-charts {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .about-stats {
+    grid-template-columns: 1fr;
+  }
+}

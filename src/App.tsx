@@ -9,6 +9,7 @@ import {
   ChevronUp,
   ExternalLink,
   Gamepad2,
+  Info,
   ListFilter,
   Link as LinkIcon,
   Medal,
@@ -27,7 +28,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, KeyboardEvent, MouseEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
-import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team } from "./types";
+import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
 
 const programOptions = [
   { label: "All Programs", value: "" },
@@ -82,6 +83,23 @@ type TeamCacheEntry = {
 
 const teamListCache = new Map<string, TeamCacheEntry>();
 let globalEventSearchCache: { data?: Event[]; updatedAt: number; promise?: Promise<Event[]> } = { updatedAt: 0 };
+
+// World skills leaderboards are large (multi-MB) but change slowly, so cache the
+// in-flight promise per season+grade for the whole session — subsequent team
+// views in the same season reuse it instantly.
+const worldSkillsCache = new Map<string, Promise<WorldSkillsEntry[]>>();
+function loadWorldSkills(seasonId: number, grade: string) {
+  const key = `${seasonId}:${grade}`;
+  let promise = worldSkillsCache.get(key);
+  if (!promise) {
+    promise = api.worldSkills(seasonId, grade).catch((err: Error) => {
+      worldSkillsCache.delete(key);
+      throw err;
+    });
+    worldSkillsCache.set(key, promise);
+  }
+  return promise;
+}
 
 function emptyBucket<T>(): AsyncBucket<T> {
   return { data: [], loading: false, error: null };
@@ -3265,8 +3283,492 @@ function EventDetail({ id }: { id: string }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Team About tab — profile + season stat cards + lightweight SVG trend charts
+// ---------------------------------------------------------------------------
+
+function shortMonthYear(ts: number) {
+  if (!ts) return "";
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+}
+
+function useMeasuredWidth() {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return { ref, width };
+}
+
+type ChartSeries = { name: string; color: string; values: Array<number | null> };
+
+function TrendChart({
+  labels,
+  tips,
+  series,
+  height = 140,
+  area = false,
+  yFormat = (n: number) => String(Math.round(n)),
+  yFloor,
+  yCeil,
+  yMaxPad = 0,
+}: {
+  labels: string[];
+  tips?: string[];
+  series: ChartSeries[];
+  height?: number;
+  area?: boolean;
+  yFormat?: (n: number) => string;
+  yFloor?: number;
+  yCeil?: number;
+  yMaxPad?: number;
+}) {
+  const { ref, width } = useMeasuredWidth();
+  const [hover, setHover] = useState<number | null>(null);
+  const n = labels.length;
+
+  const allValues = series.flatMap((s) => s.values.filter((v): v is number => v != null));
+
+  const padL = 44;
+  const padR = 10;
+  const padT = 20;
+  const padB = 10;
+  const W = Math.max(width, 1);
+  const innerW = Math.max(W - padL - padR, 1);
+  const innerH = Math.max(height - padT - padB, 1);
+
+  const lo = yFloor ?? (allValues.length ? Math.min(...allValues) : 0);
+  let hi = yCeil ?? (allValues.length ? Math.max(...allValues) : 1);
+  if (hi === lo) {
+    hi = lo + 1;
+  } else if (yCeil == null) {
+    hi = hi + (hi - lo) * yMaxPad;
+  }
+
+  const xAt = (i: number) => (n <= 1 ? padL + innerW / 2 : padL + (i / (n - 1)) * innerW);
+  const yAt = (v: number) => padT + innerH - ((v - lo) / (hi - lo)) * innerH;
+
+  if (!n || !allValues.length) {
+    return (
+      <div ref={ref} className="about-chart-empty">
+        No data for this season.
+      </div>
+    );
+  }
+
+  const hoverYs =
+    hover != null
+      ? series
+          .map((s) => s.values[hover])
+          .filter((v): v is number => v != null)
+          .map((v) => yAt(v))
+      : [];
+  const hoverY = hoverYs.length ? Math.min(...hoverYs) : padT;
+
+  return (
+    <div ref={ref} className="about-chart" onMouseLeave={() => setHover(null)}>
+      {width > 0 && (
+        <svg width={W} height={height} role="img" aria-hidden="true">
+          {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+            const y = padT + innerH * t;
+            const val = hi - t * (hi - lo);
+            return (
+              <g key={t}>
+                <line x1={padL} y1={y} x2={W - padR} y2={y} className="about-chart-grid" />
+                <text x={padL - 16} y={y + 3} textAnchor="end" className="about-chart-ylabel">
+                  {yFormat(val)}
+                </text>
+              </g>
+            );
+          })}
+          {series.map((s, si) => {
+            const pts = s.values.map((v, i) => (v == null ? null : { x: xAt(i), y: yAt(v) }));
+            const segments: string[] = [];
+            let cur: string[] = [];
+            pts.forEach((p) => {
+              if (p) {
+                cur.push(`${cur.length ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`);
+              } else if (cur.length) {
+                segments.push(cur.join(" "));
+                cur = [];
+              }
+            });
+            if (cur.length) segments.push(cur.join(" "));
+            const linePath = segments.join(" ");
+            const firstPt = pts.find((p) => p);
+            const lastPt = [...pts].reverse().find((p) => p);
+            const baseline = (padT + innerH).toFixed(1);
+            const areaPath =
+              area && firstPt && lastPt
+                ? `${linePath} L${lastPt.x.toFixed(1)} ${baseline} L${firstPt.x.toFixed(1)} ${baseline} Z`
+                : "";
+            return (
+              <g key={si}>
+                {area && areaPath && <path d={areaPath} fill={s.color} className="about-chart-area" />}
+                <path d={linePath} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                {pts.map((p, i) =>
+                  p ? <circle key={i} cx={p.x} cy={p.y} r={hover === i ? 4.5 : 3} fill="#fff" stroke={s.color} strokeWidth={2} /> : null,
+                )}
+              </g>
+            );
+          })}
+          {hover != null && <line x1={xAt(hover)} y1={padT} x2={xAt(hover)} y2={padT + innerH} className="about-chart-guide" />}
+          {labels.map((_, i) => {
+            const bandW = n <= 1 ? innerW : innerW / (n - 1);
+            return (
+              <rect key={i} x={xAt(i) - bandW / 2} y={0} width={bandW} height={height} fill="transparent" onMouseEnter={() => setHover(i)} />
+            );
+          })}
+        </svg>
+      )}
+      <div className="about-chart-xaxis" style={{ paddingLeft: padL, paddingRight: padR }}>
+        <span>{labels[0]}</span>
+        {n > 1 && <span>{labels[n - 1]}</span>}
+      </div>
+      {hover != null && (
+        <div className={`about-chart-tip${hoverY < 70 ? " below" : ""}`} style={{ left: `${(xAt(hover) / W) * 100}%`, top: hoverY }}>
+          <strong>{tips?.[hover] ?? labels[hover]}</strong>
+          {series.map((s) => (
+            <span key={s.name}>
+              <i style={{ background: s.color }} /> {s.name}: <b>{s.values[hover] == null ? "—" : yFormat(s.values[hover] as number)}</b>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  sub,
+  accent = "gray",
+  icon,
+}: {
+  label: string;
+  value: ReactNode;
+  sub?: ReactNode;
+  accent?: "blue" | "green" | "amber" | "red" | "gray";
+  icon?: ReactNode;
+}) {
+  return (
+    <div className="about-stat" data-accent={accent}>
+      <div className="about-stat-label">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <strong className="about-stat-value">{value}</strong>
+      {sub != null && <small className="about-stat-sub">{sub}</small>}
+    </div>
+  );
+}
+
+function AboutProfileRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="about-profile-row">
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
+
+function TeamAboutTab({
+  team,
+  isIq,
+  seasonId,
+  seasonLabel,
+  rankings,
+  skills,
+  allEvents,
+  eventIndex,
+  loading,
+}: {
+  team: Team;
+  isIq: boolean;
+  seasonId: number | null;
+  seasonLabel?: string;
+  rankings: Ranking[];
+  skills: Skill[];
+  allEvents: Event[];
+  eventIndex: Map<number, Event>;
+  loading: boolean;
+}) {
+  const grade = team.grade ?? "";
+  const worldSkills = useAsync(async () => {
+    if (!seasonId || !grade) return null;
+    return loadWorldSkills(seasonId, grade);
+  }, [seasonId, grade]);
+
+  const wsEntry = useMemo(() => {
+    if (!worldSkills.data) return null;
+    return (
+      worldSkills.data.find((e) => e.team.id === team.id) ??
+      worldSkills.data.find((e) => e.team.team?.toUpperCase() === team.number.toUpperCase()) ??
+      null
+    );
+  }, [worldSkills.data, team.id, team.number]);
+
+  const years = useMemo(() => {
+    const ys = allEvents.map((e) => (e.start ? new Date(e.start).getFullYear() : 0)).filter((y) => y > 0);
+    if (!ys.length) return null;
+    return { first: Math.min(...ys), last: Math.max(...ys) };
+  }, [allEvents]);
+
+  const rankRows = useMemo(() => {
+    const dateOf = (eventId: number) => {
+      const ev = eventIndex.get(eventId);
+      return ev?.start ? new Date(ev.start).getTime() : 0;
+    };
+    return [...rankings]
+      .sort((a, b) => dateOf(a.event.id) - dateOf(b.event.id))
+      .map((r) => {
+        const wins = r.wins ?? 0;
+        const losses = r.losses ?? 0;
+        const ties = r.ties ?? 0;
+        const matches = wins + losses + ties;
+        const wp = r.wp ?? 0;
+        return {
+          name: eventIndex.get(r.event.id)?.name ?? r.event.name ?? `Event ${r.event.id}`,
+          date: dateOf(r.event.id),
+          wins,
+          losses,
+          ties,
+          matches,
+          wp,
+          awp: Math.max(0, wp - (wins * 2 + ties)),
+          winRate: matches ? wins / matches : 0,
+          avgWp: matches ? wp / matches : 0,
+          avgPoints: r.average_points ?? 0,
+          highScore: r.high_score ?? 0,
+        };
+      });
+  }, [rankings, eventIndex]);
+
+  const skillRows = useMemo(() => {
+    const dateOf = (eventId: number) => {
+      const ev = eventIndex.get(eventId);
+      return ev?.start ? new Date(ev.start).getTime() : 0;
+    };
+    const byEvent = new Map<number, { driver: number; prog: number }>();
+    skills.forEach((s) => {
+      const cur = byEvent.get(s.event.id) ?? { driver: 0, prog: 0 };
+      const score = s.score ?? 0;
+      if ((s.type ?? "").toLowerCase().includes("driver")) cur.driver = Math.max(cur.driver, score);
+      else cur.prog = Math.max(cur.prog, score);
+      byEvent.set(s.event.id, cur);
+    });
+    return [...byEvent.entries()]
+      .map(([eventId, v]) => ({
+        name: eventIndex.get(eventId)?.name ?? `Event ${eventId}`,
+        date: dateOf(eventId),
+        driver: v.driver,
+        prog: v.prog,
+        combined: v.driver + v.prog,
+      }))
+      .sort((a, b) => a.date - b.date);
+  }, [skills, eventIndex]);
+
+  const agg = useMemo(() => {
+    const wins = rankRows.reduce((s, r) => s + r.wins, 0);
+    const losses = rankRows.reduce((s, r) => s + r.losses, 0);
+    const ties = rankRows.reduce((s, r) => s + r.ties, 0);
+    const matches = wins + losses + ties;
+    const wp = rankRows.reduce((s, r) => s + r.wp, 0);
+    const awp = rankRows.reduce((s, r) => s + r.awp, 0);
+    const bestDriver = skillRows.reduce((m, r) => Math.max(m, r.driver), 0);
+    const bestProg = skillRows.reduce((m, r) => Math.max(m, r.prog), 0);
+    const avgPoints = rankRows.length ? rankRows.reduce((s, r) => s + r.avgPoints, 0) / rankRows.length : 0;
+    const highScore = rankRows.reduce((m, r) => Math.max(m, r.highScore), 0);
+    return {
+      wins,
+      losses,
+      ties,
+      matches,
+      wp,
+      awp,
+      winRate: matches ? wins / matches : 0,
+      avgWp: matches ? wp / matches : 0,
+      bestDriver,
+      bestProg,
+      bestCombined: bestDriver + bestProg,
+      avgPoints,
+      highScore,
+      events: rankRows.length,
+    };
+  }, [rankRows, skillRows]);
+
+  if (loading && !rankRows.length && !skillRows.length) {
+    return (
+      <div className="about-wrap">
+        <Status loading={true} error={null} />
+      </div>
+    );
+  }
+
+  const winRateAccent = agg.winRate >= 0.6 ? "green" : agg.winRate >= 0.4 ? "amber" : "red";
+  const wsValue = worldSkills.loading ? "…" : wsEntry ? `#${wsEntry.rank.toLocaleString()}` : "Unranked";
+  const wsSub = worldSkills.loading
+    ? "Loading leaderboard…"
+    : wsEntry
+      ? `${wsEntry.scores.score} pts · ${grade}`
+      : worldSkills.error
+        ? "Leaderboard unavailable"
+        : "No ranked skills run";
+
+  const hasComp = rankRows.length > 0;
+  const hasSkills = skillRows.some((r) => r.combined > 0);
+
+  return (
+    <div className="about-wrap">
+      <Panel title="Team Profile" icon={<Info size={18} />}>
+        <dl className="about-profile">
+          <AboutProfileRow label="Organization">{team.organization || "—"}</AboutProfileRow>
+          <AboutProfileRow label="Location">{locationLine(team) || "—"}</AboutProfileRow>
+          <AboutProfileRow label="Team Name">{team.team_name || "—"}</AboutProfileRow>
+          <AboutProfileRow label="Grade">{team.grade || "Unknown"}</AboutProfileRow>
+          <AboutProfileRow label="Program">
+            <ProgramBadge program={team.program} />
+          </AboutProfileRow>
+          <AboutProfileRow label="Status">
+            <span className={`about-status ${team.registered ? "active" : "inactive"}`}>{team.registered ? "Active" : "Inactive"}</span>
+          </AboutProfileRow>
+          <AboutProfileRow label="Years Active">
+            {years ? (years.first === years.last ? `${years.first}` : `${years.first} – ${team.registered ? "present" : years.last}`) : "—"}
+          </AboutProfileRow>
+        </dl>
+      </Panel>
+
+      <div className="about-stats">
+        <StatCard label="World Skills" accent="blue" icon={<Medal size={14} />} value={wsValue} sub={wsSub} />
+        <StatCard
+          label="Best Skills Score"
+          accent="blue"
+          icon={<Activity size={14} />}
+          value={agg.bestCombined || "—"}
+          sub={agg.bestCombined ? `${agg.bestDriver} driver · ${agg.bestProg} auton` : "No skills runs"}
+        />
+        <StatCard label="Events" accent="gray" icon={<CalendarDays size={14} />} value={agg.events || "—"} sub={seasonLabel} />
+        {isIq ? (
+          <>
+            <StatCard label="Avg Qualifying Score" accent="green" icon={<BarChart3 size={14} />} value={agg.avgPoints ? agg.avgPoints.toFixed(1) : "—"} sub="Across events" />
+            <StatCard label="High Score" accent="amber" icon={<Trophy size={14} />} value={agg.highScore || "—"} sub="Best qualifying match" />
+            <StatCard label="Matches" accent="gray" icon={<Gamepad2 size={14} />} value={agg.matches || "—"} sub={`${agg.events} events`} />
+          </>
+        ) : (
+          <>
+            <StatCard label="Win Rate" accent={winRateAccent} icon={<BarChart3 size={14} />} value={agg.matches ? `${Math.round(agg.winRate * 100)}%` : "—"} sub={agg.matches ? `${agg.wins}-${agg.losses}-${agg.ties} record` : "No matches"} />
+            <StatCard label="Total Matches" accent="gray" icon={<Gamepad2 size={14} />} value={agg.matches || "—"} sub={`${agg.events} events`} />
+            <StatCard label="Autonomous WP" accent="green" icon={<Trophy size={14} />} value={agg.awp} sub={`${agg.avgWp.toFixed(1)} avg WP / match`} />
+          </>
+        )}
+      </div>
+
+      {!hasComp && !hasSkills ? (
+        <Panel title="Performance" icon={<BarChart3 size={18} />}>
+          <div className="about-panel-body">
+            <div className="about-chart-empty">No competition or skills data recorded for this season yet.</div>
+          </div>
+        </Panel>
+      ) : (
+        <div className="about-charts">
+          {!isIq && hasComp && (
+            <Panel title="Win Rate Over Time" icon={<BarChart3 size={18} />}>
+              <div className="about-panel-body">
+                <TrendChart
+                  area
+                  labels={rankRows.map((r) => shortMonthYear(r.date))}
+                  tips={rankRows.map((r) => r.name)}
+                  series={[{ name: "Win rate", color: "#337ab7", values: rankRows.map((r) => r.winRate * 100) }]}
+                  yFloor={0}
+                  yCeil={100}
+                  yFormat={(v) => `${Math.round(v)}%`}
+                />
+              </div>
+            </Panel>
+          )}
+
+          {hasSkills && (
+            <Panel title="Skills Score Over Time" icon={<Activity size={18} />}>
+              <div className="about-panel-body">
+                <div className="about-legend">
+                  <span>
+                    <i style={{ background: "#337ab7" }} /> Driver
+                  </span>
+                  <span>
+                    <i style={{ background: "#8e44ad" }} /> Autonomous
+                  </span>
+                </div>
+                <TrendChart
+                  labels={skillRows.map((r) => shortMonthYear(r.date))}
+                  tips={skillRows.map((r) => r.name)}
+                  series={[
+                    { name: "Driver", color: "#337ab7", values: skillRows.map((r) => r.driver) },
+                    { name: "Autonomous", color: "#8e44ad", values: skillRows.map((r) => r.prog) },
+                  ]}
+                  yFloor={0}
+                />
+              </div>
+            </Panel>
+          )}
+
+          {isIq && hasComp && (
+            <Panel title="Avg Qualifying Score Over Time" icon={<BarChart3 size={18} />}>
+              <div className="about-panel-body">
+                <TrendChart
+                  area
+                  labels={rankRows.map((r) => shortMonthYear(r.date))}
+                  tips={rankRows.map((r) => r.name)}
+                  series={[{ name: "Avg score", color: "#5cb85c", values: rankRows.map((r) => r.avgPoints) }]}
+                  yFloor={0}
+                  yFormat={(v) => v.toFixed(1)}
+                />
+              </div>
+            </Panel>
+          )}
+
+          {!isIq && hasComp && (
+            <Panel title="Avg Win Points / Match" icon={<Trophy size={18} />}>
+              <div className="about-panel-body">
+                <TrendChart
+                  labels={rankRows.map((r) => shortMonthYear(r.date))}
+                  tips={rankRows.map((r) => r.name)}
+                  series={[{ name: "Avg WP", color: "#f0ad4e", values: rankRows.map((r) => r.avgWp) }]}
+                  yFloor={0}
+                  yFormat={(v) => v.toFixed(1)}
+                />
+              </div>
+            </Panel>
+          )}
+
+          {!isIq && hasComp && (
+            <Panel title="Autonomous Win Points Per Event" icon={<Medal size={18} />}>
+              <div className="about-panel-body">
+                <TrendChart
+                  area
+                  labels={rankRows.map((r) => shortMonthYear(r.date))}
+                  tips={rankRows.map((r) => `${r.name} — ${r.awp} AWP`)}
+                  series={[{ name: "AWP", color: "#5cb85c", values: rankRows.map((r) => r.awp) }]}
+                  yFloor={0}
+                />
+              </div>
+            </Panel>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TeamDetail({ id }: { id: string }) {
-  const [tab, setTab] = useState("events");
+  const [tab, setTab] = useState("about");
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const [dateDirection, setDateDirection] = useState<DateDirection>("asc");
   const [focusedEventId, setFocusedEventId] = useState<number | null>(null);
@@ -3312,15 +3814,17 @@ function TeamDetail({ id }: { id: string }) {
   const selectedSkills = selectedSeasonId ? (skillsBySeason[selectedSeasonId] ?? emptyBucket<Skill>()) : emptyBucket<Skill>();
   const selectedAwards = selectedSeasonId ? (awardsBySeason[selectedSeasonId] ?? emptyBucket<Award>()) : emptyBucket<Award>();
   const activeStatus =
-    tab === "events"
-      ? events
-      : tab === "matches"
-        ? selectedMatches
-        : tab === "rankings"
-          ? selectedRankings
-          : tab === "skills"
-            ? selectedSkills
-            : selectedAwards;
+    tab === "about"
+      ? selectedRankings
+      : tab === "events"
+        ? events
+        : tab === "matches"
+          ? selectedMatches
+          : tab === "rankings"
+            ? selectedRankings
+            : tab === "skills"
+              ? selectedSkills
+              : selectedAwards;
 
   useEffect(() => {
     if (seasonOptions[0] && (!selectedSeasonId || !seasonOptions.some((season) => season.id === selectedSeasonId))) {
@@ -3458,6 +3962,7 @@ function TeamDetail({ id }: { id: string }) {
           setTab(nextTab);
         }}
         tabs={[
+          ["about", "About", <Info size={15} />],
           ["events", `Events ${seasonEvents.length || ""}`, <CalendarDays size={15} />],
           ["matches", "Matches", <Gamepad2 size={15} />],
           ["rankings", "Rankings", <BarChart3 size={15} />],
@@ -3471,12 +3976,30 @@ function TeamDetail({ id }: { id: string }) {
         onChange={setSelectedSeasonId}
         loading={events.loading}
       />
-      <DateDirectionToggle direction={dateDirection} onChange={setDateDirection} />
-      <Status loading={activeStatus.loading} error={activeStatus.error} />
-      {!activeStatus.loading && !events.loading && selectedSeason && (
+      {tab !== "about" && <DateDirectionToggle direction={dateDirection} onChange={setDateDirection} />}
+      {tab !== "about" && <Status loading={activeStatus.loading} error={activeStatus.error} />}
+      {tab !== "about" && !activeStatus.loading && !events.loading && selectedSeason && (
         <div className="table-summary">
           Showing {selectedSeason.label} only. Change season to review another year.
         </div>
+      )}
+      {tab === "about" && (
+        <TeamAboutTab
+          team={team}
+          isIq={isIq}
+          seasonId={selectedSeasonId}
+          seasonLabel={selectedSeason?.label}
+          rankings={selectedRankings.data}
+          skills={selectedSkills.data}
+          allEvents={teamEvents}
+          eventIndex={eventIndex}
+          loading={
+            events.loading ||
+            (selectedSeasonId != null && (!rankingsBySeason[selectedSeasonId] || !skillsBySeason[selectedSeasonId])) ||
+            selectedRankings.loading ||
+            selectedSkills.loading
+          }
+        />
       )}
       {!activeStatus.loading && tab === "events" && (
         <TeamEventTable

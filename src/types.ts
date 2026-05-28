@@ -181,6 +181,34 @@ export type Award = {
   individualWinners?: string[];
 };
 
+export type WorldSkillsEntry = {
+  rank: number;
+  team: {
+    id: number;
+    program?: string;
+    team: string;
+    teamName?: string | null;
+    organization?: string | null;
+    city?: string | null;
+    region?: string | null;
+    country?: string | null;
+    gradeLevel?: string | null;
+  };
+  event?: {
+    sku?: string;
+    startDate?: string;
+    seasonName?: string;
+  };
+  scores: {
+    score: number;
+    programming: number;
+    driver: number;
+    maxProgramming?: number;
+    maxDriver?: number;
+  };
+  eligible?: boolean;
+};
+
 export type SuperscoreRow = {
   rank: number;
   team: { id: number; number: string; name: string };
