@@ -1,13 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-// Vercel serverless function that proxies every /api/* request to the upstream
-// VEX/RoboStem/Jumper APIs, keeping the secret keys server-side.
+// Proxies every /api/* request to the upstream VEX/RoboStem/Jumper APIs,
+// keeping secret keys server-side.
 //
-// NOTE: this intentionally inlines the proxy logic instead of importing
-// server/proxy.ts. Vercel's function bundler does not reliably trace imports
-// from outside the /api directory, which caused the function to drop out of the
-// deployment (so /api/* fell through to the SPA rewrite and returned index.html).
-// Keep this in sync with server/proxy.ts (used by the local Express dev server).
+// Vercel does NOT match a filesystem catch-all ([...path].ts) for this
+// (non-Next.js) project, but it does deploy normally-named functions. So
+// vercel.json rewrites /api/:path* -> /api/proxy?__p=:path* (original query is
+// merged in by Vercel), and this function reconstructs the upstream request
+// from __p + the remaining query params.
+//
+// Keep the proxy logic in sync with server/proxy.ts (local Express dev server).
 
 type ProxySource = "rse" | "re" | "re-root" | "jumper";
 
@@ -50,13 +52,13 @@ const CACHE_CONTROL: Record<ProxySource, string> = {
 };
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  const rawUrl = req.url ?? "";
-  const queryIndex = rawUrl.indexOf("?");
-  const pathPart = queryIndex >= 0 ? rawUrl.slice(0, queryIndex) : rawUrl;
-  const query = queryIndex >= 0 ? rawUrl.slice(queryIndex) : "";
+  const parsed = new URL(req.url ?? "", "http://localhost");
+  const rawPath = parsed.searchParams.get("__p") ?? "";
+  parsed.searchParams.delete("__p");
+  const query = parsed.searchParams.toString();
+  const queryString = query ? `?${query}` : "";
 
-  // Strip an optional leading "/api/" then split into [source, ...endpoint].
-  const segments = pathPart.replace(/^\/(api\/)?/, "").split("/");
+  const segments = rawPath.split("/").filter(Boolean);
   const source = segments.shift() ?? "";
   const endpoint = segments.join("/");
 
@@ -70,7 +72,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const accept = source === "rse" ? (req.headers.accept ?? "application/json") : "application/json";
 
   try {
-    const upstream = await fetch(upstreamUrl(source, endpoint, query), {
+    const upstream = await fetch(upstreamUrl(source, endpoint, queryString), {
       headers: upstreamHeaders(source, accept),
     });
     const body = await upstream.text();
