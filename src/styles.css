@@ -3769,11 +3769,13 @@ td.quick-look-col {
 }
 
 .about-profile {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 0 28px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px 32px;
   margin: 0;
-  padding: 4px 15px 10px;
+  padding: 10px 15px 12px;
 }
 
 .about-panel-body {
@@ -3782,11 +3784,8 @@ td.quick-look-col {
 
 .about-profile-row {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
-  gap: 12px;
-  padding: 9px 0;
-  border-bottom: 1px solid #eee;
+  gap: 10px;
 }
 
 .about-profile-row dt {
