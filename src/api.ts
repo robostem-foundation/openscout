@@ -13,6 +13,7 @@ import type {
   Skill,
   SuperscoreRow,
   Team,
+  WorldSkillsEntry,
 } from "./types";
 
 type QueryValue = string | number | boolean | null | undefined;
@@ -74,4 +75,6 @@ export const api = {
   jumperMatchTimestamps: (sku: string, query: Query = {}) => jumperJson<MatchTimestamp[]>("match-timestamp", { sku, ...query }),
   superscore: (program: "v5rc" | "viqrc", query: Query = {}) =>
     rseJson<Paginated<SuperscoreRow>>(`superscore/rankings/${program}`, query),
+  worldSkills: (seasonId: string | number, grade: string) =>
+    robotEventsRootJson<WorldSkillsEntry[]>(`api/seasons/${seasonId}/skills`, { post_season: 0, grade_level: grade }),
 };
