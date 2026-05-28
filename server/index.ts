@@ -3,141 +3,45 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
+import { proxyRequest, type ProxySource } from "./proxy";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const app = express();
 const port = Number(process.env.PORT ?? 5173);
-const apiBase = (process.env.ROBOSTEM_API_BASE ?? "https://robostem-api.org").replace(/\/$/, "");
-const robotEventsApiBase = (process.env.ROBOTEVENTS_API_BASE ?? "https://events.vex.com/api/v2").replace(/\/$/, "");
-const robotEventsRootBase = (process.env.ROBOTEVENTS_ROOT_BASE ?? "https://events.vex.com").replace(/\/$/, "");
-const jumperApiBase = (process.env.JUMPER_API_BASE ?? "https://jumper.robostem.org").replace(/\/$/, "");
-const apiKey = process.env.RSE_API_KEY;
-const robotEventsApiKey = process.env.ROBOTEVENTS_API_KEY;
 
-if (!apiKey) {
+if (!process.env.RSE_API_KEY) {
   throw new Error("Missing RSE_API_KEY in .env");
 }
 
-if (!robotEventsApiKey) {
+if (!process.env.ROBOTEVENTS_API_KEY) {
   throw new Error("Missing ROBOTEVENTS_API_KEY in .env");
 }
 
-app.get("/api/rse/*endpoint", async (req, res) => {
-  const endpoint = Array.isArray(req.params.endpoint)
-    ? req.params.endpoint.join("/")
-    : req.params.endpoint;
-  const queryIndex = req.originalUrl.indexOf("?");
-  const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : "";
-  const url = `${apiBase}/api/v3/${endpoint}${query}`;
+function proxyRoute(source: ProxySource) {
+  return async (req: express.Request, res: express.Response) => {
+    const endpoint = Array.isArray(req.params.endpoint) ? req.params.endpoint.join("/") : (req.params.endpoint ?? "");
+    const queryIndex = req.originalUrl.indexOf("?");
+    const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : "";
+    const accept = source === "rse" ? req.accepts(["text/csv", "application/json"]) || "application/json" : "application/json";
 
-  try {
-    const accept = req.accepts(["text/csv", "application/json"]) || "application/json";
-    const upstream = await fetch(url, {
-      headers: {
-        "X-API-Key": apiKey,
-        Accept: accept,
-      },
-    });
+    try {
+      const result = await proxyRequest(source, endpoint, query, accept);
+      res.status(result.status);
+      res.setHeader("content-type", result.contentType);
+      res.setHeader("cache-control", result.cacheControl);
+      res.send(result.body);
+    } catch (error) {
+      console.error(`${source} proxy failed`, error);
+      res.status(502).json({ message: "Upstream API request failed" });
+    }
+  };
+}
 
-    const contentType = upstream.headers.get("content-type") ?? "application/json";
-    const body = await upstream.text();
-
-    res.status(upstream.status);
-    res.setHeader("content-type", contentType);
-    res.setHeader("cache-control", "private, max-age=45");
-    res.send(body);
-  } catch (error) {
-    console.error("RoboStem proxy failed", error);
-    res.status(502).json({ message: "RoboStem API request failed" });
-  }
-});
-
-app.get("/api/re/*endpoint", async (req, res) => {
-  const endpoint = Array.isArray(req.params.endpoint)
-    ? req.params.endpoint.join("/")
-    : req.params.endpoint;
-  const queryIndex = req.originalUrl.indexOf("?");
-  const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : "";
-  const url = `${robotEventsApiBase}/${endpoint}${query}`;
-
-  try {
-    const upstream = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${robotEventsApiKey}`,
-        Accept: "application/json",
-      },
-    });
-
-    const contentType = upstream.headers.get("content-type") ?? "application/json";
-    const body = await upstream.text();
-
-    res.status(upstream.status);
-    res.setHeader("content-type", contentType);
-    res.setHeader("cache-control", "private, max-age=60");
-    res.send(body);
-  } catch (error) {
-    console.error("RobotEvents proxy failed", error);
-    res.status(502).json({ message: "RobotEvents API request failed" });
-  }
-});
-
-app.get("/api/re-root/*endpoint", async (req, res) => {
-  const endpoint = Array.isArray(req.params.endpoint)
-    ? req.params.endpoint.join("/")
-    : req.params.endpoint;
-  const queryIndex = req.originalUrl.indexOf("?");
-  const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : "";
-  const url = `${robotEventsRootBase}/${endpoint}${query}`;
-
-  try {
-    const upstream = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${robotEventsApiKey}`,
-        Accept: "application/json",
-      },
-    });
-
-    const contentType = upstream.headers.get("content-type") ?? "application/json";
-    const body = await upstream.text();
-
-    res.status(upstream.status);
-    res.setHeader("content-type", contentType);
-    res.setHeader("cache-control", "private, max-age=300");
-    res.send(body);
-  } catch (error) {
-    console.error("VEX Events root proxy failed", error);
-    res.status(502).json({ message: "VEX Events request failed" });
-  }
-});
-
-app.get("/api/jumper/*endpoint", async (req, res) => {
-  const endpoint = Array.isArray(req.params.endpoint)
-    ? req.params.endpoint.join("/")
-    : req.params.endpoint;
-  const queryIndex = req.originalUrl.indexOf("?");
-  const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : "";
-  const url = `${jumperApiBase}/api/${endpoint}${query}`;
-
-  try {
-    const upstream = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-      },
-    });
-
-    const contentType = upstream.headers.get("content-type") ?? "application/json";
-    const body = await upstream.text();
-
-    res.status(upstream.status);
-    res.setHeader("content-type", contentType);
-    res.setHeader("cache-control", "private, max-age=60");
-    res.send(body);
-  } catch (error) {
-    console.error("Jumper proxy failed", error);
-    res.status(502).json({ message: "Jumper API request failed" });
-  }
-});
+app.get("/api/rse/*endpoint", proxyRoute("rse"));
+app.get("/api/re/*endpoint", proxyRoute("re"));
+app.get("/api/re-root/*endpoint", proxyRoute("re-root"));
+app.get("/api/jumper/*endpoint", proxyRoute("jumper"));
 
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(root, "dist")));
