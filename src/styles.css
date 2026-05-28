@@ -3517,6 +3517,140 @@ td.grade-col {
   color: #777;
 }
 
+/* Event name as a button (when onViewMatches is wired — team view tabs) */
+.event-group-name-btn {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #337ab7;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.event-group-name-btn:hover,
+.event-group-name-btn:focus {
+  color: #23527c;
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------------------
+   Quick Look column (Teams page)
+   --------------------------------------------------------------------------- */
+
+th.quick-look-col,
+td.quick-look-col {
+  width: 100px;
+  min-width: 86px;
+  text-align: center;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.quick-look-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #999;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.quick-look-btn:hover,
+.quick-look-btn:focus {
+  background: #f0f4f8;
+  color: #337ab7;
+  border-color: #c8d8e8;
+}
+
+.quick-look-btn.active {
+  background: #e8f0fb;
+  color: #1a5f9e;
+  border-color: #b0caec;
+}
+
+.quick-look-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: #aaa;
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.quick-look-close:hover {
+  background: #f0f0f0;
+  color: #555;
+}
+
+/* Team number (plain text, not a link, inside row that navigates on click) */
+.team-number {
+  font-weight: 600;
+  color: #337ab7;
+}
+
+/* ---------------------------------------------------------------------------
+   Closeable tab close button
+   --------------------------------------------------------------------------- */
+
+.tab-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 5px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.5;
+  transition: opacity 0.12s, background 0.12s;
+  vertical-align: middle;
+}
+
+.tab-close-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* ---------------------------------------------------------------------------
+   Team quick-results scroll hint
+   --------------------------------------------------------------------------- */
+
+/* .team-quick-scroll is the inner scrollable region (only rendered when >5 results) */
+.team-quick-scroll {
+  max-height: 178px;          /* ~5 items × ~35px + borders */
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain; /* prevent scroll from bleeding to page */
+}
+
+/* hint sits outside the scrollable div so it never covers results */
+.team-quick-more-hint {
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  color: #888;
+  padding: 5px 0 6px;
+  border-top: 1px solid #eee;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.6) 0%, #fff 55%);
+}
+
 /* Program + Grade side-by-side filter fields */
 .filter-field-pair {
   display: grid;

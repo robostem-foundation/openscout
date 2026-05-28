@@ -2589,8 +2589,7 @@ function TeamsPage() {
         return haystack.includes(needle);
       }),
       search,
-    )
-      .slice(0, 5);
+    );
   }, [quickSourceTeams, search, selectedRegionOptions]);
 
   const quickResults = useMemo(() => {
@@ -2606,7 +2605,7 @@ function TeamsPage() {
         return haystack.includes(needle);
       }),
       search,
-    ).slice(0, 5);
+    );
   }, [localQuickResults, quickData, search, selectedRegionOptions]);
 
   const sortedTeams = useMemo(() => [...(data?.data ?? [])].sort(isSearchingTeams ? compareTeamsForSearch(committedSearch) : compareTeamsNatural), [committedSearch, data, isSearchingTeams]);
@@ -2698,11 +2697,7 @@ function TeamsPage() {
         quickLoading={quickLoading}
         quickOpen={quickOpen}
         onPickTeam={(team) => {
-          setSearch(team.number);
-          setSubmittedSearch(team.number);
-          setPage(1);
-          setQuickOpen(false);
-          window.history.replaceState(null, "", `${window.location.pathname}?search=${encodeURIComponent(team.number)}`);
+          navigate(`/team/${team.id}`);
         }}
         regionControl={
           <div className="team-region-filter picker-menu">
@@ -2813,19 +2808,20 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
                 Status
               </span>
             </th>
+            <th className="quick-look-col"></th>
           </tr>
         </thead>
         {loading ? (
-          <LoadingTable columns={6} />
+          <LoadingTable columns={7} />
         ) : (
           <tbody>
             {visibleTeams.map((team) => {
               const expanded = expandedTeamId === team.id;
               return (
                 <Fragment key={team.id}>
-                  <tr key={team.id} className="team-row" onClick={() => setExpandedTeamId(expanded ? null : team.id)}>
+                  <tr key={team.id} className="team-row" onClick={() => navigate(`/team/${team.id}`)}>
                     <td className="team-cell truncate-cell">
-                      <Link href={`/team/${team.id}`}>{team.number}</Link>
+                      <span className="team-number">{team.number}</span>
                       {team.team_name && <span>{team.team_name}</span>}
                     </td>
                     <td>
@@ -2837,10 +2833,22 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
                     <td className="truncate-cell">{team.organization || "-"}</td>
                     <td className="truncate-cell">{locationLine(team)}</td>
                     <td>{team.registered ? "Registered" : "Inactive"}</td>
+                    <td
+                      className="quick-look-col"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedTeamId(expanded ? null : team.id);
+                      }}
+                    >
+                      <button className={`quick-look-btn${expanded ? " active" : ""}`}>
+                        <PanelRight size={14} />
+                        Quick look
+                      </button>
+                    </td>
                   </tr>
                   {expanded && (
                     <tr key={`${team.id}-details`} className="team-detail-row">
-                      <td colSpan={6}>
+                      <td colSpan={7}>
                         <div className="team-detail-content">
                           <div className="team-detail-top">
                             <div>
@@ -2853,9 +2861,7 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
                                 {locationLine(team)} · {team.grade ?? "Grade unknown"} · {team.registered ? "Registered" : "Inactive"}
                               </div>
                             </div>
-                            <Link href={`/team/${team.id}`} className="button-link secondary">
-                              View stats of {team.number}
-                            </Link>
+                            <button className="quick-look-close" onClick={() => setExpandedTeamId(null)}>✕</button>
                           </div>
                           <TeamRowMatchesPreview teamId={team.id} eventId={eventId} />
                         </div>
@@ -2867,7 +2873,7 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
             })}
             {!teams.length && (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <Empty />
                 </td>
               </tr>
@@ -2969,6 +2975,25 @@ function SearchFilters({
   regionControl: ReactNode;
   children?: ReactNode;
 }) {
+  const [visibleCount, setVisibleCount] = useState(20);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset visible count when the result set changes (new search query)
+  useEffect(() => {
+    setVisibleCount(20);
+  }, [quickResults]);
+
+  const handleQuickScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+      setVisibleCount((c) => c + 20);
+    }
+  }, []);
+
+  const visibleResults = quickResults.slice(0, visibleCount);
+  const hasMore = quickResults.length > visibleCount;
+
   return (
     <form
       className="filters team-filters"
@@ -3002,17 +3027,28 @@ function SearchFilters({
         </button>
         {quickOpen && !!search.trim() && (
           <div className="team-quick-results">
-            {quickResults.map((team) => (
-              <button type="button" key={team.id} onMouseDown={(event) => event.preventDefault()} onClick={() => onPickTeam(team)}>
-                <span>
-                  <strong>{team.number}</strong>
-                  {team.team_name && <span> - {team.team_name}</span>}
-                </span>
-                <small>{[team.program?.name, team.grade, locationLine(team)].filter(Boolean).join(" · ")}</small>
-              </button>
-            ))}
-            {quickLoading && !quickResults.length && <div className="team-quick-empty">Searching...</div>}
-            {!quickLoading && !quickResults.length && <div className="team-quick-empty">No quick matches.</div>}
+            <div
+              ref={scrollRef}
+              className={quickResults.length > 5 ? "team-quick-scroll" : undefined}
+              onScroll={handleQuickScroll}
+            >
+              {visibleResults.map((team) => (
+                <button type="button" key={team.id} onMouseDown={(event) => event.preventDefault()} onClick={() => onPickTeam(team)}>
+                  <span>
+                    <strong>{team.number}</strong>
+                    {team.team_name && <span> - {team.team_name}</span>}
+                  </span>
+                  <small>{[team.program?.name, team.grade, locationLine(team)].filter(Boolean).join(" · ")}</small>
+                </button>
+              ))}
+              {quickLoading && !quickResults.length && <div className="team-quick-empty">Searching...</div>}
+              {!quickLoading && !quickResults.length && <div className="team-quick-empty">No quick matches.</div>}
+            </div>
+            {hasMore && (
+              <div className="team-quick-more-hint" aria-hidden="true">
+                Scroll to see more ↓
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -3042,7 +3078,17 @@ function PageTitle({ icon, title, subtitle }: { icon: ReactNode; title: string; 
 }
 
 function EventDetail({ id }: { id: string }) {
-  const [tab, setTab] = useState("matches");
+  const [focusTeam, setFocusTeam] = useState<{ id: number; number: string } | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const teamId = params.get("focusTeam");
+    const teamNum = params.get("focusTeamNum");
+    if (teamId && teamNum) return { id: Number(teamId), number: decodeURIComponent(teamNum) };
+    return null;
+  });
+  const [tab, setTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("focusTeam") ? "team-matches" : "matches";
+  });
   const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
   const { data: event, loading, error } = useAsync(() => api.event(id), [id]);
@@ -3098,10 +3144,18 @@ function EventDetail({ id }: { id: string }) {
     [event?.sku, preset.data?.exists],
   );
 
+  const focusTeamEventMatches = useAsync(
+    async () => {
+      if (!focusTeam || !event) return null;
+      return collectAllPages<Match>((page) => api.teamMatches(focusTeam.id, { "event[]": [Number(id)], per_page: 250, page }));
+    },
+    [focusTeam?.id, id, event?.id],
+  );
+
   const eventAwards = awards.data?.data ?? [];
   const timestampMap = useMemo(() => new Map((matchTimestamps.data ?? []).map((timestamp) => [timestamp.id, timestamp])), [matchTimestamps.data]);
   const presetUrl = event && preset.data?.exists ? `https://jumper.robostem.org/?preset=${encodeURIComponent(jumperPresetName(event, preset.data))}` : null;
-  const activeStatus = tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : tab === "awards" ? awards : teams;
+  const activeStatus = tab === "team-matches" ? focusTeamEventMatches : tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : tab === "awards" ? awards : teams;
   const keyAwards = useMemo(() => highlightAwards(eventAwards, event), [eventAwards, event]);
 
   useEffect(() => {
@@ -3146,6 +3200,20 @@ function EventDetail({ id }: { id: string }) {
         active={tab}
         onChange={setTab}
         tabs={[
+          ...(focusTeam
+            ? [
+                [
+                  "team-matches",
+                  `${focusTeam.number}'s Matches`,
+                  <Gamepad2 size={15} />,
+                  () => {
+                    setFocusTeam(null);
+                    setTab("matches");
+                    window.history.replaceState(null, "", `/event/${id}`);
+                  },
+                ] as [string, string, ReactNode, () => void],
+              ]
+            : []),
           ["matches", "Results", <Gamepad2 size={15} />],
           ["rankings", "Rankings", <BarChart3 size={15} />],
           ["skills", "Skills", <Activity size={15} />],
@@ -3169,6 +3237,11 @@ function EventDetail({ id }: { id: string }) {
         </div>
       )}
       <Status loading={activeStatus.loading} error={activeStatus.error} />
+      {tab === "team-matches" && focusTeam && (
+        <Panel title={`${focusTeam.number}'s Matches at this Event`} icon={<Gamepad2 />}>
+          <TeamMatchTable matches={focusTeamEventMatches.data?.data ?? []} focusTeamId={focusTeam.id} isIq={isIqProgram(event)} />
+        </Panel>
+      )}
       {tab === "matches" && (
         <MatchesTable
           matches={matches.data?.data ?? []}
@@ -3417,8 +3490,7 @@ function TeamDetail({ id }: { id: string }) {
           isIq={isIq}
           detailsLoading={selectedMatches.loading || selectedRankings.loading || selectedSkills.loading || selectedAwards.loading}
           onViewMatches={(eventId) => {
-            setFocusedEventId(eventId);
-            setTab("matches");
+            navigate(`/event/${eventId}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
           }}
         />
       )}
@@ -3431,14 +3503,47 @@ function TeamDetail({ id }: { id: string }) {
           direction={dateDirection}
           focusedEventId={focusedEventId}
           isIq={isIq}
+          onViewMatches={(eventId) => {
+            navigate(`/event/${eventId}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+          }}
         />
       )}
       {!activeStatus.loading && tab === "rankings" && (
-        <TeamRankingsByEvent rankings={selectedRankings.data} matches={selectedMatches.data} eventIndex={eventIndex} seasonId={selectedSeasonId} direction={dateDirection} focusTeamId={team.id} isIq={isIq} />
+        <TeamRankingsByEvent
+          rankings={selectedRankings.data}
+          matches={selectedMatches.data}
+          eventIndex={eventIndex}
+          seasonId={selectedSeasonId}
+          direction={dateDirection}
+          focusTeamId={team.id}
+          isIq={isIq}
+          onViewMatches={(eventId) => {
+            navigate(`/event/${eventId}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+          }}
+        />
       )}
-      {!activeStatus.loading && tab === "skills" && <TeamSkillsByEvent skills={selectedSkills.data} eventIndex={eventIndex} seasonId={selectedSeasonId} direction={dateDirection} />}
+      {!activeStatus.loading && tab === "skills" && (
+        <TeamSkillsByEvent
+          skills={selectedSkills.data}
+          eventIndex={eventIndex}
+          seasonId={selectedSeasonId}
+          direction={dateDirection}
+          onViewMatches={(eventId) => {
+            navigate(`/event/${eventId}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+          }}
+        />
+      )}
       {!activeStatus.loading && tab === "awards" && (
-        <TeamAwardsByEvent awards={selectedAwards.data} eventIndex={eventIndex} seasonId={selectedSeasonId} focusTeamId={team.id} direction={dateDirection} />
+        <TeamAwardsByEvent
+          awards={selectedAwards.data}
+          eventIndex={eventIndex}
+          seasonId={selectedSeasonId}
+          focusTeamId={team.id}
+          direction={dateDirection}
+          onViewMatches={(eventId) => {
+            navigate(`/event/${eventId}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+          }}
+        />
       )}
     </section>
   );
@@ -3485,11 +3590,27 @@ function DateDirectionToggle({ direction, onChange }: { direction: DateDirection
   );
 }
 
-function EventGroupTitle({ eventRef, event, count }: { eventRef: { id: number; name: string; code?: string | null }; event?: Event; count: number }) {
+function EventGroupTitle({
+  eventRef,
+  event,
+  count,
+  onViewMatches,
+}: {
+  eventRef: { id: number; name: string; code?: string | null };
+  event?: Event;
+  count: number;
+  onViewMatches?: (eventId: number) => void;
+}) {
   return (
     <>
       <span>
-        <Link href={`/event/${eventRef.id}`}>{eventRef.name}</Link>
+        {onViewMatches ? (
+          <button className="event-group-name-btn" onClick={(e) => { e.preventDefault(); onViewMatches(eventRef.id); }}>
+            {eventRef.name}
+          </button>
+        ) : (
+          <Link href={`/event/${eventRef.id}`}>{eventRef.name}</Link>
+        )}
         <small>{event?.sku ?? eventRef.code ?? ""}</small>
       </span>
       <span className="event-group-meta">
@@ -3748,9 +3869,12 @@ function TeamEventTable({
               <Fragment key={event.id}>
                 <tr className="team-event-row" onClick={() => setExpandedEventId(expanded ? null : event.id)}>
                   <td>
-                    <Link href={`/event/${event.id}`} onClick={(clickEvent) => clickEvent.stopPropagation()}>
+                    <button
+                      className="event-group-name-btn"
+                      onClick={(e) => { e.stopPropagation(); onViewMatches(event.id); }}
+                    >
                       {event.name}
-                    </Link>
+                    </button>
                     <div className="muted">{event.sku}</div>
                   </td>
                   <td>
@@ -4007,6 +4131,7 @@ function TeamMatchesByEvent({
   direction,
   focusedEventId,
   isIq = false,
+  onViewMatches,
 }: {
   matches: Match[];
   eventIndex: Map<number, Event>;
@@ -4015,6 +4140,7 @@ function TeamMatchesByEvent({
   direction: DateDirection;
   focusedEventId?: number | null;
   isIq?: boolean;
+  onViewMatches?: (eventId: number) => void;
 }) {
   const groups = groupItemsByEvent(matches, eventIndex, seasonId, direction);
 
@@ -4024,7 +4150,7 @@ function TeamMatchesByEvent({
         {groups.map((group) => (
           <details key={group.eventRef.id} className="event-group" open={focusedEventId === group.eventRef.id}>
             <summary>
-              <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} />
+              <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} onViewMatches={onViewMatches} />
             </summary>
             <TeamMatchTable matches={group.items} focusTeamId={focusTeamId} isIq={isIq} />
           </details>
@@ -4114,6 +4240,7 @@ function TeamRankingsByEvent({
   direction,
   focusTeamId,
   isIq = false,
+  onViewMatches,
 }: {
   rankings: Ranking[];
   matches?: Match[];
@@ -4122,6 +4249,7 @@ function TeamRankingsByEvent({
   direction: DateDirection;
   focusTeamId?: number;
   isIq?: boolean;
+  onViewMatches?: (eventId: number) => void;
 }) {
   const groups = groupItemsByEvent(rankings, eventIndex, seasonId, direction);
   const matchesByEvent = useMemo(() => {
@@ -4154,7 +4282,11 @@ function TeamRankingsByEvent({
                 return (
                   <tr key={row.id}>
                     <td>
-                      <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                      {onViewMatches ? (
+                        <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
+                      ) : (
+                        <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                      )}
                       <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
                     </td>
                     <td>{row.division?.name ?? "-"}</td>
@@ -4202,7 +4334,11 @@ function TeamRankingsByEvent({
             group.items.map((row) => (
               <tr key={row.id}>
                 <td>
-                  <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                  {onViewMatches ? (
+                    <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
+                  ) : (
+                    <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                  )}
                   <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
                 </td>
                 <td>{row.division?.name ?? "-"}</td>
@@ -4235,11 +4371,13 @@ function TeamSkillsByEvent({
   eventIndex,
   seasonId,
   direction,
+  onViewMatches,
 }: {
   skills: Skill[];
   eventIndex: Map<number, Event>;
   seasonId: number | null;
   direction: DateDirection;
+  onViewMatches?: (eventId: number) => void;
 }) {
   const groups = groupItemsByEvent(skills, eventIndex, seasonId, direction).map((group) => {
     const entries = [...group.items].sort((a, b) => (a.type === "driver" ? -1 : 1) - (b.type === "driver" ? -1 : 1));
@@ -4279,7 +4417,11 @@ function TeamSkillsByEvent({
             return (
               <tr key={group.eventRef.id}>
                 <td>
-                  <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                  {onViewMatches ? (
+                    <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
+                  ) : (
+                    <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                  )}
                   <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
                 </td>
                 <td>{rank ?? "-"}</td>
@@ -4312,12 +4454,14 @@ function TeamAwardsByEvent({
   seasonId,
   focusTeamId,
   direction,
+  onViewMatches,
 }: {
   awards: Award[];
   eventIndex: Map<number, Event>;
   seasonId: number | null;
   focusTeamId: number;
   direction: DateDirection;
+  onViewMatches?: (eventId: number) => void;
 }) {
   const groups = groupItemsByEvent(awards, eventIndex, seasonId, direction);
 
@@ -4327,7 +4471,7 @@ function TeamAwardsByEvent({
         {groups.map((group) => (
           <details key={group.eventRef.id} className="event-group" open>
             <summary>
-              <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} />
+              <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} onViewMatches={onViewMatches} />
             </summary>
             <div className="award-list">
               {sortAwards(group.items).map((award) => (
@@ -4388,13 +4532,34 @@ function EventHighlights({ awards }: { awards: HighlightAward[] }) {
   );
 }
 
-function Tabs({ tabs, active, onChange }: { tabs: Array<[string, string, ReactNode]>; active: string; onChange: (tab: string) => void }) {
+function Tabs({
+  tabs,
+  active,
+  onChange,
+}: {
+  tabs: Array<[string, string, ReactNode, (() => void)?]>;
+  active: string;
+  onChange: (tab: string) => void;
+}) {
   return (
     <div className="tabs">
-      {tabs.map(([id, label, icon]) => (
+      {tabs.map(([id, label, icon, onClose]) => (
         <button key={id} className={active === id ? "active" : ""} onClick={() => onChange(id)}>
           {icon}
           {label}
+          {onClose && (
+            <span
+              className="tab-close-btn"
+              role="button"
+              aria-label={`Close ${label} tab`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+            >
+              ×
+            </span>
+          )}
         </button>
       ))}
     </div>
