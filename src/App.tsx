@@ -1245,6 +1245,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
           <Link href="/events">Events</Link>
           <Link href="/teams">Teams</Link>
           <Link href="/insights">Insights</Link>
+          <Link href="/terms">Terms</Link>
         </div>
       </footer>
     </>
@@ -5346,11 +5347,140 @@ function NotFound() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Beta disclaimer (first-visit modal)
+// ---------------------------------------------------------------------------
+
+function BetaDisclaimer() {
+  const [visible, setVisible] = useState(() => !localStorage.getItem("beta-disclaimer-seen"));
+
+  function dismiss() {
+    localStorage.setItem("beta-disclaimer-seen", "1");
+    setVisible(false);
+  }
+
+  if (!visible) return null;
+
+  return (
+    <div className="beta-overlay" role="dialog" aria-modal="true" aria-label="Beta disclaimer">
+      <div className="beta-modal">
+        <div className="beta-modal-icon">🔒</div>
+        <h2 className="beta-modal-title">Internal Preview</h2>
+        <p className="beta-modal-body">
+          This is an internal, unreleased version of stemScout. Everything is subject to change — features, data, and
+          design may be incomplete or inaccurate.
+        </p>
+        <p className="beta-modal-legal">
+          By continuing to use this website you agree to our{" "}
+          <Link href="/terms" onClick={dismiss}>
+            Terms &amp; Conditions
+          </Link>
+          , including the confidentiality provisions that apply to this preview.
+        </p>
+        <button className="beta-modal-btn" onClick={dismiss}>
+          I Understand
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Terms & Conditions page
+// ---------------------------------------------------------------------------
+
+function TermsPage() {
+  return (
+    <section className="page terms-page">
+      <PageTitle icon={<Shield />} title="Terms & Conditions" subtitle="Last updated: May 2026" />
+      <div className="terms-body">
+        <h3>1. About stemScout</h3>
+        <p>
+          stemScout is a web-based scouting and analytics tool for VEX Robotics events, operated by Alexander Deng
+          ("we", "us"). It is currently an internal preview and has not been publicly released.
+        </p>
+
+        <h3>2. Eligibility</h3>
+        <p>
+          You must be at least 13 years old to use stemScout. By accessing this site you confirm that you meet this
+          requirement. Users under 18 should have parental or guardian consent.
+        </p>
+
+        <h3>3. Confidentiality (Preview Users)</h3>
+        <p>
+          <strong>
+            Access to this unreleased preview version of stemScout is by explicit invitation only. If you have been
+            granted access, you agree to the following:
+          </strong>
+        </p>
+        <ul>
+          <li>
+            You will <strong>not</strong> share, demonstrate, screenshot, screen-record, or otherwise disclose any
+            features, functionality, data, or existence of stemScout to any person who has not been explicitly
+            authorized to access it by Alexander Deng.
+          </li>
+          <li>
+            You will <strong>not</strong> post about stemScout on social media, Discord servers, forums, or any other
+            public or semi-public channel without prior written permission from Alexander Deng.
+          </li>
+          <li>
+            You understand that features shown in this preview are experimental and may change significantly or be
+            removed before any public release.
+          </li>
+          <li>
+            Violation of these confidentiality terms may result in immediate revocation of your access.
+          </li>
+        </ul>
+
+        <h3>4. Acceptable Use</h3>
+        <p>You agree not to:</p>
+        <ul>
+          <li>Attempt to reverse-engineer, scrape, or overload the service or its upstream APIs.</li>
+          <li>Use stemScout for any unlawful purpose.</li>
+          <li>Attempt to gain unauthorized access to any systems connected to stemScout.</li>
+        </ul>
+
+        <h3>5. Data &amp; Privacy</h3>
+        <p>
+          stemScout displays publicly available VEX Robotics event and team data sourced from RobotEvents and the
+          RoboStem database. We store minimal data in your browser (localStorage / IndexedDB) to cache event listings
+          and your preferences. No personal data is sent to our servers at this time.
+        </p>
+
+        <h3>6. No Warranty</h3>
+        <p>
+          stemScout is provided "as is" without warranties of any kind. Data may be incomplete or inaccurate. We are
+          not affiliated with the Robotics Education &amp; Competition (REC) Foundation or VEX Robotics.
+        </p>
+
+        <h3>7. Limitation of Liability</h3>
+        <p>
+          To the maximum extent permitted by applicable law, Alexander Deng shall not be liable for any indirect,
+          incidental, or consequential damages arising from your use of stemScout.
+        </p>
+
+        <h3>8. Changes to These Terms</h3>
+        <p>
+          These terms may be updated at any time. Continued use of stemScout after any change constitutes acceptance of
+          the updated terms.
+        </p>
+
+        <h3>9. Contact</h3>
+        <p>
+          Questions or concerns? Reach out to Alexander Deng directly via the channels through which you were granted
+          access.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function route(path: string) {
   if (path === "/") return <Home />;
   if (path === "/events") return <EventsPage />;
   if (path === "/teams") return <TeamsPage />;
   if (path === "/insights") return <InsightsPage />;
+  if (path === "/terms") return <TermsPage />;
   const eventMatch = path.match(/^\/event\/(\d+)/);
   if (eventMatch) return <EventDetail id={eventMatch[1]} />;
   const teamMatch = path.match(/^\/team\/(\d+)/);
@@ -5363,5 +5493,10 @@ export default function App() {
   useEffect(() => {
     loadYouTubeApi();
   }, []);
-  return <Layout path={path}>{route(path)}</Layout>;
+  return (
+    <>
+      <BetaDisclaimer />
+      <Layout path={path}>{route(path)}</Layout>
+    </>
+  );
 }
