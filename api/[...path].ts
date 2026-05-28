@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { isProxySource, proxyRequest } from "../server/proxy";
+import { isProxySource, proxyRequest } from "../server/proxy.js";
 
 // Vercel serverless function that mirrors the local Express proxy
 // (server/index.ts). It catches every /api/* request, derives the upstream
