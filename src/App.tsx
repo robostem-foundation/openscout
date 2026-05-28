@@ -25,7 +25,7 @@ import {
   Users,
   Youtube,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, KeyboardEvent, MouseEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
@@ -122,6 +122,37 @@ function navigate(path: string) {
   window.dispatchEvent(new PopStateEvent("popstate"));
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
+
+const allDigits = (value: string) => /^\d+$/.test(value);
+
+// RobotEvents program ids → modern URL slug. The raw API `code` is the legacy
+// abbreviation (e.g. "VRC"/"VIQC"), so we key off the stable program id and use
+// the rebranded name users expect in URLs. Falls back to the raw code.
+const PROGRAM_SLUGS: Record<number, string> = { 1: "V5RC", 4: "VURC", 41: "VIQRC" };
+
+const programSlug = (program?: { id?: number; code?: string | null } | null) =>
+  (program?.id != null ? PROGRAM_SLUGS[program.id] : undefined) ?? program?.code?.toUpperCase() ?? "";
+
+const programMatchesSlug = (program: { id?: number; code?: string | null } | null | undefined, slug: string) => {
+  const target = slug.toUpperCase();
+  return programSlug(program) === target || program?.code?.toUpperCase() === target;
+};
+
+const eventPath = (event: { sku?: string | null; id: number }) => `/event/${event.sku || event.id}`;
+
+// Builds a team URL from a program slug + number, falling back to bare number or
+// numeric id when the program isn't known. Used both by teamPath (full objects)
+// and by IdInfo-only links via ProgramContext.
+const teamSlugPath = (programCode: string | undefined, number?: string | null, id?: number | string) =>
+  programCode && number ? `/team/${programCode}/${number}` : `/team/${number || id}`;
+
+const teamPath = (team: { program?: { id?: number; code?: string | null } | null; number?: string | null; id: number }) =>
+  teamSlugPath(programSlug(team.program), team.number, team.id);
+
+// Provided by program-scoped pages (event/team/insights) so that team links
+// which only carry an IdInfo (id + number, no program) can still build the
+// modern /team/{PROGRAM}/{number} URL.
+const ProgramContext = createContext<string | undefined>(undefined);
 
 function Link({
   href,
@@ -327,7 +358,7 @@ function GlobalSearch({ className = "" }: { className?: string }) {
               key={team.id}
               type="button"
               className="gs-result"
-              onMouseDown={() => handleSelect(`/team/${team.id}`)}
+              onMouseDown={() => handleSelect(teamPath(team))}
             >
               <span className="gs-result-main">{team.number} - {team.team_name ?? "Unnamed Team"}</span>
               <span className="gs-result-sub">{locationLine(team)}</span>
@@ -354,7 +385,7 @@ function GlobalSearch({ className = "" }: { className?: string }) {
               key={event.id}
               type="button"
               className="gs-result"
-              onMouseDown={() => handleSelect(`/event/${event.id}`)}
+              onMouseDown={() => handleSelect(eventPath(event))}
             >
               <span className="gs-result-main">{event.name}</span>
               <span className="gs-result-sub">{event.sku} · {locationLine(event)}</span>
@@ -1184,8 +1215,9 @@ function GradeBadge({ grade }: { grade?: string | null }) {
 }
 
 function TeamMiniLink({ team, className }: { team: { id: number; name: string }; className?: string }) {
+  const programCode = useContext(ProgramContext);
   return (
-    <Link href={`/team/${team.id}`} className={className}>
+    <Link href={teamSlugPath(programCode, team.name, team.id)} className={className}>
       {team.name}
     </Link>
   );
@@ -1830,7 +1862,7 @@ function EventsPage() {
     setSelectedRegionKeys([]);
   };
   const openQuickResult = (event?: Event) => {
-    if (event) navigate(`/event/${event.id}`);
+    if (event) navigate(eventPath(event));
   };
   const handleQuickSearchKey = (event: KeyboardEvent<HTMLInputElement>) => {
     if (!quickResults.length) return;
@@ -2369,7 +2401,7 @@ function EventTable({
           {events.map((event) => (
             <tr key={event.id}>
               <td>
-                <Link href={`/event/${event.id}`}>{event.name}</Link>
+                <Link href={eventPath(event)}>{event.name}</Link>
                 <div className="muted">{event.sku}</div>
               </td>
               {showPriority && (
@@ -2715,7 +2747,7 @@ function TeamsPage() {
         quickLoading={quickLoading}
         quickOpen={quickOpen}
         onPickTeam={(team) => {
-          navigate(`/team/${team.id}`);
+          navigate(teamPath(team));
         }}
         regionControl={
           <div className="team-region-filter picker-menu">
@@ -2837,7 +2869,7 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
               const expanded = expandedTeamId === team.id;
               return (
                 <Fragment key={team.id}>
-                  <tr key={team.id} className="team-row" onClick={() => navigate(`/team/${team.id}`)}>
+                  <tr key={team.id} className="team-row" onClick={() => navigate(teamPath(team))}>
                     <td className="team-cell truncate-cell">
                       <span className="team-number">{team.number}</span>
                       {team.team_name && <span>{team.team_name}</span>}
@@ -2942,7 +2974,7 @@ function TeamRowMatchesPreview({ teamId, eventId }: { teamId: number; eventId?: 
             return (
               <tr key={match.id}>
                 <td>
-                  <Link href={`/event/${match.event.id}`}>{match.event.name}</Link>
+                  <Link href={`/event/${match.event.code ?? match.event.id}`}>{match.event.name}</Link>
                   <span className="muted inline-muted">{match.name}</span>
                 </td>
                 <td>
@@ -3095,7 +3127,7 @@ function PageTitle({ icon, title, subtitle }: { icon: ReactNode; title: string; 
   );
 }
 
-function EventDetail({ id }: { id: string }) {
+function EventDetail({ param }: { param: string }) {
   const [focusTeam, setFocusTeam] = useState<{ id: number; number: string } | null>(() => {
     const params = new URLSearchParams(window.location.search);
     const teamId = params.get("focusTeam");
@@ -3109,7 +3141,15 @@ function EventDetail({ id }: { id: string }) {
   });
   const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
-  const { data: event, loading, error } = useAsync(() => api.event(id), [id]);
+  const lookup = useAsync(async () => {
+    if (allDigits(param)) return api.event(param);
+    const res = await api.events({ "sku[]": param, per_page: 1 });
+    return res.data[0] ?? null;
+  }, [param]);
+  const event = lookup.data ?? null;
+  const loading = lookup.loading;
+  const error = lookup.error ?? (!loading && !event ? "Event not found" : null);
+  const id = event ? String(event.id) : "";
   const divisions = useMemo(() => [...(event?.divisions ?? [])].sort((a, b) => (a.order ?? a.id) - (b.order ?? b.id)), [event]);
   const division = selectedDivision ?? divisions[0]?.id ?? 1;
   const awards = useAsync(
@@ -3193,6 +3233,7 @@ function EventDetail({ id }: { id: string }) {
   }
 
   return (
+    <ProgramContext.Provider value={programSlug(event.program)}>
     <section className="page">
       <div className="profile-header">
         <div>
@@ -3227,7 +3268,7 @@ function EventDetail({ id }: { id: string }) {
                   () => {
                     setFocusTeam(null);
                     setTab("matches");
-                    window.history.replaceState(null, "", `/event/${id}`);
+                    window.history.replaceState(null, "", eventPath(event));
                   },
                 ] as [string, string, ReactNode, () => void],
               ]
@@ -3280,6 +3321,7 @@ function EventDetail({ id }: { id: string }) {
       {tab === "teams" && <TeamTable teams={teams.data?.data ?? []} loading={teams.loading} localPageSize={80} eventId={event.id} />}
       {playback && <MatchVideoOverlay playback={playback} onClose={() => setPlayback(null)} />}
     </section>
+    </ProgramContext.Provider>
   );
 }
 
@@ -3630,9 +3672,7 @@ function TeamAboutTab({
     <div className="about-wrap">
       <Panel title="Team Profile" icon={<Info size={18} />}>
         <dl className="about-profile">
-          <AboutProfileRow label="Organization">{team.organization || "—"}</AboutProfileRow>
           <AboutProfileRow label="Location">{locationLine(team) || "—"}</AboutProfileRow>
-          <AboutProfileRow label="Team Name">{team.team_name || "—"}</AboutProfileRow>
           <AboutProfileRow label="Grade">{team.grade || "Unknown"}</AboutProfileRow>
           <AboutProfileRow label="Program">
             <ProgramBadge program={team.program} />
@@ -3767,7 +3807,7 @@ function TeamAboutTab({
   );
 }
 
-function TeamDetail({ id }: { id: string }) {
+function TeamDetail({ param }: { param: string }) {
   const [tab, setTab] = useState("about");
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const [dateDirection, setDateDirection] = useState<DateDirection>("asc");
@@ -3777,7 +3817,21 @@ function TeamDetail({ id }: { id: string }) {
   const [skillsBySeason, setSkillsBySeason] = useState<Record<number, AsyncBucket<Skill>>>({});
   const [awardsBySeason, setAwardsBySeason] = useState<Record<number, AsyncBucket<Award>>>({});
   const inFlightTeamData = useRef(new Set<string>());
-  const { data: team, loading, error } = useAsync(() => api.team(id), [id]);
+  const lookup = useAsync(async () => {
+    const parts = param.split("/").filter(Boolean).map(decodeURIComponent);
+    const [a, b] = parts;
+    const programCode = b ? a : undefined;
+    const numberOrId = (b ?? a) ?? "";
+    if (!programCode && allDigits(numberOrId)) return api.team(numberOrId);
+    const res = await api.robotEventsTeams({ number: numberOrId.toUpperCase(), "program[]": vexProgramIds, per_page: 50 });
+    let list = res.data;
+    if (programCode) list = list.filter((entry) => programMatchesSlug(entry.program, programCode));
+    return list[0] ?? null;
+  }, [param]);
+  const team = lookup.data ?? null;
+  const loading = lookup.loading;
+  const error = lookup.error ?? (!loading && !team ? "Team not found" : null);
+  const id = team ? String(team.id) : "";
   const events = useAsync(
     async () => {
       if (!team) return null;
@@ -3934,6 +3988,7 @@ function TeamDetail({ id }: { id: string }) {
   const isIq = isIqProgramInfo(team.program);
 
   return (
+    <ProgramContext.Provider value={programSlug(team.program)}>
     <section className="page">
       <div className="profile-header">
         <div>
@@ -4013,7 +4068,8 @@ function TeamDetail({ id }: { id: string }) {
           isIq={isIq}
           detailsLoading={selectedMatches.loading || selectedRankings.loading || selectedSkills.loading || selectedAwards.loading}
           onViewMatches={(eventId) => {
-            navigate(`/event/${eventId}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+            const ev = eventIndex.get(eventId);
+            navigate(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
           }}
         />
       )}
@@ -4027,7 +4083,8 @@ function TeamDetail({ id }: { id: string }) {
           focusedEventId={focusedEventId}
           isIq={isIq}
           onViewMatches={(eventId) => {
-            navigate(`/event/${eventId}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+            const ev = eventIndex.get(eventId);
+            navigate(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
           }}
         />
       )}
@@ -4041,7 +4098,8 @@ function TeamDetail({ id }: { id: string }) {
           focusTeamId={team.id}
           isIq={isIq}
           onViewMatches={(eventId) => {
-            navigate(`/event/${eventId}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+            const ev = eventIndex.get(eventId);
+            navigate(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
           }}
         />
       )}
@@ -4052,7 +4110,8 @@ function TeamDetail({ id }: { id: string }) {
           seasonId={selectedSeasonId}
           direction={dateDirection}
           onViewMatches={(eventId) => {
-            navigate(`/event/${eventId}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+            const ev = eventIndex.get(eventId);
+            navigate(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
           }}
         />
       )}
@@ -4064,11 +4123,13 @@ function TeamDetail({ id }: { id: string }) {
           focusTeamId={team.id}
           direction={dateDirection}
           onViewMatches={(eventId) => {
-            navigate(`/event/${eventId}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+            const ev = eventIndex.get(eventId);
+            navigate(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
           }}
         />
       )}
     </section>
+    </ProgramContext.Provider>
   );
 }
 
@@ -4132,7 +4193,7 @@ function EventGroupTitle({
             {eventRef.name}
           </button>
         ) : (
-          <Link href={`/event/${eventRef.id}`}>{eventRef.name}</Link>
+          <Link href={event ? eventPath(event) : `/event/${eventRef.code ?? eventRef.id}`}>{eventRef.name}</Link>
         )}
         <small>{event?.sku ?? eventRef.code ?? ""}</small>
       </span>
@@ -4808,7 +4869,7 @@ function TeamRankingsByEvent({
                       {onViewMatches ? (
                         <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
                       ) : (
-                        <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                        <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
                       )}
                       <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
                     </td>
@@ -4860,7 +4921,7 @@ function TeamRankingsByEvent({
                   {onViewMatches ? (
                     <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
                   ) : (
-                    <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                    <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
                   )}
                   <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
                 </td>
@@ -4943,7 +5004,7 @@ function TeamSkillsByEvent({
                   {onViewMatches ? (
                     <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
                   ) : (
-                    <Link href={`/event/${group.eventRef.id}`}>{group.eventRef.name}</Link>
+                    <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
                   )}
                   <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
                 </td>
@@ -4987,6 +5048,7 @@ function TeamAwardsByEvent({
   onViewMatches?: (eventId: number) => void;
 }) {
   const groups = groupItemsByEvent(awards, eventIndex, seasonId, direction);
+  const programCode = useContext(ProgramContext);
 
   return (
     <Panel title="Awards" icon={<Medal />}>
@@ -5004,7 +5066,7 @@ function TeamAwardsByEvent({
                     {awardTeamWinners(award).map((winner) => (
                       <Link
                         key={`${award.id}-${winner.team.id}`}
-                        href={`/team/${winner.team.id}`}
+                        href={teamSlugPath(programCode, winner.team.name, winner.team.id)}
                         className={`winner-pill ${winner.team.id === focusTeamId ? "" : "other"}`}
                       >
                         {winner.team.name}
@@ -5119,6 +5181,28 @@ function MatchesTable({
   }, new Map());
   const allianceRows = allianceRowsFromMatches(matches);
   const playoffOrder = ["r16", "qf", "sf", "f"];
+  // Final-division events (two divisions facing off) have no qualification
+  // matches, only the cross-division finals. In that case promote the
+  // elimination matches into the main (left) column.
+  const noQuals = !isIq && qualificationMatches.length === 0 && playoffMatches.length > 0;
+  const renderElimGroups = () =>
+    playoffOrder
+      .filter((key) => playoffGroups.has(key))
+      .map((key) => (
+        <section className="playoff-round" key={key}>
+          <h3>{playoffRoundLabel(key)}</h3>
+          <ResultsMatchTable
+            matches={(playoffGroups.get(key) ?? []).sort(compareMatchesDisplay)}
+            emptyText="No playoff matches returned."
+            timestampMap={timestampMap}
+            presetSupported={presetSupported}
+            presetLoading={presetLoading}
+            presetUrl={presetUrl}
+            onOpenMatch={onOpenMatch}
+            dayNumbers={dayNumbers}
+          />
+        </section>
+      ));
 
   const dayKeys = [...new Set(matches.map(matchDayKey).filter((key): key is string => !!key))].sort();
   const dayNumbers = dayKeys.length > 1 ? new Map(dayKeys.map((key, index) => [key, index + 1] as const)) : undefined;
@@ -5134,20 +5218,24 @@ function MatchesTable({
   return (
     <div className="results-layout">
       <section className="results-column">
-        <h2>Qualification Results</h2>
-        <ResultsMatchTable
-          matches={qualificationMatches}
-          emptyText="No qualification matches returned."
-          matchDirection={qualificationDirection}
-          onToggleMatchDirection={() => setQualificationDirection((direction) => (direction === "asc" ? "desc" : "asc"))}
-          timestampMap={timestampMap}
-          presetSupported={presetSupported}
-          presetLoading={presetLoading}
-          presetUrl={presetUrl}
-          onOpenMatch={onOpenMatch}
-          dayNumbers={dayNumbers}
-          isIq={isIq}
-        />
+        <h2>{noQuals ? "Elimination Results" : "Qualification Results"}</h2>
+        {noQuals ? (
+          renderElimGroups()
+        ) : (
+          <ResultsMatchTable
+            matches={qualificationMatches}
+            emptyText="No qualification matches returned."
+            matchDirection={qualificationDirection}
+            onToggleMatchDirection={() => setQualificationDirection((direction) => (direction === "asc" ? "desc" : "asc"))}
+            timestampMap={timestampMap}
+            presetSupported={presetSupported}
+            presetLoading={presetLoading}
+            presetUrl={presetUrl}
+            onOpenMatch={onOpenMatch}
+            dayNumbers={dayNumbers}
+            isIq={isIq}
+          />
+        )}
       </section>
       <section className="results-column">
         <div className="alliances-header">
@@ -5176,27 +5264,13 @@ function MatchesTable({
             />
           </>
         ) : (
-          <>
-            <h2>Elimination Results</h2>
-            {playoffOrder
-              .filter((key) => playoffGroups.has(key))
-              .map((key) => (
-                <section className="playoff-round" key={key}>
-                  <h3>{playoffRoundLabel(key)}</h3>
-                  <ResultsMatchTable
-                    matches={(playoffGroups.get(key) ?? []).sort(compareMatchesDisplay)}
-                    emptyText="No playoff matches returned."
-                    timestampMap={timestampMap}
-                    presetSupported={presetSupported}
-                    presetLoading={presetLoading}
-                    presetUrl={presetUrl}
-                    onOpenMatch={onOpenMatch}
-                    dayNumbers={dayNumbers}
-                  />
-                </section>
-              ))}
-            {!playoffMatches.length && <Empty>No playoff matches returned.</Empty>}
-          </>
+          !noQuals && (
+            <>
+              <h2>Elimination Results</h2>
+              {renderElimGroups()}
+              {!playoffMatches.length && <Empty>No playoff matches returned.</Empty>}
+            </>
+          )
         )}
       </section>
       {!isIq && bracketOpen && <EliminationBracketOverlay matches={playoffMatches} onClose={() => setBracketOpen(false)} />}
@@ -5763,6 +5837,7 @@ function DroppedScores({ dropped }: { dropped: Array<{ matchnum: number; score: 
 
 function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ranking[]; isIq?: boolean; matches?: Match[] }) {
   const sortedRankings = [...rankings].sort((a, b) => a.rank - b.rank);
+  const programCode = useContext(ProgramContext);
 
   if (isIq) {
     return (
@@ -5785,7 +5860,7 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
                 <tr key={row.id}>
                   <td>{row.rank}</td>
                   <td className="team-cell">
-                    <Link href={`/team/${row.team.id}`}>{row.team.name}</Link>
+                    <Link href={teamSlugPath(programCode, row.team.name, row.team.id)}>{row.team.name}</Link>
                   </td>
                   <td>{formatNumber(stats.avg)}</td>
                   <td>{stats.high ?? "-"}</td>
@@ -5829,7 +5904,7 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
             <tr key={row.id}>
               <td>{row.rank}</td>
               <td className="team-cell">
-                <Link href={`/team/${row.team.id}`}>{row.team.name}</Link>
+                <Link href={teamSlugPath(programCode, row.team.name, row.team.id)}>{row.team.name}</Link>
               </td>
               <td>
                 {row.wins ?? 0}-{row.losses ?? 0}-{row.ties ?? 0}
@@ -5855,6 +5930,7 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
 }
 
 function SkillsTable({ skills }: { skills: Skill[] }) {
+  const programCode = useContext(ProgramContext);
   const rows = Object.values(
     skills.reduce<Record<string, { rank: number | null; team: Skill["team"]; entries: Skill[] }>>((groups, skill) => {
       const key = String(skill.team.id ?? skill.team.name);
@@ -5906,7 +5982,7 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
               <tr key={row.team.id}>
                 <td>{row.rank ?? "-"}</td>
                 <td>
-                  <Link href={`/team/${row.team.id}`}>{row.team.name}</Link>
+                  <Link href={teamSlugPath(programCode, row.team.name, row.team.id)}>{row.team.name}</Link>
                 </td>
                 <td>{total || "-"}</td>
                 <td>
@@ -5933,6 +6009,7 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
 
 function AwardsList({ awards }: { awards: Award[] }) {
   const sortedAwards = sortAwards(awards);
+  const programCode = useContext(ProgramContext);
 
   return (
     <Panel title="Awards" icon={<Medal />}>
@@ -5942,7 +6019,7 @@ function AwardsList({ awards }: { awards: Award[] }) {
             <h3>{award.title}</h3>
             <div className="winner-row">
               {awardTeamWinners(award).map((winner) => (
-                <Link key={`${award.id}-${winner.team.id}`} href={`/team/${winner.team.id}`} className="winner-pill">
+                <Link key={`${award.id}-${winner.team.id}`} href={teamSlugPath(programCode, winner.team.name, winner.team.id)} className="winner-pill">
                   {winner.team.name}
                 </Link>
               ))}
@@ -6005,7 +6082,7 @@ function InsightsPage() {
                 <tr key={`${row.rank}-${row.team.id}`}>
                   <td>{row.rank}</td>
                   <td>
-                    <Link href={`/team/${row.team.id}`}>{row.team.number}</Link>
+                    <Link href={teamSlugPath(program.toUpperCase(), row.team.number, row.team.id)}>{row.team.number}</Link>
                     <div className="muted">{row.team.name}</div>
                   </td>
                   <td>{formatNumber(row.superscore, 2)}</td>
@@ -6169,10 +6246,10 @@ function route(path: string) {
   if (path === "/teams") return <TeamsPage />;
   if (path === "/insights") return <InsightsPage />;
   if (path === "/terms") return <TermsPage />;
-  const eventMatch = path.match(/^\/event\/(\d+)/);
-  if (eventMatch) return <EventDetail id={eventMatch[1]} />;
-  const teamMatch = path.match(/^\/team\/(\d+)/);
-  if (teamMatch) return <TeamDetail id={teamMatch[1]} />;
+  const eventMatch = path.match(/^\/events?\/(.+)$/);
+  if (eventMatch) return <EventDetail param={decodeURIComponent(eventMatch[1])} />;
+  const teamMatch = path.match(/^\/teams?\/(.+)$/);
+  if (teamMatch) return <TeamDetail param={teamMatch[1]} />;
   return <NotFound />;
 }
 
