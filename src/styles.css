@@ -316,6 +316,254 @@ main {
   color: #fff;
 }
 
+/* ---- Home hero (revamp) ---- */
+.home-page {
+  padding-top: 6px;
+}
+
+.home-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 14px 16px 30px;
+  margin-bottom: 8px;
+}
+
+.home-greeting-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 7px;
+  margin-bottom: 28px;
+}
+
+.home-greeting {
+  width: 100%;
+  margin: 0;
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  color: #337ab7;
+  white-space: nowrap;
+}
+
+.home-name-trigger {
+  border: 0;
+  background: transparent;
+  color: #aaa;
+  font-size: 13px;
+  padding: 2px 4px;
+}
+
+.home-name-trigger:hover {
+  color: #337ab7;
+  text-decoration: underline;
+}
+
+.home-name-inline {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.home-name-inline:hover {
+  text-decoration: underline;
+}
+
+.home-name-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.home-name-input {
+  height: 32px;
+  padding: 4px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  outline: 0;
+}
+
+.home-name-input:focus {
+  border-color: #66afe9;
+  box-shadow: 0 0 0 3px rgba(102, 175, 233, 0.3);
+}
+
+.home-name-save {
+  height: 32px;
+  padding: 4px 14px;
+  border: 1px solid #2e6da4;
+  border-radius: 4px;
+  background: #337ab7;
+  color: #fff;
+}
+
+.home-hero-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.home-hero-search {
+  flex: 0 1 520px;
+  min-width: 0;
+}
+
+.home-hero-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.home-hero-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 54px;
+  padding: 0 18px;
+  border: 1px solid #ddd;
+  border-radius: 27px;
+  background: #fff;
+  color: #444;
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.home-hero-btn:hover {
+  border-color: #337ab7;
+  background: #f0f6ff;
+  color: #337ab7;
+  text-decoration: none;
+}
+
+.home-hero-btn-icon {
+  width: 54px;
+  padding: 0;
+  justify-content: center;
+}
+
+.global-search-wrap.home-hero-global-search {
+  max-width: none;
+  margin: 0;
+}
+
+.home-hero-global-search .global-search-input {
+  height: 54px;
+  padding: 6px 20px 6px 46px;
+  font-size: 17px;
+  border-radius: 28px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.09);
+}
+
+.home-hero-global-search .global-search-icon {
+  left: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.home-hero-global-search .global-search-input:focus {
+  border-color: #66afe9;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.09),
+    0 0 0 3px rgba(102, 175, 233, 0.32);
+}
+
+.home-hero-global-search .global-search-dropdown {
+  margin-top: 8px;
+  border-radius: 14px;
+}
+
+/* ---- Home favorites ---- */
+.home-fav-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+
+.home-fav-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 10px;
+  color: #888;
+  font-size: 13px;
+}
+
+.home-fav-empty svg {
+  color: #f0ad4e;
+}
+
+.home-fav-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 6px;
+  color: #333;
+  overflow: hidden;
+}
+
+.home-fav-item:hover {
+  background: #f0f6ff;
+  text-decoration: none;
+}
+
+.home-fav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #eef2f7;
+  color: #2c3e50;
+  font-size: 11px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.home-fav-badge.event {
+  color: #337ab7;
+}
+
+.home-fav-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.home-fav-title {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-fav-sub {
+  font-size: 12px;
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---- GlobalSearch ---- */
 .global-search-wrap {
   position: relative;
@@ -3210,6 +3458,27 @@ footer {
 
   .hero h4 {
     font-size: 16px;
+  }
+
+  .home-hero {
+    padding: 24px 8px 22px;
+  }
+
+  .home-greeting {
+    font-size: 27px;
+  }
+
+  .home-hero-global-search .global-search-input {
+    height: 48px;
+    font-size: 16px;
+  }
+
+  .home-hero-btn {
+    height: 48px;
+  }
+
+  .home-hero-btn-icon {
+    width: 48px;
   }
 
   .filters {

@@ -25,7 +25,7 @@ import {
   Users,
   Youtube,
 } from "lucide-react";
-import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, KeyboardEvent, MouseEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
@@ -159,16 +159,22 @@ function Link({
   children,
   className,
   onClick,
+  title,
+  "aria-label": ariaLabel,
 }: {
   href: string;
   children: ReactNode;
   className?: string;
   onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
+  title?: string;
+  "aria-label"?: string;
 }) {
   return (
     <a
       href={href}
       className={className}
+      title={title}
+      aria-label={ariaLabel}
       onClick={(event) => {
         onClick?.(event);
         if (href.startsWith("/")) {
@@ -762,6 +768,19 @@ function teamMatchesRegionOptions(team: Team, options: RegionOption[]) {
 function shortSeasonName(name?: string | null) {
   if (!name) return "Unknown Season";
   return name.split(":").pop()?.trim() || name;
+}
+
+// Compact two-year season label, e.g. "2025-2026: Push Back" -> "25-26".
+function seasonYearLabel(name?: string | null) {
+  if (!name) return "";
+  const range = name.match(/(\d{4})\s*[-–]\s*(\d{4})/);
+  if (range) return `${range[1].slice(2)}-${range[2].slice(2)}`;
+  const single = name.match(/(\d{4})/);
+  if (single) {
+    const year = Number(single[1]);
+    return `${String(year).slice(2)}-${String(year + 1).slice(2)}`;
+  }
+  return "";
 }
 
 function makeEventIndex(events: Event[]) {
@@ -1421,6 +1440,168 @@ function ProgramPicker({
   );
 }
 
+// AI-chat-style rotating greetings for the home hero. `n` is the name suffix
+// (e.g. ", Alex") or "" when no name is set. One is chosen at random per load.
+const homeGreetings: Array<(n: string) => string> = [
+  (n) => `Who are we scouting today${n}?`,
+  (n) => `Which team are we digging into${n}?`,
+  (n) => `What should we scout${n}?`,
+  (n) => `Who's on the watchlist${n}?`,
+  (n) => `Who are we breaking down today${n}?`,
+  (n) => `What match are we prepping for${n}?`,
+  (n) => `Ready to scout${n}`,
+  (n) => `Which team's stats are we pulling up${n}?`,
+  (n) => `Who are we keeping an eye on${n}?`,
+  (n) => `Let's scout${n}.`,
+];
+
+const HOME_NAME_KEY = "vex-alliance:name";
+
+function readFavoriteIds(kind: "team" | "event"): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(`vex-alliance:favorites:${kind}`) ?? "[]");
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function HomeGreeting() {
+  const [name, setName] = useState(() => localStorage.getItem(HOME_NAME_KEY) ?? "");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+  // Pick a stable random greeting for this mount (lazy init runs once).
+  const [template] = useState(() => homeGreetings[Math.floor(Math.random() * homeGreetings.length)]);
+  const suffix = name ? `, ${name}` : "";
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // Keep the greeting on a single line: use the CSS size when it fits, and only
+  // shrink the font (down to a floor) when the text would otherwise overflow.
+  useLayoutEffect(() => {
+    const el = headingRef.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.fontSize = "";
+      const base = parseFloat(getComputedStyle(el).fontSize) || 40;
+      const available = el.clientWidth;
+      const full = el.scrollWidth;
+      if (available > 0 && full > available) {
+        el.style.fontSize = `${Math.max(16, Math.floor(base * (available / full)))}px`;
+      }
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [name, template]);
+
+  const save = () => {
+    const value = draft.trim().slice(0, 24);
+    setName(value);
+    if (value) localStorage.setItem(HOME_NAME_KEY, value);
+    else localStorage.removeItem(HOME_NAME_KEY);
+    setEditing(false);
+  };
+
+  const startEdit = () => {
+    setDraft(name);
+    setEditing(true);
+  };
+
+  // When a name is set, render it as an inline, clickable target inside the
+  // greeting so the person can change or remove it by clicking their name.
+  const text = template(suffix);
+  let greeting: ReactNode = text;
+  if (name && !editing) {
+    const [before, after = ""] = text.split(suffix);
+    greeting = (
+      <>
+        {before},{" "}
+        <button type="button" className="home-name-inline" onClick={startEdit} title="Change or remove name">
+          {name}
+        </button>
+        {after}
+      </>
+    );
+  }
+
+  return (
+    <div className="home-greeting-wrap">
+      {editing ? (
+        <form className="home-name-edit" onSubmit={(event) => { event.preventDefault(); save(); }}>
+          <input
+            autoFocus
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={save}
+            placeholder="Your name (leave blank to remove)"
+            maxLength={24}
+            className="home-name-input"
+          />
+          <button type="submit" className="home-name-save">Save</button>
+        </form>
+      ) : (
+        !name && (
+          <button type="button" className="home-name-trigger" onClick={startEdit}>
+            Add your name
+          </button>
+        )
+      )}
+      <h1 className="home-greeting" ref={headingRef}>{greeting}</h1>
+    </div>
+  );
+}
+
+function FavoritesPanel() {
+  const favorites = useAsync(async () => {
+    const teamIds = readFavoriteIds("team");
+    const eventIds = readFavoriteIds("event");
+    const [teams, events] = await Promise.all([
+      Promise.all(teamIds.map((id) => api.team(id).catch(() => null))),
+      Promise.all(eventIds.map((id) => api.event(id).catch(() => null))),
+    ]);
+    return {
+      teams: teams.filter((team): team is Team => !!team),
+      events: events.filter((event): event is Event => !!event),
+    };
+  }, []);
+
+  const data = favorites.data;
+  const hasAny = !!data && (data.teams.length > 0 || data.events.length > 0);
+
+  return (
+    <Panel title="Your Favorites" icon={<Star />}>
+      <div className="home-fav-list">
+        {favorites.loading && <div className="home-fav-empty">Loading…</div>}
+        {!favorites.loading && !hasAny && (
+          <div className="home-fav-empty">
+            <span>Tap the</span>
+            <Star size={13} />
+            <span>on any team or event to pin it here for quick access.</span>
+          </div>
+        )}
+        {data?.teams.map((team) => (
+          <Link key={`t-${team.id}`} href={teamPath(team)} className="home-fav-item">
+            <span className="home-fav-badge team">{team.program?.code ?? "VEX"}</span>
+            <span className="home-fav-text">
+              <span className="home-fav-title">{team.number} · {team.team_name ?? "Unnamed Team"}</span>
+              <span className="home-fav-sub">{locationLine(team)}</span>
+            </span>
+          </Link>
+        ))}
+        {data?.events.map((event) => (
+          <Link key={`e-${event.id}`} href={eventPath(event)} className="home-fav-item">
+            <span className="home-fav-badge event">{seasonYearLabel(event.season?.name) || <CalendarDays size={13} />}</span>
+            <span className="home-fav-text">
+              <span className="home-fav-title">{event.name}</span>
+              <span className="home-fav-sub">{locationLine(event)}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
 function Home() {
   const [homeEventTab, setHomeEventTab] = useState<HomeEventTab>("upcoming");
   const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>(() => programOptions.filter((option) => option.value).map((option) => option.value));
@@ -1462,9 +1643,33 @@ function Home() {
   }, [baseHomeEvents, homeEventTab]);
 
   return (
-    <section className="page">
+    <section className="page home-page">
+      <section className="home-hero">
+        <HomeGreeting />
+        <div className="home-hero-bar">
+          <div className="home-hero-search">
+            <GlobalSearch className="home-hero-global-search" />
+          </div>
+          <nav className="home-hero-actions">
+            <Link href="/events" className="home-hero-btn">
+              <CalendarDays size={16} />
+              Events
+            </Link>
+            <Link href="/teams" className="home-hero-btn">
+              <Users size={16} />
+              Teams
+            </Link>
+            <Link href="/insights" className="home-hero-btn home-hero-btn-icon" aria-label="Insights" title="Insights">
+              <BarChart3 size={16} />
+            </Link>
+          </nav>
+        </div>
+      </section>
+
       <div className="home-dashboard">
         <aside className="home-sidebar">
+          <FavoritesPanel />
+
           <Panel title="Skills Leaderboards" icon={<Trophy />}>
             <div className="skills-leaderboard-list">
               {skillsLeaderboards.map((lb) => (
@@ -1479,22 +1684,6 @@ function Home() {
                   <ExternalLink size={13} />
                 </a>
               ))}
-            </div>
-          </Panel>
-
-          <Panel title="Search" icon={<Search />}>
-            <div className="home-search-panel">
-              <GlobalSearch className="home-global-search" />
-              <div className="home-actions">
-                <Link href="/events" className="button-link secondary">
-                  <CalendarDays size={15} />
-                  Events
-                </Link>
-                <Link href="/teams" className="button-link secondary">
-                  <Users size={15} />
-                  Teams
-                </Link>
-              </div>
             </div>
           </Panel>
         </aside>
@@ -3568,6 +3757,7 @@ function TeamAboutTab({
   seasonLabel,
   rankings,
   skills,
+  matches,
   allEvents,
   eventIndex,
   loading,
@@ -3578,6 +3768,7 @@ function TeamAboutTab({
   seasonLabel?: string;
   rankings: Ranking[];
   skills: Skill[];
+  matches: Match[];
   allEvents: Event[];
   eventIndex: Map<number, Event>;
   loading: boolean;
@@ -3608,32 +3799,70 @@ function TeamAboutTab({
       const ev = eventIndex.get(eventId);
       return ev?.start ? new Date(ev.start).getTime() : 0;
     };
-    return [...rankings]
-      .filter((r) => !isScrimmageEvent(eventIndex.get(r.event.id)))
-      .sort((a, b) => dateOf(a.event.id) - dateOf(b.event.id))
-      .map((r) => {
-        const wins = r.wins ?? 0;
-        const losses = r.losses ?? 0;
-        const ties = r.ties ?? 0;
-        const matches = wins + losses + ties;
-        const wp = r.wp ?? 0;
+
+    // Actual W/L/T per event from the team's real matches, including
+    // elimination matches. VEX ranking tables only reflect qualification
+    // records, so we derive the true record from match results. IQ is a
+    // cooperative format with no head-to-head win/loss, so it keeps the
+    // ranking-based numbers.
+    const matchRecord = new Map<number, { wins: number; losses: number; ties: number }>();
+    if (!isIq) {
+      matches.forEach((match) => {
+        if (/practice/i.test(match.name)) return;
+        if (isScrimmageEvent(eventIndex.get(match.event.id))) return;
+        const color = teamAllianceColor(match, team.id);
+        if (!color) return;
+        const { winner } = matchWinner(match);
+        if (winner === "-") return; // not yet scored
+        const rec = matchRecord.get(match.event.id) ?? { wins: 0, losses: 0, ties: 0 };
+        if (winner === "Tie") rec.ties += 1;
+        else if (winner.toLowerCase() === color.toLowerCase()) rec.wins += 1;
+        else rec.losses += 1;
+        matchRecord.set(match.event.id, rec);
+      });
+    }
+
+    const rankingByEvent = new Map<number, Ranking>();
+    rankings.forEach((r) => {
+      if (!isScrimmageEvent(eventIndex.get(r.event.id))) rankingByEvent.set(r.event.id, r);
+    });
+
+    const eventIds = new Set<number>([...rankingByEvent.keys(), ...matchRecord.keys()]);
+
+    return [...eventIds]
+      .sort((a, b) => dateOf(a) - dateOf(b))
+      .map((eventId) => {
+        const r = rankingByEvent.get(eventId);
+        const rec = matchRecord.get(eventId);
+        // Qualification-only counts (used for WP-based metrics).
+        const qualWins = r?.wins ?? 0;
+        const qualTies = r?.ties ?? 0;
+        const qualMatches = qualWins + (r?.losses ?? 0) + qualTies;
+        // Full record incl. eliminations (match-derived when available).
+        const wins = rec ? rec.wins : qualWins;
+        const losses = rec ? rec.losses : (r?.losses ?? 0);
+        const ties = rec ? rec.ties : qualTies;
+        const matchCount = wins + losses + ties;
+        const wp = r?.wp ?? 0;
+        const ev = eventIndex.get(eventId);
         return {
-          name: eventIndex.get(r.event.id)?.name ?? r.event.name ?? `Event ${r.event.id}`,
-          date: dateOf(r.event.id),
-          marquee: isMarqueeEvent(eventIndex.get(r.event.id)),
+          name: ev?.name ?? r?.event.name ?? `Event ${eventId}`,
+          date: dateOf(eventId),
+          marquee: isMarqueeEvent(ev),
           wins,
           losses,
           ties,
-          matches,
+          matches: matchCount,
+          qualMatches,
           wp,
-          awp: Math.max(0, wp - (wins * 2 + ties)),
-          winRate: matches ? wins / matches : 0,
-          avgWp: matches ? wp / matches : 0,
-          avgPoints: r.average_points ?? 0,
-          highScore: r.high_score ?? 0,
+          awp: Math.max(0, wp - (qualWins * 2 + qualTies)),
+          winRate: matchCount ? wins / matchCount : 0,
+          avgWp: qualMatches ? wp / qualMatches : 0,
+          avgPoints: r?.average_points ?? 0,
+          highScore: r?.high_score ?? 0,
         };
       });
-  }, [rankings, eventIndex]);
+  }, [rankings, matches, eventIndex, isIq, team.id]);
 
   const skillRows = useMemo(() => {
     const dateOf = (eventId: number) => {
@@ -3666,6 +3895,7 @@ function TeamAboutTab({
     const losses = rankRows.reduce((s, r) => s + r.losses, 0);
     const ties = rankRows.reduce((s, r) => s + r.ties, 0);
     const matches = wins + losses + ties;
+    const qualMatches = rankRows.reduce((s, r) => s + r.qualMatches, 0);
     const wp = rankRows.reduce((s, r) => s + r.wp, 0);
     const awp = rankRows.reduce((s, r) => s + r.awp, 0);
     const bestDriver = skillRows.reduce((m, r) => Math.max(m, r.driver), 0);
@@ -3680,7 +3910,7 @@ function TeamAboutTab({
       wp,
       awp,
       winRate: matches ? wins / matches : 0,
-      avgWp: matches ? wp / matches : 0,
+      avgWp: qualMatches ? wp / qualMatches : 0,
       bestDriver,
       bestProg,
       bestCombined: bestDriver + bestProg,
@@ -4094,13 +4324,15 @@ function TeamDetail({ param }: { param: string }) {
           seasonLabel={selectedSeason?.label}
           rankings={selectedRankings.data}
           skills={selectedSkills.data}
+          matches={selectedMatches.data}
           allEvents={teamEvents}
           eventIndex={eventIndex}
           loading={
             events.loading ||
             (selectedSeasonId != null && (!rankingsBySeason[selectedSeasonId] || !skillsBySeason[selectedSeasonId])) ||
             selectedRankings.loading ||
-            selectedSkills.loading
+            selectedSkills.loading ||
+            selectedMatches.loading
           }
         />
       )}
