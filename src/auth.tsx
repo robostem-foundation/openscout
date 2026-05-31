@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { LogIn, LogOut, Settings } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./supabase";
+import { setTheme, useTheme } from "./theme";
 
 export type Profile = {
   id: string;
@@ -145,6 +146,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [user?.id]);
 
+  // Cloud-wins on load: when a signed-in profile carries a saved theme, adopt it
+  // (mirrors to localStorage + applies to the DOM live). Local "system" default
+  // stays untouched for signed-out / theme-less profiles.
+  useEffect(() => {
+    if (profile?.theme) setTheme(profile.theme);
+  }, [profile?.theme]);
+
   const signInWith = useCallback(async (provider: "discord" | "google") => {
     if (!supabase) return;
     await supabase.auth.signInWithOAuth({
@@ -285,7 +293,7 @@ function useOutsideClick<T extends HTMLElement>(onClose: () => void) {
 // Topbar slot, right of the search box: a "Sign up / Log in" pill when signed
 // out, and the avatar + menu when signed in.
 export function AuthSlot() {
-  const { ready, configured, user, profile, signOut, openProfileEditor } = useAuth();
+  const { ready, configured, user, profile, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(() => setOpen(false));
 
@@ -335,11 +343,14 @@ export function AuthSlot() {
             className="auth-menu-item"
             onClick={() => {
               setOpen(false);
-              openProfileEditor();
+              // Route to the dedicated /settings page (mirrors App's navigate()).
+              window.history.pushState(null, "", "/settings");
+              window.dispatchEvent(new PopStateEvent("popstate"));
+              window.scrollTo({ top: 0, behavior: "smooth" });
             }}
           >
             <Settings size={15} />
-            Profile settings
+            Settings
           </button>
           <button
             type="button"
@@ -374,7 +385,7 @@ export function OnboardingModal() {
   const [name, setName] = useState("");
   const [teamNumber, setTeamNumber] = useState("");
   const [program, setProgram] = useState("");
-  const [theme, setTheme] = useState<"light" | "dark" | "system">("system");
+  const theme = useTheme(); // live preview via the global theme store
   const [saving, setSaving] = useState(false);
   const seededFor = useRef<string | null>(null);
 
@@ -387,7 +398,6 @@ export function OnboardingModal() {
     setName(profile?.display_name || suggestedName(user));
     setTeamNumber(profile?.team_number ?? "");
     setProgram(profile?.team_program ?? "");
-    setTheme(profile?.theme ?? "system");
   }, [visible, user, profile, profileEditorOpen]);
 
   if (!visible) return null;
@@ -480,7 +490,7 @@ export function OnboardingModal() {
               </button>
             ))}
           </div>
-          <p className="onboard-hint">Dark mode is coming soon — we'll remember your pick.</p>
+          <p className="onboard-hint">Applies instantly and syncs to your account.</p>
         </div>
 
         <div className="onboard-actions">

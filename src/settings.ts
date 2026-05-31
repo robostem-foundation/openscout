@@ -1,0 +1,218 @@
+import { useSyncExternalStore } from "react";
+import { supabase } from "./supabase";
+
+// Settings sync for the event-filter preferences. Same backend-switching idea as
+// the favorites store:
+//   • signed out → localStorage (identical to the original behavior)
+//   • signed in  → the Supabase `user_settings.settings` jsonb (synced across devices)
+//
+// The component (EventsPage) keeps reading these two keys from localStorage in its
+// lazy useState initializers. This store's job is to (a) mirror the cloud values
+// into localStorage before bumping `epoch`, so a remount keyed on `epoch` re-reads
+// the synced values without touching the initializers, and (b) route writes to the
+// right backend. Cloud wins per key on load; local-only keys are seeded up.
+
+const EVENTS_PROGRAMS_KEY = "vex-events-programs";
+const EVENTS_FILTERS_KEY = "vex-events-filters";
+const TAB_LAYOUT_KEY = "vex-tab-layout";
+const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY] as const;
+export type SyncedSettingKey = (typeof SYNCED_KEYS)[number];
+
+// Tab orientation for the event/team detail views. "horizontal" matches the
+// original look (a tab bar above the content); "vertical" mirrors the Settings
+// page's left-rail tabs.
+export type TabLayout = "horizontal" | "vertical";
+
+type Values = Record<string, unknown>;
+
+let epoch = 0;
+let currentValues: Values = {};
+let signedIn = false;
+let userId: string | null = null;
+
+const listeners = new Set<() => void>();
+// Separate listener set for the tab-layout value. Unlike the epoch (which drives
+// an EventsPage remount), these fire whenever the layout value changes — including
+// self-writes — so EventDetail/TeamDetail/Settings re-render live.
+const tabListeners = new Set<() => void>();
+
+function emit() {
+  for (const listener of listeners) listener();
+}
+
+function emitTab() {
+  for (const listener of tabListeners) listener();
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function getEpoch() {
+  return epoch;
+}
+
+// Bump epoch (→ remount) only when the synced values actually changed. Used by the
+// load paths; self-writes from the component deliberately do NOT bump epoch.
+function commit(values: Values) {
+  if (sameValues(values, currentValues)) return;
+  currentValues = values;
+  epoch += 1;
+  emit();
+  emitTab(); // a load may have changed the synced tab layout
+}
+
+function sameValues(a: Values, b: Values): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// --- localStorage helpers --------------------------------------------------
+
+function readLS(key: string): unknown {
+  const raw = localStorage.getItem(key);
+  if (raw === null) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function writeLS(key: string, value: unknown) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function snapshotLocal(): Values {
+  const out: Values = {};
+  for (const key of SYNCED_KEYS) {
+    const value = readLS(key);
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+function loadLocal() {
+  signedIn = false;
+  commit(snapshotLocal());
+}
+
+// --- Supabase backend ------------------------------------------------------
+
+async function fetchCloud(sb: NonNullable<typeof supabase>, uid: string): Promise<Values> {
+  const { data } = await sb.from("user_settings").select("settings").eq("user_id", uid).maybeSingle();
+  return ((data?.settings ?? {}) as Values) || {};
+}
+
+async function upsertCloud(sb: NonNullable<typeof supabase>, uid: string, settings: Values) {
+  await sb
+    .from("user_settings")
+    .upsert({ user_id: uid, settings, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+}
+
+async function loadCloud(uid: string) {
+  const sb = supabase;
+  if (!sb) return;
+  userId = uid;
+  signedIn = true;
+
+  const cloud = await fetchCloud(sb, uid);
+  const local = snapshotLocal();
+
+  // Cloud wins per key; seed any local-only keys up to the cloud (non-destructive).
+  const merged: Values = {};
+  let needSeed = false;
+  for (const key of SYNCED_KEYS) {
+    if (cloud[key] !== undefined) merged[key] = cloud[key];
+    else if (local[key] !== undefined) {
+      merged[key] = local[key];
+      needSeed = true;
+    }
+  }
+  if (needSeed) await upsertCloud(sb, uid, merged);
+
+  // Mirror the synced values into localStorage so the page's lazy initializers
+  // read them on the remount that the epoch bump triggers.
+  for (const key of SYNCED_KEYS) if (merged[key] !== undefined) writeLS(key, merged[key]);
+
+  commit(merged);
+}
+
+// --- auth wiring -----------------------------------------------------------
+
+let loadedFor: string | null | undefined = undefined;
+
+function applyAuth(uid: string | null) {
+  if (uid === loadedFor) return;
+  loadedFor = uid;
+  if (uid) {
+    void loadCloud(uid);
+  } else {
+    userId = null;
+    loadLocal();
+  }
+}
+
+(function init() {
+  loadLocal(); // synchronous first paint from localStorage — no flash when signed out
+  const sb = supabase;
+  if (!sb) return;
+  void sb.auth.getSession().then(({ data }) => applyAuth(data.session?.user?.id ?? null));
+  sb.auth.onAuthStateChange((_event, session) => applyAuth(session?.user?.id ?? null));
+})();
+
+// --- public API ------------------------------------------------------------
+
+// Persist the event settings. Writes localStorage always (so signed-out use and a
+// later reload are instant), and upserts the cloud jsonb when signed in. Does not
+// bump epoch — the component is the source of this change and must keep its state.
+export function setEventsSettings(patch: Partial<Record<SyncedSettingKey, unknown>>) {
+  for (const key of Object.keys(patch) as SyncedSettingKey[]) writeLS(key, patch[key]);
+
+  const next: Values = { ...currentValues, ...patch };
+  if (sameValues(next, currentValues)) return;
+  currentValues = next;
+
+  if (signedIn && supabase && userId) {
+    void upsertCloud(supabase, userId, next);
+  }
+}
+
+// Returns a counter that increments when synced settings load/change externally
+// (sign-in pulling cloud filters, sign-out reverting to local). Key the EventsPage
+// on it to re-read the freshly-synced values.
+export function useSettingsEpoch(): number {
+  return useSyncExternalStore(subscribe, getEpoch, getEpoch);
+}
+
+// --- tab layout preference --------------------------------------------------
+
+function subscribeTab(listener: () => void) {
+  tabListeners.add(listener);
+  return () => {
+    tabListeners.delete(listener);
+  };
+}
+
+function getTabLayout(): TabLayout {
+  return currentValues[TAB_LAYOUT_KEY] === "vertical" ? "vertical" : "horizontal";
+}
+
+// Live tab-orientation value (signed-out → localStorage; signed-in → cloud jsonb,
+// cloud-wins on load). Default "horizontal" preserves the original look.
+export function useTabLayout(): TabLayout {
+  return useSyncExternalStore(subscribeTab, getTabLayout, getTabLayout);
+}
+
+// Persist the tab layout. Writes localStorage always and upserts the cloud jsonb
+// when signed in (same backend as the event filters). Notifies tab subscribers.
+export function setTabLayout(value: TabLayout) {
+  writeLS(TAB_LAYOUT_KEY, value);
+  const next: Values = { ...currentValues, [TAB_LAYOUT_KEY]: value };
+  if (sameValues(next, currentValues)) return;
+  currentValues = next;
+  if (signedIn && supabase && userId) void upsertCloud(supabase, userId, next);
+  emitTab();
+}
