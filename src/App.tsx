@@ -29,6 +29,7 @@ import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutE
 import type { Dispatch, KeyboardEvent, MouseEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
 import { AuthSlot, OnboardingModal, SignedOut, SignInButtons } from "./auth";
+import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
 
 const programOptions = [
@@ -1270,22 +1271,13 @@ function AllianceTeamLinks({ teams, focusTeamId, dq }: { teams?: Match["alliance
 }
 
 function FavoriteButton({ id, kind }: { id: number | string; kind: "team" | "event" }) {
-  const key = `vex-alliance:favorites:${kind}`;
-  const [active, setActive] = useState(() => {
-    const saved = JSON.parse(localStorage.getItem(key) ?? "[]") as string[];
-    return saved.includes(String(id));
-  });
+  const active = useFavorite(kind, id);
 
   return (
     <button
       className={`icon-button ${active ? "active" : ""}`}
       title={active ? "Remove favorite" : "Favorite"}
-      onClick={() => {
-        const saved = JSON.parse(localStorage.getItem(key) ?? "[]") as string[];
-        const next = active ? saved.filter((item) => item !== String(id)) : [...new Set([...saved, String(id)])];
-        localStorage.setItem(key, JSON.stringify(next));
-        setActive(!active);
-      }}
+      onClick={() => toggleFavorite(kind, id)}
     >
       <Star size={17} fill={active ? "currentColor" : "none"} />
     </button>
@@ -1459,15 +1451,6 @@ const homeGreetings: Array<(n: string) => string> = [
 
 const HOME_NAME_KEY = "vex-alliance:name";
 
-function readFavoriteIds(kind: "team" | "event"): string[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(`vex-alliance:favorites:${kind}`) ?? "[]");
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
-
 function HomeGreeting() {
   const [name, setName] = useState(() => localStorage.getItem(HOME_NAME_KEY) ?? "");
   const [editing, setEditing] = useState(false);
@@ -1554,9 +1537,10 @@ function HomeGreeting() {
 }
 
 function FavoritesPanel() {
+  const teamIds = useFavoriteIds("team");
+  const eventIds = useFavoriteIds("event");
+  const ready = useFavoritesReady();
   const favorites = useAsync(async () => {
-    const teamIds = readFavoriteIds("team");
-    const eventIds = readFavoriteIds("event");
     const [teams, events] = await Promise.all([
       Promise.all(teamIds.map((id) => api.team(id).catch(() => null))),
       Promise.all(eventIds.map((id) => api.event(id).catch(() => null))),
@@ -1565,16 +1549,17 @@ function FavoritesPanel() {
       teams: teams.filter((team): team is Team => !!team),
       events: events.filter((event): event is Event => !!event),
     };
-  }, []);
+  }, [teamIds, eventIds]);
 
   const data = favorites.data;
+  const loading = !ready || favorites.loading;
   const hasAny = !!data && (data.teams.length > 0 || data.events.length > 0);
 
   return (
     <Panel title="Your Favorites" icon={<Star />}>
       <div className="home-fav-list">
-        {favorites.loading && <div className="home-fav-empty">Loading…</div>}
-        {!favorites.loading && !hasAny && (
+        {loading && <div className="home-fav-empty">Loading…</div>}
+        {!loading && !hasAny && (
           <div className="home-fav-empty">
             <span>Tap the</span>
             <Star size={13} />
