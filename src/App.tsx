@@ -28,6 +28,7 @@ import {
 import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, KeyboardEvent, MouseEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
+import { AuthSlot, OnboardingModal, SignedOut, SignInButtons } from "./auth";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
 
 const programOptions = [
@@ -1317,6 +1318,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
             ))}
           </nav>
           <GlobalSearch className="topbar-search" />
+          <AuthSlot />
         </div>
       </header>
       <main>{children}</main>
@@ -1668,6 +1670,14 @@ function Home() {
 
       <div className="home-dashboard">
         <aside className="home-sidebar">
+          <SignedOut>
+            <Panel title="Sign up / Log in" icon={<Star />}>
+              <div className="auth-card-body">
+                <p className="auth-card-copy">Sign in to sync your favorites and settings across devices.</p>
+                <SignInButtons />
+              </div>
+            </Panel>
+          </SignedOut>
           <FavoritesPanel />
 
           <Panel title="Skills Leaderboards" icon={<Trophy />}>
@@ -6542,6 +6552,7 @@ export default function App() {
     <>
       <BetaDisclaimer />
       <Layout path={path}>{route(path)}</Layout>
+      <OnboardingModal />
     </>
   );
 }
