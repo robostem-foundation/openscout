@@ -3,6 +3,7 @@ import {
   Award as AwardIcon,
   BarChart3,
   CalendarDays,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -12,24 +13,34 @@ import {
   Info,
   ListFilter,
   Link as LinkIcon,
+  LogOut,
   Medal,
+  Palette,
+  PanelLeft,
   PanelRight,
   Pause,
+  Rows3,
   Play,
   RotateCw,
   Search,
+  Settings,
   Shield,
   Star,
   Trophy,
   Unlink,
+  User,
   Users,
   Youtube,
 } from "lucide-react";
 import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, KeyboardEvent, MouseEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
-import { AuthSlot, OnboardingModal, SignedOut, SignInButtons } from "./auth";
+import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, SignedOut, SignInButtons, suggestedName, useAuth } from "./auth";
+import { setTheme as applyTheme, useTheme } from "./theme";
+import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
+import { setEventsSettings, setTabLayout, useSettingsEpoch, useTabLayout } from "./settings";
+import type { TabLayout } from "./settings";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
 
 const programOptions = [
@@ -1452,11 +1463,19 @@ const homeGreetings: Array<(n: string) => string> = [
 const HOME_NAME_KEY = "vex-alliance:name";
 
 function HomeGreeting() {
-  const [name, setName] = useState(() => localStorage.getItem(HOME_NAME_KEY) ?? "");
+  const { user, profile } = useAuth();
+  const signedIn = !!user;
+  // When signed in, the account name overrides the locally-set one (profile
+  // display name first, then the OAuth-provided name). Signed out, we use the
+  // name the visitor set on this device.
+  const accountName = signedIn ? ((profile?.display_name ?? "").trim() || suggestedName(user) || "") : "";
+
+  const [localName, setLocalName] = useState(() => localStorage.getItem(HOME_NAME_KEY) ?? "");
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(name);
+  const [draft, setDraft] = useState(localName);
   // Pick a stable random greeting for this mount (lazy init runs once).
   const [template] = useState(() => homeGreetings[Math.floor(Math.random() * homeGreetings.length)]);
+  const name = signedIn ? accountName || localName : localName;
   const suffix = name ? `, ${name}` : "";
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -1481,22 +1500,24 @@ function HomeGreeting() {
 
   const save = () => {
     const value = draft.trim().slice(0, 24);
-    setName(value);
+    setLocalName(value);
     if (value) localStorage.setItem(HOME_NAME_KEY, value);
     else localStorage.removeItem(HOME_NAME_KEY);
     setEditing(false);
   };
 
   const startEdit = () => {
-    setDraft(name);
+    setDraft(localName);
     setEditing(true);
   };
 
   // When a name is set, render it as an inline, clickable target inside the
-  // greeting so the person can change or remove it by clicking their name.
+  // greeting so the person can change or remove it by clicking their name. The
+  // inline edit only applies to the locally-set name (signed out); when signed
+  // in the name comes from the account and is managed in Settings.
   const text = template(suffix);
   let greeting: ReactNode = text;
-  if (name && !editing) {
+  if (name && !editing && !signedIn) {
     const [before, after = ""] = text.split(suffix);
     greeting = (
       <>
@@ -1511,26 +1532,27 @@ function HomeGreeting() {
 
   return (
     <div className="home-greeting-wrap">
-      {editing ? (
-        <form className="home-name-edit" onSubmit={(event) => { event.preventDefault(); save(); }}>
-          <input
-            autoFocus
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onBlur={save}
-            placeholder="Your name (leave blank to remove)"
-            maxLength={24}
-            className="home-name-input"
-          />
-          <button type="submit" className="home-name-save">Save</button>
-        </form>
-      ) : (
-        !name && (
-          <button type="button" className="home-name-trigger" onClick={startEdit}>
-            Add your name
-          </button>
-        )
-      )}
+      {!signedIn &&
+        (editing ? (
+          <form className="home-name-edit" onSubmit={(event) => { event.preventDefault(); save(); }}>
+            <input
+              autoFocus
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={save}
+              placeholder="Your name (leave blank to remove)"
+              maxLength={24}
+              className="home-name-input"
+            />
+            <button type="submit" className="home-name-save">Save</button>
+          </form>
+        ) : (
+          !localName && (
+            <button type="button" className="home-name-trigger" onClick={startEdit}>
+              Add your name
+            </button>
+          )
+        ))}
       <h1 className="home-greeting" ref={headingRef}>{greeting}</h1>
     </div>
   );
@@ -1742,6 +1764,14 @@ function Panel({ title, icon, children, action }: { title: ReactNode; icon: Reac
 
 const EVENT_FILTER_KEY = "vex-events-filters";
 
+// Wrapper: remount the page when synced settings load/change (e.g. signing in
+// pulls cloud filters), so the lazy initializers in EventsPageInner re-read the
+// freshly-synced values from localStorage. When signed out this stays constant.
+function EventsPage() {
+  const settingsEpoch = useSettingsEpoch();
+  return <EventsPageInner key={settingsEpoch} />;
+}
+
 type SavedEventFilters = {
   level: string;
   selectedRegionKeys: string[];
@@ -1765,7 +1795,7 @@ function readEventFilters(): Partial<SavedEventFilters> {
   }
 }
 
-function EventsPage() {
+function EventsPageInner() {
   const params = new URLSearchParams(window.location.search);
   const [quickSearch, setQuickSearch] = useState(params.get("search") ?? "");
   const [quickSearchLimit, setQuickSearchLimit] = useState(3);
@@ -1957,11 +1987,13 @@ function EventsPage() {
   }, [quickSearch, visibleEvents]);
 
   useEffect(() => {
-    window.localStorage.setItem("vex-events-programs", JSON.stringify(selectedProgramIds));
-    window.localStorage.setItem(EVENT_FILTER_KEY, JSON.stringify({
-      level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds,
-      seasonSelectionTouched, hideCanceled, filterLayout, seasonMultiSelect, programMultiSelect, pastSeasonDateDir, selectedGrades,
-    } satisfies SavedEventFilters));
+    setEventsSettings({
+      "vex-events-programs": selectedProgramIds,
+      "vex-events-filters": {
+        level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds,
+        seasonSelectionTouched, hideCanceled, filterLayout, seasonMultiSelect, programMultiSelect, pastSeasonDateDir, selectedGrades,
+      } satisfies SavedEventFilters,
+    });
   }, [level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds, seasonSelectionTouched, hideCanceled, filterLayout, seasonMultiSelect, programMultiSelect, pastSeasonDateDir, selectedGrades, selectedProgramIds]);
 
   useEffect(() => {
@@ -3337,6 +3369,7 @@ function EventDetail({ param }: { param: string }) {
   });
   const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
+  const tabLayout = useTabLayout();
   const lookup = useAsync(async () => {
     if (allDigits(param)) return api.event(param);
     const res = await api.events({ "sku[]": param, per_page: 1 });
@@ -3451,9 +3484,12 @@ function EventDetail({ param }: { param: string }) {
         <FavoriteButton id={event.id} kind="event" />
       </div>
 
+      <div className={`view-tabs view-tabs-${tabLayout}`}>
       <Tabs
         active={tab}
         onChange={setTab}
+        orientation={tabLayout}
+        showLayoutToggle
         tabs={[
           ...(focusTeam
             ? [
@@ -3476,6 +3512,7 @@ function EventDetail({ param }: { param: string }) {
           ["teams", `Teams ${teams.data?.meta.total ?? ""}`, <Users size={15} />],
         ]}
       />
+      <div className="view-tabs-body">
       {keyAwards.length > 0 && <EventHighlights awards={keyAwards} />}
       {divisions.length > 1 && (tab === "matches" || tab === "rankings") && (
         <div className="division-tabs" aria-label="Event divisions">
@@ -3515,6 +3552,8 @@ function EventDetail({ param }: { param: string }) {
         <div className="table-summary">Showing 80 per page from {teams.data.data.length.toLocaleString()} RobotEvents teams.</div>
       )}
       {tab === "teams" && <TeamTable teams={teams.data?.data ?? []} loading={teams.loading} localPageSize={80} eventId={event.id} />}
+      </div>
+      </div>
       {playback && <MatchVideoOverlay playback={playback} onClose={() => setPlayback(null)} />}
     </section>
     </ProgramContext.Provider>
@@ -4082,6 +4121,7 @@ function TeamAboutTab({
 
 function TeamDetail({ param }: { param: string }) {
   const [tab, setTab] = useState("about");
+  const tabLayout = useTabLayout();
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const [dateDirection, setDateDirection] = useState<DateDirection>("asc");
   const [focusedEventId, setFocusedEventId] = useState<number | null>(null);
@@ -4283,12 +4323,15 @@ function TeamDetail({ param }: { param: string }) {
         <FavoriteButton id={team.id} kind="team" />
       </div>
 
+      <div className={`view-tabs view-tabs-${tabLayout}`}>
       <Tabs
         active={tab}
         onChange={(nextTab) => {
           if (nextTab === "matches") setFocusedEventId(null);
           setTab(nextTab);
         }}
+        orientation={tabLayout}
+        showLayoutToggle
         tabs={[
           ["about", "About", <Info size={15} />],
           ["events", `Events ${seasonEvents.length || ""}`, <CalendarDays size={15} />],
@@ -4298,6 +4341,7 @@ function TeamDetail({ param }: { param: string }) {
           ["awards", "Awards", <AwardIcon size={15} />],
         ]}
       />
+      <div className="view-tabs-body">
       <SeasonSelector
         seasons={seasonOptions}
         selectedSeasonId={selectedSeasonId}
@@ -4403,6 +4447,8 @@ function TeamDetail({ param }: { param: string }) {
           }}
         />
       )}
+      </div>
+      </div>
     </section>
     </ProgramContext.Provider>
   );
@@ -5392,16 +5438,75 @@ function EventHighlights({ awards }: { awards: HighlightAward[] }) {
   );
 }
 
+function TabLayoutToggle({ layout }: { layout: TabLayout }) {
+  const next: TabLayout = layout === "vertical" ? "horizontal" : "vertical";
+  return (
+    <button
+      type="button"
+      className="icon-button"
+      onClick={() => setTabLayout(next)}
+      aria-label={`Switch to ${next} tabs`}
+      title={`Switch to ${next} tabs`}
+    >
+      {layout === "vertical" ? <Rows3 size={16} /> : <PanelLeft size={16} />}
+    </button>
+  );
+}
+
 function Tabs({
   tabs,
   active,
   onChange,
+  orientation = "horizontal",
+  showLayoutToggle = false,
 }: {
   tabs: Array<[string, string, ReactNode, (() => void)?]>;
   active: string;
   onChange: (tab: string) => void;
+  orientation?: TabLayout;
+  showLayoutToggle?: boolean;
 }) {
-  return (
+  if (orientation === "vertical") {
+    return (
+      <nav className="settings-tabs view-tabs-rail">
+        {tabs.map(([id, label, icon, onClose]) => (
+          <button
+            key={id}
+            className={`settings-tab ${active === id ? "active" : ""}`}
+            onClick={() => onChange(id)}
+          >
+            {icon}
+            {label}
+            {onClose && (
+              <span
+                className="tab-close-btn"
+                role="button"
+                aria-label={`Close ${label} tab`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+              >
+                ×
+              </span>
+            )}
+          </button>
+        ))}
+        {showLayoutToggle && (
+          <button
+            type="button"
+            className="settings-tab view-tabs-rail-toggle"
+            onClick={() => setTabLayout("horizontal")}
+            title="Switch to horizontal tabs"
+          >
+            <Rows3 size={15} />
+            Horizontal view
+          </button>
+        )}
+      </nav>
+    );
+  }
+  const bar = (
     <div className="tabs">
       {tabs.map(([id, label, icon, onClose]) => (
         <button key={id} className={active === id ? "active" : ""} onClick={() => onChange(id)}>
@@ -5422,6 +5527,15 @@ function Tabs({
           )}
         </button>
       ))}
+    </div>
+  );
+  if (!showLayoutToggle) return bar;
+  // Wrap so the toggle sits at the right end of the bar without being caught by
+  // the `.tabs button` styles (which would render it transparent/invisible).
+  return (
+    <div className="view-tabs-bar">
+      {bar}
+      <TabLayoutToggle layout={orientation} />
     </div>
   );
 }
@@ -6515,8 +6629,317 @@ function TermsPage() {
   );
 }
 
+// --- Settings page ---------------------------------------------------------
+
+type SettingsTab = "profile" | "appearance";
+
+const SETTINGS_TABS: Array<{ value: SettingsTab; label: string; icon: ReactNode }> = [
+  { value: "profile", label: "Profile", icon: <User size={16} /> },
+  { value: "appearance", label: "Appearance", icon: <Palette size={16} /> },
+];
+
+const SETTINGS_THEME_OPTIONS: Array<{ value: NonNullable<Profile["theme"]>; label: string }> = [
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+  { value: "system", label: "System" },
+];
+
+// Round avatar from the profile's stored OAuth image, falling back to the
+// first initial of the display name when the image is missing or fails to load.
+function SettingsAvatar({ size = 48 }: { size?: number }) {
+  const { user, profile } = useAuth();
+  const [failed, setFailed] = useState(false);
+  const src = profile?.avatar_url || "";
+  const initial = (profile?.display_name || suggestedName(user) || "?").charAt(0).toUpperCase();
+
+  if (src && !failed) {
+    return (
+      <img
+        className="settings-avatar"
+        src={src}
+        width={size}
+        height={size}
+        alt=""
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <span className="settings-avatar settings-avatar-fallback" style={{ width: size, height: size }}>
+      {initial}
+    </span>
+  );
+}
+
+// Identity + account section. Seeds local form state from the profile once it
+// loads (keyed on profile id so a different user re-seeds), then saves the patch.
+function ProfileSettings() {
+  const { user, profile, updateProfile, signOut } = useAuth();
+  const [name, setName] = useState(() => profile?.display_name || suggestedName(user));
+  const [teamNumber, setTeamNumber] = useState(profile?.team_number ?? "");
+  const [program, setProgram] = useState(profile?.team_program ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const seeded = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!profile || seeded.current === profile.id) return;
+    seeded.current = profile.id;
+    setName(profile.display_name || suggestedName(user));
+    setTeamNumber(profile.team_number ?? "");
+    setProgram(profile.team_program ?? "");
+  }, [profile, user]);
+
+  const dirty =
+    name.trim() !== (profile?.display_name || suggestedName(user) || "").trim() ||
+    teamNumber.trim() !== (profile?.team_number ?? "") ||
+    program !== (profile?.team_program ?? "");
+
+  const save = async () => {
+    setSaving(true);
+    await updateProfile({
+      display_name: name.trim() || null,
+      team_number: teamNumber.trim() || null,
+      team_program: program || null,
+    });
+    setSaving(false);
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 2200);
+  };
+
+  const provider = profile?.provider ? profile.provider.charAt(0).toUpperCase() + profile.provider.slice(1) : null;
+  const heroName = name.trim() || suggestedName(user) || "Your account";
+
+  return (
+    <div className="settings-card">
+      <div className="settings-hero">
+        <SettingsAvatar />
+        <div className="settings-hero-id">
+          <div className="settings-hero-name">{heroName}</div>
+          <div className="settings-hero-sub">
+            <span className="settings-hero-email">{user?.email || "Signed in"}</span>
+            {provider && <span className="badge">{provider}</span>}
+          </div>
+        </div>
+        <button type="button" className="settings-signout" onClick={() => void signOut()}>
+          <LogOut size={15} />
+          Sign out
+        </button>
+      </div>
+
+      <div className="settings-card-body">
+        <div className="settings-fields">
+          <label className="onboard-field settings-field-name">
+            <span>Name</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} maxLength={24} placeholder="Your name" />
+          </label>
+          <label className="onboard-field">
+            <span>Team Number</span>
+            <input
+              value={teamNumber}
+              onChange={(event) => setTeamNumber(event.target.value.toUpperCase())}
+              maxLength={10}
+              placeholder="169W"
+            />
+          </label>
+          <label className="onboard-field">
+            <span>Program</span>
+            <select value={program} onChange={(event) => setProgram(event.target.value)}>
+              <option value="">—</option>
+              {AUTH_PROGRAMS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="settings-actions">
+          <button type="button" className="settings-save" onClick={() => void save()} disabled={saving || !dirty}>
+            {saving ? "Saving…" : "Save changes"}
+          </button>
+          {saved && (
+            <span className="settings-saved">
+              <Check size={15} />
+              Saved
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Theme picker. Saves immediately on selection (optimistic local state + profile
+// upsert) — no separate Save button needed.
+const TAB_LAYOUT_OPTIONS: Array<{ value: TabLayout; label: string }> = [
+  { value: "horizontal", label: "Horizontal" },
+  { value: "vertical", label: "Vertical" },
+];
+
+// Mini wireframe preview of each tab orientation, mirroring the theme tiles: a
+// bar of tabs across the top (horizontal) vs. a side rail (vertical).
+function TabLayoutWire({ value }: { value: TabLayout }) {
+  const tabs = (
+    <>
+      <span className="lw-tab active" />
+      <span className="lw-tab" />
+      <span className="lw-tab" />
+    </>
+  );
+  const body = (
+    <span className="lw-body">
+      <span className="lw-line" />
+      <span className="lw-line short" />
+    </span>
+  );
+  return (
+    <span className={`layout-wire layout-wire-${value}`} aria-hidden="true">
+      {value === "horizontal" ? (
+        <>
+          <span className="lw-tabs">{tabs}</span>
+          {body}
+        </>
+      ) : (
+        <>
+          <span className="lw-rail">{tabs}</span>
+          {body}
+        </>
+      )}
+    </span>
+  );
+}
+
+function AppearanceSettings() {
+  const { updateProfile } = useAuth();
+  const theme = useTheme(); // global theme store — already reflects the synced cloud value
+  const tabLayout = useTabLayout(); // synced via user_settings jsonb (settings.ts)
+
+  const choose = (value: NonNullable<Profile["theme"]>) => {
+    applyTheme(value); // instant local apply + localStorage
+    void updateProfile({ theme: value }); // persist to the account
+  };
+
+  return (
+    <div className="settings-card">
+      <div className="settings-card-head">
+        <h2 className="settings-card-title">Appearance</h2>
+      </div>
+      <div className="settings-card-body">
+        <p className="settings-section-copy">Choose how stemScout looks. Your pick syncs to your account.</p>
+        <div className="theme-picker">
+          {SETTINGS_THEME_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`theme-tile ${theme === option.value ? "active" : ""} theme-tile-${option.value}`}
+              onClick={() => choose(option.value)}
+              aria-pressed={theme === option.value}
+            >
+              <span className="theme-wire" aria-hidden="true">
+                <span className="theme-wire-bar" />
+                <span className="theme-wire-line" />
+                <span className="theme-wire-line short" />
+              </span>
+              <span className="theme-tile-label">{option.label}</span>
+            </button>
+          ))}
+        </div>
+        <p className="onboard-hint">Applies instantly and syncs across your devices.</p>
+
+        <div className="settings-field">
+          <h3 className="settings-field-title">Detail page tabs</h3>
+          <p className="settings-section-copy">
+            Pick how tabs appear on event and team pages — a bar across the top, or a side rail like this page.
+          </p>
+          <div className="layout-picker" role="group" aria-label="Tab orientation">
+            {TAB_LAYOUT_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`theme-tile ${tabLayout === option.value ? "active" : ""}`}
+                onClick={() => setTabLayout(option.value)}
+                aria-pressed={tabLayout === option.value}
+              >
+                <TabLayoutWire value={option.value} />
+                <span className="theme-tile-label">{option.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsPage() {
+  const { ready, configured, user } = useAuth();
+  const [tab, setTab] = useState<SettingsTab>(() =>
+    window.location.hash.replace("#", "") === "appearance" ? "appearance" : "profile",
+  );
+
+  // Signed out (or accounts layer dormant): invite sign-in instead of the editor.
+  if (!configured || (ready && !user)) {
+    return (
+      <section className="page">
+        <PageTitle icon={<Settings />} title="Settings" />
+        <div className="settings-card">
+          <div className="settings-card-head">
+            <h2 className="settings-card-title">Sign up / Log in</h2>
+          </div>
+          <div className="settings-card-body">
+            <p className="settings-section-copy">Sign in to sync your favorites and settings across devices.</p>
+            <SignInButtons />
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="page">
+      <PageTitle icon={<Settings />} title="Settings" />
+      <div className="settings-layout">
+        <nav className="settings-tabs" aria-label="Settings sections">
+          {SETTINGS_TABS.map((entry) => (
+            <button
+              key={entry.value}
+              type="button"
+              className={`settings-tab ${tab === entry.value ? "active" : ""}`}
+              aria-current={tab === entry.value}
+              onClick={() => {
+                setTab(entry.value);
+                window.history.replaceState(null, "", `/settings#${entry.value}`);
+              }}
+            >
+              {entry.icon}
+              {entry.label}
+            </button>
+          ))}
+        </nav>
+        <div className="settings-content">
+          {!ready ? (
+            <div className="settings-card">
+              <div className="settings-card-body">
+                <Status loading error={null} />
+              </div>
+            </div>
+          ) : tab === "profile" ? (
+            <ProfileSettings />
+          ) : (
+            <AppearanceSettings />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function route(path: string) {
   if (path === "/") return <Home />;
+  if (path === "/settings") return <SettingsPage />;
   if (path === "/events") return <EventsPage />;
   if (path === "/teams") return <TeamsPage />;
   if (path === "/insights") return <InsightsPage />;
