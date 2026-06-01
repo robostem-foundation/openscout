@@ -4610,6 +4610,12 @@ td.quick-look-col {
   text-transform: uppercase;
   color: #5865f2;
 }
+.auth-appearance-hint {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
 
 .auth-btn {
   display: inline-flex;
