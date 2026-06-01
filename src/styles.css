@@ -5742,3 +5742,261 @@ td.quick-look-col {
     grid-column: 1 / -1;
   }
 }
+
+/* ── Phase E: Organizations ──────────────────────────────────────────────────── */
+
+/* Org Panel (home sidebar) */
+.org-panel-empty {
+  padding: 14px 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.org-panel-empty p { margin: 0; }
+.org-panel-empty .button-link { margin-top: 4px; }
+.org-panel-hint { color: var(--text-faint); font-size: 12px; margin: 0; }
+
+/* Create Org Modal */
+.org-create-modal {
+  max-width: 380px;
+  width: 100%;
+  padding: 28px 28px 22px;
+  background: var(--surface);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.org-create-modal h2 {
+  margin: 0 0 2px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.org-create-field label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.org-create-field input,
+.org-create-field select {
+  width: 100%;
+  height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.org-create-field input:focus,
+.org-create-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.org-create-row {
+  display: flex;
+  gap: 10px;
+}
+.org-create-row .org-create-field { flex: 1; min-width: 0; }
+.org-create-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+/* Join Org Page */
+.join-org-page {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 60px 16px;
+}
+.join-org-card {
+  max-width: 400px;
+  width: 100%;
+  padding: 36px 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.join-org-card h2 { margin: 0; font-size: 20px; }
+.join-org-meta { color: var(--text-muted); font-size: 13px; margin: 0; }
+.join-org-error { color: var(--danger); font-size: 13px; margin: 0; }
+.join-org-success { color: var(--success); font-size: 13px; margin: 0; }
+.join-org-back { font-size: 13px; color: var(--text-muted); text-decoration: none; margin-top: 4px; }
+.join-org-back:hover { color: var(--link); text-decoration: underline; }
+
+/* Org Settings Page (reuses .settings-layout / .settings-tabs / .settings-content) */
+.org-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 420px;
+}
+.org-settings-field label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.org-settings-field input,
+.org-settings-field select {
+  width: 100%;
+  height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.org-settings-field input:focus,
+.org-settings-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.org-settings-row {
+  display: flex;
+  gap: 10px;
+}
+.org-settings-row .org-settings-field { flex: 1; min-width: 0; }
+
+.danger-zone {
+  margin-top: 28px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.danger-zone h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Org Members list */
+.org-member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.org-member-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.org-member-item:last-child { border-bottom: none; }
+.org-member-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  object-fit: cover;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-decoration: none;
+}
+.org-member-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-role-badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.org-role-badge.owner  { background: var(--accent);    color: var(--accent-ink); }
+.org-role-badge.admin  { background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border-strong); }
+.org-role-badge.member { background: transparent;      color: var(--text-faint); border: 1px solid var(--border); }
+
+/* Org Invites */
+.org-invite-list { display: flex; flex-direction: column; gap: 10px; }
+.org-invite-item { display: flex; align-items: center; gap: 6px; }
+.org-invite-link-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-invite-expiry {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* Note scope toggle (popover + video panel) */
+.note-scope-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.note-scope-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+}
+.note-scope-btn.active {
+  background: var(--accent);
+  border-color: var(--accent-hover);
+  color: var(--accent-ink);
+}
+.note-scope-select {
+  flex: 1;
+  height: 26px;
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-2);
+}
