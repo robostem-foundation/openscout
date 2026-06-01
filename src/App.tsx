@@ -39,8 +39,8 @@ import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, SignedOut, SignInButtons, sug
 import { setTheme as applyTheme, useTheme } from "./theme";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
-import { setEventsSettings, setTabLayout, useSettingsEpoch, useTabLayout } from "./settings";
-import type { TabLayout } from "./settings";
+import { setEventsSettings, setTabLayout, setUiStyle, useSettingsEpoch, useTabLayout, useUiStyle } from "./settings";
+import type { TabLayout, UiStyle } from "./settings";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
 
 const programOptions = [
@@ -6812,10 +6812,34 @@ function TabLayoutWire({ value }: { value: TabLayout }) {
   );
 }
 
+const UI_STYLE_OPTIONS: Array<{ value: UiStyle; label: string }> = [
+  { value: "classic", label: "Classic" },
+  { value: "modern", label: "Modern" },
+];
+
+// Mini wireframe preview of each interface skin: a top bar + a card, with the
+// corner radius / accent / surfaces that define the look. CSS keys off the
+// `ui-wire-${value}` class (see styles.css).
+function UiStyleWire({ value }: { value: UiStyle }) {
+  return (
+    <span className={`ui-wire ui-wire-${value}`} aria-hidden="true">
+      <span className="uw-bar" />
+      <span className="uw-body">
+        <span className="uw-card">
+          <span className="uw-pill" />
+          <span className="uw-line" />
+          <span className="uw-line short" />
+        </span>
+      </span>
+    </span>
+  );
+}
+
 function AppearanceSettings() {
   const { updateProfile } = useAuth();
   const theme = useTheme(); // global theme store — already reflects the synced cloud value
   const tabLayout = useTabLayout(); // synced via user_settings jsonb (settings.ts)
+  const uiStyle = useUiStyle(); // interface skin, synced via user_settings jsonb
 
   const choose = (value: NonNullable<Profile["theme"]>) => {
     applyTheme(value); // instant local apply + localStorage
@@ -6848,6 +6872,27 @@ function AppearanceSettings() {
           ))}
         </div>
         <p className="onboard-hint">Applies instantly and syncs across your devices.</p>
+
+        <div className="settings-field">
+          <h3 className="settings-field-title">Interface style</h3>
+          <p className="settings-section-copy">
+            Keep the classic look, or switch to a cleaner, modern skin. Both work in light and dark.
+          </p>
+          <div className="layout-picker" role="group" aria-label="Interface style">
+            {UI_STYLE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`theme-tile ${uiStyle === option.value ? "active" : ""}`}
+                onClick={() => setUiStyle(option.value)}
+                aria-pressed={uiStyle === option.value}
+              >
+                <UiStyleWire value={option.value} />
+                <span className="theme-tile-label">{option.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="settings-field">
           <h3 className="settings-field-title">Detail page tabs</h3>

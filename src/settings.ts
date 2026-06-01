@@ -15,13 +15,20 @@ import { supabase } from "./supabase";
 const EVENTS_PROGRAMS_KEY = "vex-events-programs";
 const EVENTS_FILTERS_KEY = "vex-events-filters";
 const TAB_LAYOUT_KEY = "vex-tab-layout";
-const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY] as const;
+const UI_STYLE_KEY = "vex-ui-style";
+const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY, UI_STYLE_KEY] as const;
 export type SyncedSettingKey = (typeof SYNCED_KEYS)[number];
 
 // Tab orientation for the event/team detail views. "horizontal" matches the
 // original look (a tab bar above the content); "vertical" mirrors the Settings
 // page's left-rail tabs.
 export type TabLayout = "horizontal" | "vertical";
+
+// Interface skin. "classic" is the original Bootstrap-flavored look; "modern" is
+// a Geist-inspired skin that re-points the design tokens (colors/radius/font).
+// Orthogonal to light/dark — both skins have light and dark variants. Applied to
+// <html data-ui="modern">; an early script in index.html sets it pre-paint.
+export type UiStyle = "classic" | "modern";
 
 type Values = Record<string, unknown>;
 
@@ -35,6 +42,8 @@ const listeners = new Set<() => void>();
 // an EventsPage remount), these fire whenever the layout value changes — including
 // self-writes — so EventDetail/TeamDetail/Settings re-render live.
 const tabListeners = new Set<() => void>();
+// Separate listener set for the UI-style value (same rationale as tabListeners).
+const uiListeners = new Set<() => void>();
 
 function emit() {
   for (const listener of listeners) listener();
@@ -42,6 +51,10 @@ function emit() {
 
 function emitTab() {
   for (const listener of tabListeners) listener();
+}
+
+function emitUi() {
+  for (const listener of uiListeners) listener();
 }
 
 function subscribe(listener: () => void) {
@@ -63,6 +76,8 @@ function commit(values: Values) {
   epoch += 1;
   emit();
   emitTab(); // a load may have changed the synced tab layout
+  applyUiDom(getUiStyle()); // adopt a synced UI skin on load (cloud-wins)
+  emitUi();
 }
 
 function sameValues(a: Values, b: Values): boolean {
@@ -215,4 +230,46 @@ export function setTabLayout(value: TabLayout) {
   currentValues = next;
   if (signedIn && supabase && userId) void upsertCloud(supabase, userId, next);
   emitTab();
+}
+
+// --- UI style (interface skin) ----------------------------------------------
+
+// Toggle the <html data-ui="modern"> attribute. "classic" removes it (default).
+function applyUiDom(value: UiStyle) {
+  const root = typeof document !== "undefined" ? document.documentElement : null;
+  if (!root) return;
+  if (value === "modern") root.setAttribute("data-ui", "modern");
+  else root.removeAttribute("data-ui");
+}
+
+function subscribeUi(listener: () => void) {
+  uiListeners.add(listener);
+  return () => {
+    uiListeners.delete(listener);
+  };
+}
+
+function getUiStyle(): UiStyle {
+  return currentValues[UI_STYLE_KEY] === "modern" ? "modern" : "classic";
+}
+
+// Live interface-skin value (signed-out → localStorage; signed-in → cloud jsonb,
+// cloud-wins on load). Default "classic" preserves the original look.
+export function useUiStyle(): UiStyle {
+  return useSyncExternalStore(subscribeUi, getUiStyle, getUiStyle);
+}
+
+// Persist the UI style. Writes localStorage always and upserts the cloud jsonb
+// when signed in, applies it to the DOM immediately, and notifies subscribers.
+export function setUiStyle(value: UiStyle) {
+  writeLS(UI_STYLE_KEY, value);
+  const next: Values = { ...currentValues, [UI_STYLE_KEY]: value };
+  if (sameValues(next, currentValues)) {
+    applyUiDom(value);
+    return;
+  }
+  currentValues = next;
+  if (signedIn && supabase && userId) void upsertCloud(supabase, userId, next);
+  applyUiDom(value);
+  emitUi();
 }
