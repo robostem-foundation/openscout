@@ -12,8 +12,10 @@ import {
   FilePlus2,
   Gamepad2,
   Info,
+  Link2,
   ListFilter,
   Link as LinkIcon,
+  LogIn,
   LogOut,
   Medal,
   Palette,
@@ -32,6 +34,7 @@ import {
   Trophy,
   Unlink,
   User,
+  UserMinus,
   Users,
   Youtube,
 } from "lucide-react";
@@ -43,6 +46,26 @@ import { setTheme as applyTheme, useTheme } from "./theme";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
+import { useOrgMatchNote, setOrgMatchNote, useHasAnyOrgNote } from "./org-notes";
+import { useOrgFavorites } from "./org-favorites";
+import {
+  createOrg,
+  deleteOrg,
+  generateInvite,
+  getOrgInvites,
+  getOrgMembers,
+  leaveOrg,
+  removeMember,
+  reloadOrgs,
+  revokeInvite,
+  updateMemberRole,
+  updateOrg,
+  useOrg,
+  useOrgs,
+  useOrgsReady,
+} from "./orgs";
+import type { OrgInvite, OrgMember, OrgMembership, OrgRole } from "./orgs";
+import { supabase } from "./supabase";
 import { setEventsSettings, setTabLayout, setUiStyle, useSettingsEpoch, useTabLayout, useUiStyle } from "./settings";
 import type { TabLayout, UiStyle } from "./settings";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
@@ -1690,6 +1713,7 @@ function Home() {
             </Panel>
           </SignedOut>
           <FavoritesPanel />
+          <OrgPanel />
 
           <Panel title="Skills Leaderboards" icon={<Trophy />}>
             <div className="skills-leaderboard-list">
@@ -5697,7 +5721,9 @@ function NoteRailDot({
   focused: boolean;
   onOpen: (el: HTMLElement) => void;
 }) {
-  const hasNote = useHasNote(matchId);
+  const hasPersonalNote = useHasNote(matchId);
+  const hasOrgNote = useHasAnyOrgNote(matchId);
+  const hasNote = hasPersonalNote || hasOrgNote;
   // The pip (resting dot) and the note icon are both always rendered; CSS cross-
   // fades them by the proximity variable --p (set imperatively during hover), so a
   // dot visibly morphs into a note icon as the cursor approaches. A note that
@@ -5733,7 +5759,17 @@ function MatchNotePopover({
   anchorRect: DOMRect;
   onClose: () => void;
 }) {
-  const { body } = useMatchNote(match.id);
+  const orgs = useOrgs();
+  const [scope, setScope] = useState<string>("personal");
+  // Always call both hooks (Rules of Hooks — no conditional calls)
+  const personalNote = useMatchNote(match.id);
+  const orgNote = useOrgMatchNote(scope !== "personal" ? scope : "__none__", match.id);
+  const activeBody = scope === "personal" ? personalNote.body : orgNote.body;
+  const handleChange = (val: string) => {
+    if (scope === "personal") setMatchNote(match.id, eventId ?? null, val);
+    else setOrgMatchNote(scope, match.id, eventId ?? null, val);
+  };
+
   const ref = useOutsideClick<HTMLDivElement>(onClose);
   useEffect(() => {
     const onScroll = () => onClose();
@@ -5745,12 +5781,44 @@ function MatchNotePopover({
   return (
     <div className="note-popover" ref={ref} style={{ top, left }}>
       <div className="note-popover-title">{match.name}</div>
+      {orgs.length > 0 && (
+        <div className="note-scope-toggle">
+          <button
+            type="button"
+            className={`note-scope-btn ${scope === "personal" ? "active" : ""}`}
+            onClick={() => setScope("personal")}
+          >
+            Personal
+          </button>
+          {orgs.length === 1 ? (
+            <button
+              type="button"
+              className={`note-scope-btn ${scope === orgs[0].orgId ? "active" : ""}`}
+              onClick={() => setScope(orgs[0].orgId)}
+              title={orgs[0].name}
+            >
+              {orgs[0].name}
+            </button>
+          ) : (
+            <select
+              className="note-scope-select"
+              value={scope === "personal" ? "" : scope}
+              onChange={(e) => setScope(e.target.value || "personal")}
+            >
+              <option value="">Select org…</option>
+              {orgs.map((o) => (
+                <option key={o.orgId} value={o.orgId}>{o.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
       <textarea
         className="note-popover-input"
         autoFocus
-        value={body}
-        onChange={(e) => setMatchNote(match.id, eventId ?? null, e.target.value)}
-        placeholder="Add a note…"
+        value={activeBody}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder={scope === "personal" ? "Add a note…" : "Add a team note…"}
       />
       <div className="note-popover-hint">Saved automatically · empty note is removed</div>
     </div>
@@ -6203,7 +6271,17 @@ function NoteEditorPanel({
   getTime: () => number | null;
   onSeek: (seconds: number) => void;
 }) {
-  const { body } = useMatchNote(match.id);
+  const orgs = useOrgs();
+  const [scope, setScope] = useState<string>("personal");
+  // Always call both hooks (Rules of Hooks — no conditional calls)
+  const personalNote = useMatchNote(match.id);
+  const orgNote = useOrgMatchNote(scope !== "personal" ? scope : "__none__", match.id);
+  const body = scope === "personal" ? personalNote.body : orgNote.body;
+  const handleChange = (val: string) => {
+    if (scope === "personal") setMatchNote(match.id, eventId ?? null, val);
+    else setOrgMatchNote(scope, match.id, eventId ?? null, val);
+  };
+
   const taRef = useRef<HTMLTextAreaElement>(null);
   const chips = useMemo(() => parseTimestamps(body), [body]);
 
@@ -6215,7 +6293,7 @@ function NoteEditorPanel({
     const start = ta ? ta.selectionStart : body.length;
     const end = ta ? ta.selectionEnd : body.length;
     const next = body.slice(0, start) + token + body.slice(end);
-    setMatchNote(match.id, eventId ?? null, next);
+    handleChange(next);
     const caret = start + token.length;
     requestAnimationFrame(() => {
       if (!taRef.current) return;
@@ -6230,12 +6308,44 @@ function NoteEditorPanel({
         <StickyNote size={14} />
         Match notes
       </div>
+      {orgs.length > 0 && (
+        <div className="note-scope-toggle">
+          <button
+            type="button"
+            className={`note-scope-btn ${scope === "personal" ? "active" : ""}`}
+            onClick={() => setScope("personal")}
+          >
+            Personal
+          </button>
+          {orgs.length === 1 ? (
+            <button
+              type="button"
+              className={`note-scope-btn ${scope === orgs[0].orgId ? "active" : ""}`}
+              onClick={() => setScope(orgs[0].orgId)}
+              title={orgs[0].name}
+            >
+              {orgs[0].name}
+            </button>
+          ) : (
+            <select
+              className="note-scope-select"
+              value={scope === "personal" ? "" : scope}
+              onChange={(e) => setScope(e.target.value || "personal")}
+            >
+              <option value="">Select org…</option>
+              {orgs.map((o) => (
+                <option key={o.orgId} value={o.orgId}>{o.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
       <textarea
         ref={taRef}
         className="video-note-input"
         value={body}
-        onChange={(e) => setMatchNote(match.id, eventId ?? null, e.target.value)}
-        placeholder="Jot notes while you watch…"
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder={scope === "personal" ? "Jot notes while you watch…" : "Team notes…"}
       />
       <button type="button" className="note-insert-btn" onClick={insertTimestamp}>
         <Clock size={13} />
@@ -7262,6 +7372,633 @@ function SettingsPage() {
   );
 }
 
+// ── Org components ────────────────────────────────────────────────────────────
+
+function OrgFavoritesList({ orgId }: { orgId: string }) {
+  const { teams: teamIds, events: eventIds, ready } = useOrgFavorites(orgId);
+  const resolved = useAsync(async () => {
+    if (!ready) return null;
+    const [teams, events] = await Promise.all([
+      Promise.all(teamIds.map((id) => api.team(id).catch(() => null))),
+      Promise.all(eventIds.map((id) => api.event(id).catch(() => null))),
+    ]);
+    return {
+      teams: teams.filter((t): t is Team => !!t),
+      events: events.filter((e): e is Event => !!e),
+    };
+  }, [teamIds, eventIds, ready]);
+
+  const data = resolved.data;
+  const loading = !ready || resolved.loading;
+  const hasAny = !!data && (data.teams.length > 0 || data.events.length > 0);
+
+  return (
+    <div className="home-fav-list">
+      {loading && <div className="home-fav-empty">Loading…</div>}
+      {!loading && !hasAny && (
+        <div className="home-fav-empty">No shared favorites yet — add teams or events to share with the org.</div>
+      )}
+      {data?.teams.map((team) => (
+        <Link key={`t-${team.id}`} href={teamPath(team)} className="home-fav-item">
+          <span className="home-fav-badge team">{team.program?.code ?? "VEX"}</span>
+          <span className="home-fav-text">
+            <span className="home-fav-title">{team.number} · {team.team_name ?? "Unnamed Team"}</span>
+            <span className="home-fav-sub">{locationLine(team)}</span>
+          </span>
+        </Link>
+      ))}
+      {data?.events.map((event) => (
+        <Link key={`e-${event.id}`} href={eventPath(event)} className="home-fav-item">
+          <span className="home-fav-badge event">{seasonYearLabel(event.season?.name) || <CalendarDays size={13} />}</span>
+          <span className="home-fav-text">
+            <span className="home-fav-title">{event.name}</span>
+            <span className="home-fav-sub">{locationLine(event)}</span>
+          </span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function CreateOrgModal({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [program, setProgram] = useState("");
+  const [teamNumber, setTeamNumber] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleCreate = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      const orgId = await createOrg(name.trim(), program || null, teamNumber.trim() || null);
+      navigate(`/org/${orgId}/settings`);
+    } finally {
+      setSaving(false);
+      onClose();
+    }
+  };
+
+  const handleKey = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key === "Escape") onClose();
+  };
+
+  return (
+    <div className="video-overlay" onClick={onClose} onKeyDown={handleKey} role="dialog" aria-modal="true" aria-label="Create org">
+      <div className="org-create-modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Create an org</h2>
+        <div className="org-create-field">
+          <label htmlFor="org-name-input">Org name</label>
+          <input
+            id="org-name-input"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value.slice(0, 40))}
+            placeholder="e.g. 169W Scouting Alliance"
+            autoFocus
+            onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }}
+          />
+        </div>
+        <div className="org-create-row">
+          <div className="org-create-field">
+            <label htmlFor="org-program-select">Program</label>
+            <select id="org-program-select" value={program} onChange={(e) => setProgram(e.target.value)}>
+              <option value="">Any / none</option>
+              {AUTH_PROGRAMS.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="org-create-field">
+            <label htmlFor="org-team-input">Team #</label>
+            <input
+              id="org-team-input"
+              type="text"
+              value={teamNumber}
+              onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
+              placeholder="e.g. 169W"
+            />
+          </div>
+        </div>
+        <div className="org-create-footer">
+          <button type="button" className="button-link secondary" onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            className="button-link"
+            onClick={() => void handleCreate()}
+            disabled={!name.trim() || saving}
+          >
+            {saving ? "Creating…" : "Create org"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrgPanel() {
+  const { user } = useAuth();
+  const orgs = useOrgs();
+  const ready = useOrgsReady();
+  const [createOpen, setCreateOpen] = useState(false);
+
+  if (!user) return null; // signed-out: hide entirely
+
+  if (!ready) {
+    return (
+      <Panel title="Your Org" icon={<Users size={15} />}>
+        <div className="home-fav-empty">Loading…</div>
+      </Panel>
+    );
+  }
+
+  if (orgs.length === 0) {
+    return (
+      <>
+        <Panel title="Org / Team" icon={<Users size={15} />}>
+          <div className="org-panel-empty">
+            <p>Collaborate with your scouting team.</p>
+            <button type="button" className="button-link" onClick={() => setCreateOpen(true)}>
+              Create an org
+            </button>
+            <p className="org-panel-hint">Or ask your coach for an invite link.</p>
+          </div>
+        </Panel>
+        {createOpen && <CreateOrgModal onClose={() => setCreateOpen(false)} />}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {orgs.map((org) => (
+        <Panel
+          key={org.orgId}
+          title={org.name}
+          icon={<Users size={15} />}
+          action={<Link href={`/org/${org.orgId}/settings`}>Manage</Link>}
+        >
+          <OrgFavoritesList orgId={org.orgId} />
+        </Panel>
+      ))}
+    </>
+  );
+}
+
+// ── Join Org Page (/join/:token) ──────────────────────────────────────────────
+
+function JoinOrgPage({ token }: { token: string }) {
+  const { user } = useAuth();
+  type PeekResult = { valid: boolean; org_id?: string; org_name?: string; member_count?: number };
+  const peek = useAsync<PeekResult | null>(async () => {
+    if (!supabase) return null;
+    const { data, error } = await supabase.rpc("peek_invite", { p_invite_id: token });
+    if (error) return { valid: false };
+    return data as PeekResult;
+  }, [token]);
+
+  const [joining, setJoining] = useState(false);
+  const [result, setResult] = useState<{ ok?: boolean; alreadyMember?: boolean; error?: string } | null>(null);
+
+  const handleJoin = async () => {
+    if (!supabase) return;
+    setJoining(true);
+    try {
+      const { data, error } = await supabase.rpc("join_org_by_invite", { p_invite_id: token });
+      if (error) {
+        setResult({ error: "Something went wrong. Please try again." });
+        return;
+      }
+      const res = data as { ok?: boolean; already_member?: boolean; error?: string };
+      if (res.error === "invite_invalid") setResult({ error: "This invite link has expired or already been used." });
+      else if (res.error === "org_full") setResult({ error: "This org is full (20 members max)." });
+      else {
+        await reloadOrgs();
+        setResult({ ok: true, alreadyMember: res.already_member });
+        setTimeout(() => navigate("/"), 1200);
+      }
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const signInForJoin = async (provider: "discord" | "google") => {
+    if (!supabase) return;
+    // Redirect back to this exact join URL so the user lands here after OAuth
+    await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: window.location.href },
+    });
+  };
+
+  const info = peek.data;
+
+  return (
+    <section className="page join-org-page">
+      <div className="join-org-card">
+        <Users size={36} color="var(--accent)" />
+        {peek.loading && <p className="join-org-meta">Loading…</p>}
+        {!peek.loading && (!info || !info.valid) && (
+          <p className="join-org-error">This invite link has expired or is no longer valid.</p>
+        )}
+        {!peek.loading && info?.valid && (
+          <>
+            <h2>Join {info.org_name}</h2>
+            <p className="join-org-meta">{info.member_count ?? 0} member{info.member_count !== 1 ? "s" : ""}</p>
+            {result?.ok && (
+              <p className="join-org-success">
+                {result.alreadyMember ? "You're already a member!" : `Welcome to ${info.org_name}!`} Redirecting…
+              </p>
+            )}
+            {result?.error && <p className="join-org-error">{result.error}</p>}
+            {!result?.ok && !user && (
+              <>
+                <p className="join-org-meta">Sign in to join this org.</p>
+                <div className="auth-buttons" style={{ width: "100%", marginTop: 8 }}>
+                  <span className="auth-recommended">Recommended</span>
+                  <button type="button" className="auth-btn auth-btn-discord" onClick={() => void signInForJoin("discord")}>
+                    <LogIn size={16} />
+                    Sign in with Discord
+                  </button>
+                  <button type="button" className="auth-btn auth-btn-google" onClick={() => void signInForJoin("google")}>
+                    <LogIn size={16} />
+                    Sign in with Google
+                  </button>
+                </div>
+              </>
+            )}
+            {!result?.ok && user && (
+              <button
+                type="button"
+                className="button-link"
+                style={{ marginTop: 8 }}
+                onClick={() => void handleJoin()}
+                disabled={joining}
+              >
+                {joining ? "Joining…" : `Join ${info.org_name}`}
+              </button>
+            )}
+          </>
+        )}
+        <a href="/" className="join-org-back" onClick={(e) => { e.preventDefault(); navigate("/"); }}>← Back to home</a>
+      </div>
+    </section>
+  );
+}
+
+// ── Org Settings Page (/org/:id/settings) ─────────────────────────────────────
+
+function OrgMemberAvatar({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
+  const [failed, setFailed] = useState(false);
+  const initial = (name || "?").charAt(0).toUpperCase();
+  if (avatarUrl && !failed) {
+    return (
+      <img
+        className="org-member-avatar"
+        src={avatarUrl}
+        width={28}
+        height={28}
+        alt=""
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return <span className="org-member-avatar">{initial}</span>;
+}
+
+function OrgOverviewTab({ orgId, org }: { orgId: string; org: OrgMembership | undefined }) {
+  const [name, setName] = useState(org?.name ?? "");
+  const [program, setProgram] = useState(org?.teamProgram ?? "");
+  const [teamNumber, setTeamNumber] = useState(org?.teamNumber ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  // Sync local fields if org loads after mount
+  useEffect(() => {
+    if (org) {
+      setName(org.name);
+      setProgram(org.teamProgram ?? "");
+      setTeamNumber(org.teamNumber ?? "");
+    }
+  }, [org?.orgId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await updateOrg(orgId, { name, teamProgram: program || null, teamNumber: teamNumber.trim() || null });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleLeaveOrDelete = async () => {
+    if (!confirming) { setConfirming(true); return; }
+    if (org?.role === "owner") {
+      await deleteOrg(orgId);
+    } else {
+      await leaveOrg(orgId);
+    }
+    navigate("/");
+  };
+
+  if (!org) return <p className="join-org-meta">Org not found or you are not a member.</p>;
+
+  return (
+    <div className="org-settings-form">
+      <div className="org-settings-field">
+        <label htmlFor="os-name">Org name</label>
+        <input
+          id="os-name"
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value.slice(0, 40))}
+          maxLength={40}
+        />
+      </div>
+      <div className="org-settings-row">
+        <div className="org-settings-field">
+          <label htmlFor="os-program">Program</label>
+          <select id="os-program" value={program} onChange={(e) => setProgram(e.target.value)}>
+            <option value="">Any / none</option>
+            {AUTH_PROGRAMS.map((p) => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="org-settings-field">
+          <label htmlFor="os-team">Team #</label>
+          <input
+            id="os-team"
+            type="text"
+            value={teamNumber}
+            onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
+            placeholder="e.g. 169W"
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        className="button-link"
+        style={{ alignSelf: "flex-start" }}
+        onClick={() => void handleSave()}
+        disabled={saving || !name.trim()}
+      >
+        {saved ? "Saved!" : saving ? "Saving…" : "Save changes"}
+      </button>
+
+      <div className="danger-zone">
+        <h3>{org.role === "owner" ? "Delete org" : "Leave org"}</h3>
+        <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--text-muted)" }}>
+          {org.role === "owner"
+            ? "Permanently deletes the org and all shared data. This cannot be undone."
+            : "You will lose access to this org's shared favorites and notes."}
+        </p>
+        <button
+          type="button"
+          className="button-link"
+          style={{ background: "var(--danger)", borderColor: "var(--danger-strong)", color: "#fff" }}
+          onClick={() => void handleLeaveOrDelete()}
+        >
+          {confirming
+            ? (org.role === "owner" ? "Confirm delete" : "Confirm leave")
+            : (org.role === "owner" ? "Delete org" : "Leave org")}
+        </button>
+        {confirming && (
+          <button
+            type="button"
+            className="button-link secondary"
+            style={{ marginLeft: 8 }}
+            onClick={() => setConfirming(false)}
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OrgMembersTab({ orgId, org }: { orgId: string; org: OrgMembership | undefined }) {
+  const { user } = useAuth();
+  const [members, setMembers] = useState<OrgMember[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const canManage = org?.role === "owner" || org?.role === "admin";
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    const data = await getOrgMembers(orgId);
+    setMembers(data);
+    setLoading(false);
+  }, [orgId]);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const handleRemove = async (memberId: string) => {
+    await removeMember(orgId, memberId);
+    void reload();
+  };
+
+  const handleRoleChange = async (memberId: string, newRole: OrgRole) => {
+    await updateMemberRole(orgId, memberId, newRole);
+    void reload();
+  };
+
+  if (loading) return <p className="join-org-meta">Loading members…</p>;
+
+  return (
+    <div className="org-member-list">
+      {(members ?? []).map((m) => (
+        <div key={m.userId} className="org-member-item">
+          <OrgMemberAvatar name={m.displayName} avatarUrl={m.avatarUrl} />
+          <span className="org-member-name">{m.displayName}</span>
+          <span className={`org-role-badge ${m.role}`}>{m.role}</span>
+          {canManage && m.userId !== user?.id && (
+            <>
+              {org?.role === "owner" && (
+                <select
+                  value={m.role}
+                  onChange={(e) => void handleRoleChange(m.userId, e.target.value as OrgRole)}
+                  style={{ fontSize: 12, padding: "2px 6px", borderRadius: "var(--radius)", border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-2)" }}
+                  aria-label={`Change role for ${m.displayName}`}
+                >
+                  <option value="admin">admin</option>
+                  <option value="member">member</option>
+                </select>
+              )}
+              <button
+                type="button"
+                className="icon-button"
+                style={{ width: 26, height: 26 }}
+                onClick={() => void handleRemove(m.userId)}
+                title={`Remove ${m.displayName}`}
+                aria-label={`Remove ${m.displayName}`}
+              >
+                <UserMinus size={13} />
+              </button>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OrgInvitesTab({ orgId }: { orgId: string }) {
+  const [invites, setInvites] = useState<OrgInvite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    getOrgInvites(orgId).then((data) => { setInvites(data); setLoading(false); });
+  }, [orgId]);
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    const invite = await generateInvite(orgId);
+    setInvites((prev) => [invite, ...prev]);
+    setGenerating(false);
+  };
+
+  const handleRevoke = async (inviteId: string) => {
+    await revokeInvite(inviteId);
+    setInvites((prev) => prev.filter((i) => i.id !== inviteId));
+  };
+
+  const handleCopy = (inviteId: string) => {
+    const url = `${window.location.origin}/join/${inviteId}`;
+    void navigator.clipboard.writeText(url);
+    setCopied(inviteId);
+    setTimeout(() => setCopied((c) => (c === inviteId ? null : c)), 2000);
+  };
+
+  const formatExpiry = (iso: string) => {
+    const d = new Date(iso);
+    return `Expires ${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  };
+
+  if (loading) return <p className="join-org-meta">Loading…</p>;
+
+  return (
+    <div>
+      <button
+        type="button"
+        className="button-link"
+        style={{ marginBottom: 16 }}
+        onClick={() => void handleGenerate()}
+        disabled={generating}
+      >
+        <Link2 size={14} />
+        {generating ? "Generating…" : "Generate invite link"}
+      </button>
+      {invites.length === 0 && (
+        <p style={{ fontSize: 13, color: "var(--text-muted)" }}>No active invite links.</p>
+      )}
+      <div className="org-invite-list">
+        {invites.map((invite) => {
+          const url = `${window.location.origin}/join/${invite.id}`;
+          return (
+            <div key={invite.id} className="org-invite-item">
+              <input
+                type="text"
+                className="org-invite-link-input"
+                value={url}
+                readOnly
+                title={url}
+              />
+              <button
+                type="button"
+                className="icon-button"
+                style={{ width: 32, height: 32, flexShrink: 0 }}
+                onClick={() => handleCopy(invite.id)}
+                title="Copy link"
+                aria-label="Copy invite link"
+              >
+                {copied === invite.id ? <Check size={13} /> : <LinkIcon size={13} />}
+              </button>
+              <span className="org-invite-expiry">{formatExpiry(invite.expiresAt)}</span>
+              <button
+                type="button"
+                className="icon-button"
+                style={{ width: 32, height: 32, flexShrink: 0, color: "var(--danger)" }}
+                onClick={() => void handleRevoke(invite.id)}
+                title="Revoke"
+                aria-label="Revoke invite"
+              >
+                <Unlink size={13} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+type OrgSettingsTab = "overview" | "members" | "invites";
+const ORG_SETTINGS_TABS: Array<{ value: OrgSettingsTab; label: string; icon: ReactNode }> = [
+  { value: "overview", label: "Overview", icon: <Settings size={15} /> },
+  { value: "members",  label: "Members",  icon: <Users size={15} /> },
+  { value: "invites",  label: "Invites",  icon: <Link2 size={15} /> },
+];
+
+function OrgSettingsPage({ orgId }: { orgId: string }) {
+  const org = useOrg(orgId);
+  const ready = useOrgsReady();
+  const [tab, setTab] = useState<OrgSettingsTab>("overview");
+  const { user } = useAuth();
+
+  if (!user) {
+    return (
+      <section className="page">
+        <div style={{ padding: "40px 20px", textAlign: "center" }}>
+          <p style={{ color: "var(--text-muted)" }}>Sign in to manage this org.</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (ready && !org) {
+    return (
+      <section className="page">
+        <div style={{ padding: "40px 20px", textAlign: "center" }}>
+          <p style={{ color: "var(--text-muted)" }}>Org not found or you are not a member.</p>
+          <Link href="/">← Back to home</Link>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="page">
+      <PageTitle icon={<Users />} title={org?.name ?? "Org Settings"} />
+      <div style={{ marginBottom: 12 }}>
+        <a href="/" className="join-org-back" onClick={(e) => { e.preventDefault(); navigate("/"); }}>← Back to home</a>
+      </div>
+      <div className="settings-layout">
+        <nav className="settings-tabs" aria-label="Org settings sections">
+          {ORG_SETTINGS_TABS.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              className={`settings-tab ${tab === t.value ? "active" : ""}`}
+              onClick={() => setTab(t.value)}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          ))}
+        </nav>
+        <div className="settings-content">
+          {tab === "overview" && <OrgOverviewTab orgId={orgId} org={org} />}
+          {tab === "members"  && <OrgMembersTab orgId={orgId} org={org} />}
+          {tab === "invites"  && <OrgInvitesTab orgId={orgId} />}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function route(path: string) {
   if (path === "/") return <Home />;
   if (path === "/settings") return <SettingsPage />;
@@ -7269,6 +8006,10 @@ function route(path: string) {
   if (path === "/teams") return <TeamsPage />;
   if (path === "/insights") return <InsightsPage />;
   if (path === "/terms") return <TermsPage />;
+  const joinMatch = path.match(/^\/join\/([0-9a-f-]+)$/i);
+  if (joinMatch) return <JoinOrgPage token={joinMatch[1]} />;
+  const orgMatch = path.match(/^\/org\/([0-9a-f-]+)\/settings$/i);
+  if (orgMatch) return <OrgSettingsPage orgId={orgMatch[1]} />;
   const eventMatch = path.match(/^\/events?\/(.+)$/);
   if (eventMatch) return <EventDetail param={decodeURIComponent(eventMatch[1])} />;
   const teamMatch = path.match(/^\/teams?\/(.+)$/);
