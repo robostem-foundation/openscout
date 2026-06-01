@@ -280,7 +280,7 @@ function Avatar({ size = 32 }: { size?: number }) {
   );
 }
 
-function useOutsideClick<T extends HTMLElement>(onClose: () => void) {
+export function useOutsideClick<T extends HTMLElement>(onClose: () => void) {
   const ref = useRef<T>(null);
   useEffect(() => {
     const handler = (event: globalThis.MouseEvent) => {

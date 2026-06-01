@@ -2318,6 +2318,138 @@ tbody tr:hover {
   border-left-color: var(--border-strong);
 }
 
+/* Match-note rail — indicators sit in a gutter OUTSIDE the table's left border,
+   one per match row, aligned via a zero-width relative cell. A JS pointer handler
+   sets each dot's --p (0..1 proximity) + scale, so the dot fisheye-magnifies and
+   morphs from a resting pip into a note icon as the cursor approaches. */
+/* Wrapper div for the note rail: extends the pointer-event hit area into the
+   left gutter so pointerleave doesn't fire when the cursor is between two dots
+   but not yet over the next table row. margin-left: -50px pulls the div's left
+   edge 50px into the gutter; padding-left: 50px shifts the content (the table)
+   back to its normal position. The wrapper's block-level box covers the full
+   gutter strip top-to-bottom, bridging the gaps between dots. */
+.note-rail-zone {
+  margin-left: -50px;
+  padding-left: 50px;
+}
+
+.results-match-table.has-note-rail {
+  overflow: visible;
+}
+.note-rail-col {
+  width: 0;
+}
+/* Higher specificity than `.results-match-table td` so these win. Zero-width,
+   relatively-positioned cell anchors the absolutely-positioned dot to the row. */
+.results-match-table .note-rail-cell {
+  position: relative;
+  width: 0;
+  padding: 0;
+  overflow: visible;
+}
+/* The dot's right edge is pinned in the gutter, ~14px left of the table border;
+   transform-origin:right means the fisheye grows LEFTWARD, never into the table. */
+.note-dot {
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  margin-right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transform-origin: right center;
+  transition: transform 0.09s ease-out;
+}
+/* resting state: a small grey pip that fades out as the cursor nears (--p → 1) */
+.note-dot-pip {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: calc(0.5 * (1 - var(--p, 0)));
+  transition: opacity 0.04s;
+}
+/* the note icon fades in as the cursor nears */
+.note-dot-icon {
+  position: absolute;
+  color: var(--accent);
+  opacity: var(--p, 0);
+  transition: opacity 0.12s;
+}
+/* an existing note always shows the icon */
+.note-dot.has-note .note-dot-pip {
+  opacity: 0;
+}
+.note-dot.has-note .note-dot-icon {
+  opacity: 1;
+}
+.note-dot.is-focused {
+  z-index: 6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .note-dot {
+    transition: none;
+  }
+  .note-dot:hover {
+    transform: translateY(-50%) scale(1.35);
+  }
+  .note-dot:hover .note-dot-pip {
+    opacity: 0;
+  }
+  .note-dot:hover .note-dot-icon {
+    opacity: 1;
+  }
+}
+
+/* Quick-note popover anchored to a match row. */
+.note-popover {
+  position: fixed;
+  z-index: 60;
+  width: 272px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+.note-popover-title {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.note-popover-input {
+  width: 100%;
+  min-height: 88px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  resize: vertical;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.note-popover-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.note-popover-hint {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 /* Video overlay */
 
 .video-overlay {
@@ -2332,12 +2464,110 @@ tbody tr:hover {
 }
 
 .video-modal {
-  width: min(960px, calc(100vw - 40px));
+  width: min(1280px, calc(100vw - 40px));
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 6px 30px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+}
+
+/* Two-column body: the existing video stack on the left, note panel on the right.
+   .video-main is the percentage basis for the 16:9 embed, so keep it auto-width. */
+.video-body {
+  display: flex;
+  align-items: stretch;
+}
+.video-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.video-note-panel {
+  display: flex;
+  flex: 0 0 320px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow: auto;
+}
+.video-note-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.video-note-input {
+  flex: 1 1 auto;
+  min-height: 180px;
+  box-sizing: border-box;
+  padding: 8px;
+  resize: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.video-note-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.note-insert-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.note-insert-btn:hover {
+  border-color: var(--accent);
+}
+.note-jump-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ts-chip {
+  padding: 2px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.ts-chip:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+@media (max-width: 760px) {
+  .video-body {
+    flex-direction: column;
+  }
+  .video-note-panel {
+    flex-basis: auto;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .video-note-input {
+    min-height: 120px;
+  }
 }
 
 .video-modal-header {
