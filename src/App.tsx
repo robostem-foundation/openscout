@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronUp,
   ExternalLink,
+  FilePlus2,
   Gamepad2,
   Info,
   ListFilter,
@@ -26,6 +27,8 @@ import {
   Settings,
   Shield,
   Star,
+  StickyNote,
+  Clock,
   Trophy,
   Unlink,
   User,
@@ -33,12 +36,13 @@ import {
   Youtube,
 } from "lucide-react";
 import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Dispatch, KeyboardEvent, MouseEvent, ReactNode, SetStateAction } from "react";
+import type { Dispatch, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
-import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, SignedOut, SignInButtons, suggestedName, useAuth } from "./auth";
+import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
+import { setMatchNote, useHasNote, useMatchNote } from "./notes";
 import { setEventsSettings, setTabLayout, setUiStyle, useSettingsEpoch, useTabLayout, useUiStyle } from "./settings";
 import type { TabLayout, UiStyle } from "./settings";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
@@ -3543,6 +3547,7 @@ function EventDetail({ param }: { param: string }) {
           presetUrl={presetUrl}
           onOpenMatch={(match, timestamp) => setPlayback({ match, timestamp })}
           isIq={isIqProgram(event)}
+          eventId={event.id}
         />
       )}
       {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} matches={matches.data?.data ?? []} />}
@@ -5548,6 +5553,7 @@ function MatchesTable({
   presetUrl,
   onOpenMatch,
   isIq = false,
+  eventId,
 }: {
   matches: Match[];
   timestampMap: Map<number, MatchTimestamp>;
@@ -5556,6 +5562,7 @@ function MatchesTable({
   presetUrl: string | null;
   onOpenMatch: (match: Match, timestamp: MatchTimestamp) => void;
   isIq?: boolean;
+  eventId?: number;
 }) {
   const [qualificationDirection, setQualificationDirection] = useState<DateDirection>("asc");
   const [bracketOpen, setBracketOpen] = useState(false);
@@ -5574,7 +5581,7 @@ function MatchesTable({
   // matches, only the cross-division finals. In that case promote the
   // elimination matches into the main (left) column.
   const noQuals = !isIq && qualificationMatches.length === 0 && playoffMatches.length > 0;
-  const renderElimGroups = () =>
+  const renderElimGroups = (showNoteRail = false) =>
     playoffOrder
       .filter((key) => playoffGroups.has(key))
       .map((key) => (
@@ -5589,6 +5596,8 @@ function MatchesTable({
             presetUrl={presetUrl}
             onOpenMatch={onOpenMatch}
             dayNumbers={dayNumbers}
+            showNoteRail={showNoteRail}
+            eventId={eventId}
           />
         </section>
       ));
@@ -5609,7 +5618,7 @@ function MatchesTable({
       <section className="results-column">
         <h2>{noQuals ? "Elimination Results" : "Qualification Results"}</h2>
         {noQuals ? (
-          renderElimGroups()
+          renderElimGroups(true)
         ) : (
           <ResultsMatchTable
             matches={qualificationMatches}
@@ -5623,6 +5632,8 @@ function MatchesTable({
             onOpenMatch={onOpenMatch}
             dayNumbers={dayNumbers}
             isIq={isIq}
+            showNoteRail
+            eventId={eventId}
           />
         )}
       </section>
@@ -5667,6 +5678,85 @@ function MatchesTable({
   );
 }
 
+// Clear the imperative magnification styles a dot back to its CSS resting state.
+function resetDot(dot: HTMLElement) {
+  dot.style.transform = "";
+  dot.style.removeProperty("--p");
+}
+
+// One note indicator per match row. Reads only its own has-note boolean (a
+// primitive snapshot), so typing in one note doesn't re-render the whole table.
+function NoteRailDot({
+  matchId,
+  matchName,
+  focused,
+  onOpen,
+}: {
+  matchId: number;
+  matchName: string;
+  focused: boolean;
+  onOpen: (el: HTMLElement) => void;
+}) {
+  const hasNote = useHasNote(matchId);
+  // The pip (resting dot) and the note icon are both always rendered; CSS cross-
+  // fades them by the proximity variable --p (set imperatively during hover), so a
+  // dot visibly morphs into a note icon as the cursor approaches. A note that
+  // already exists shows the icon at all times.
+  return (
+    <button
+      type="button"
+      className={`note-dot ${hasNote ? "has-note" : ""} ${focused ? "is-focused" : ""}`}
+      data-match-id={matchId}
+      onClick={(e) => onOpen(e.currentTarget)}
+      aria-label={hasNote ? `Edit note for ${matchName}` : `Add note for ${matchName}`}
+      title={hasNote ? "Edit note" : "Add note"}
+    >
+      <span className="note-dot-pip" aria-hidden="true" />
+      {hasNote
+        ? <StickyNote className="note-dot-icon" size={12} aria-hidden="true" />
+        : <FilePlus2  className="note-dot-icon" size={12} aria-hidden="true" />}
+    </button>
+  );
+}
+
+// Quick note editor anchored to a match row. Binds the textarea directly to the
+// store (single source of truth shared with the video panel); the rail dot flips
+// live as you type and the debounced cloud write happens in the store.
+function MatchNotePopover({
+  match,
+  eventId,
+  anchorRect,
+  onClose,
+}: {
+  match: Match;
+  eventId?: number;
+  anchorRect: DOMRect;
+  onClose: () => void;
+}) {
+  const { body } = useMatchNote(match.id);
+  const ref = useOutsideClick<HTMLDivElement>(onClose);
+  useEffect(() => {
+    const onScroll = () => onClose();
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [onClose]);
+  const top = Math.max(8, Math.min(anchorRect.top, window.innerHeight - 200));
+  const left = Math.min(anchorRect.right + 8, window.innerWidth - 288);
+  return (
+    <div className="note-popover" ref={ref} style={{ top, left }}>
+      <div className="note-popover-title">{match.name}</div>
+      <textarea
+        className="note-popover-input"
+        autoFocus
+        value={body}
+        onChange={(e) => setMatchNote(match.id, eventId ?? null, e.target.value)}
+        placeholder="Add a note…"
+      />
+      <div className="note-popover-hint">Saved automatically · empty note is removed</div>
+    </div>
+  );
+}
+
 function ResultsMatchTable({
   matches,
   emptyText,
@@ -5680,6 +5770,8 @@ function ResultsMatchTable({
   dayNumbers,
   isIq = false,
   labelFor,
+  showNoteRail = false,
+  eventId,
 }: {
   matches: Match[];
   emptyText: string;
@@ -5693,10 +5785,75 @@ function ResultsMatchTable({
   dayNumbers?: Map<string, number>;
   isIq?: boolean;
   labelFor?: (match: Match) => string | undefined;
+  showNoteRail?: boolean;
+  eventId?: number;
 }) {
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  const rafRef = useRef(0);
+  const latestYRef = useRef(0); // always the most-recent cursor Y; rAF reads this
+  const [focusedId, setFocusedId] = useState<number | null>(null);
+  const [popover, setPopover] = useState<{ match: Match; rect: DOMRect } | null>(null);
+  const reduceMotion = useMemo(
+    () => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    [],
+  );
+  const noteColSpan = showNoteRail ? 6 : 5;
+
+  // Dock-style fisheye: while the cursor is over the left rail band, scale each
+  // dot by a gaussian of its distance to the cursor (closer = bigger). Written
+  // imperatively (dot.style.transform) so a ~200-row table doesn't re-render
+  // every frame; React state only tracks the focused dot (for its label).
+  const handleRailMove = (e: ReactPointerEvent) => {
+    if (reduceMotion) return;
+    // Always capture the freshest cursor Y before the throttle check so the
+    // pending rAF (if any) picks it up rather than using a stale snapshot.
+    latestYRef.current = e.clientY;
+    if (rafRef.current) return; // throttle to one update per frame
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      const dots = tbodyRef.current?.querySelectorAll<HTMLElement>(".note-dot");
+      if (!dots) return;
+      const cursorY = latestYRef.current; // freshest position
+      const SIGMA = 60;
+      const MAX = 1.1;
+      let bestId: number | null = null;
+      let bestFactor = 0;
+      dots.forEach((dot) => {
+        const r = dot.getBoundingClientRect();
+        const factor = Math.exp(-((cursorY - (r.top + r.height / 2)) ** 2) / (2 * SIGMA * SIGMA));
+        // translateY keeps the absolutely-positioned dot vertically centered; scale
+        // is the fisheye; --p (0..1) drives the dot→note-icon morph in CSS.
+        dot.style.transform = `translateY(-50%) scale(${1 + MAX * factor})`;
+        dot.style.setProperty("--p", factor.toFixed(3));
+        if (factor > bestFactor) {
+          bestFactor = factor;
+          bestId = Number(dot.dataset.matchId);
+        }
+      });
+      setFocusedId(bestFactor > 0.5 ? bestId : null);
+    });
+  };
+  const handleRailLeave = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+    tbodyRef.current?.querySelectorAll<HTMLElement>(".note-dot").forEach(resetDot);
+    setFocusedId(null);
+  };
+
   return (
-    <table className="results-match-table">
+    <>
+    {/* note-rail-zone extends the hit area left into the gutter so the fisheye
+        doesn't drop when the cursor is between two dots but not over the table. */}
+    <div
+      className={showNoteRail ? "note-rail-zone" : undefined}
+      onPointerMove={showNoteRail ? handleRailMove : undefined}
+      onPointerLeave={showNoteRail ? handleRailLeave : undefined}
+    >
+    <table className={`results-match-table ${showNoteRail ? "has-note-rail" : ""}`}>
       <colgroup>
+        {showNoteRail && <col className="note-rail-col" />}
         <col className="results-play-col" />
         <col className="results-match-col" />
         <col className="results-alliance-col" />
@@ -5705,6 +5862,7 @@ function ResultsMatchTable({
       </colgroup>
       <thead>
         <tr>
+          {showNoteRail && <th className="note-rail-cell" aria-hidden="true" />}
           <th className="play-cell" aria-label="Open match">
             {presetLoading ? (
               <span className="play-header-icon loading" />
@@ -5733,7 +5891,9 @@ function ResultsMatchTable({
           <th>Score</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody
+        ref={tbodyRef}
+      >
         {matches.map((match, index) => {
           const { red, blue, redScore, blueScore, winner } = matchWinner(match);
           const redTeams = red?.teams ?? [];
@@ -5754,7 +5914,7 @@ function ResultsMatchTable({
               if (currentDay && prevDay) {
                 dayDivider = (
                   <tr className="match-day-divider-row">
-                    <td colSpan={5}>End of Day {Math.min(currentDay, prevDay)}</td>
+                    <td colSpan={noteColSpan}>End of Day {Math.min(currentDay, prevDay)}</td>
                   </tr>
                 );
               }
@@ -5765,6 +5925,16 @@ function ResultsMatchTable({
             <Fragment key={match.id}>
               {dayDivider}
               <tr>
+              {showNoteRail && (
+                <td className="note-rail-cell">
+                  <NoteRailDot
+                    matchId={match.id}
+                    matchName={displayName}
+                    focused={focusedId === match.id}
+                    onOpen={(el) => setPopover({ match, rect: el.getBoundingClientRect() })}
+                  />
+                </td>
+              )}
               <td className="play-cell">
                 {canPlay ? (
                   <button
@@ -5809,13 +5979,23 @@ function ResultsMatchTable({
         })}
         {!matches.length && (
           <tr>
-            <td colSpan={5}>
+            <td colSpan={noteColSpan}>
               <Empty>{emptyText}</Empty>
             </td>
           </tr>
         )}
       </tbody>
     </table>
+    </div>
+    {popover && (
+      <MatchNotePopover
+        match={popover.match}
+        eventId={eventId}
+        anchorRect={popover.rect}
+        onClose={() => setPopover(null)}
+      />
+    )}
+    </>
   );
 }
 
@@ -5909,6 +6089,12 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
     }
   };
 
+  const seekTo = (seconds: number) => {
+    if (!playerRef.current) return;
+    playerRef.current.seekTo(seconds, true);
+    setCurrentTime(Math.floor(seconds));
+  };
+
   return (
     <div className="video-overlay" onClick={onClose}>
       <div className="video-modal" onClick={(e) => e.stopPropagation()}>
@@ -5940,36 +6126,130 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
             <button className="video-close-btn" onClick={onClose} aria-label="Close">&times;</button>
           </div>
         </div>
-        <div className="video-embed-wrap">
-          {playback.timestamp.videoId ? (
-            <iframe
-              ref={iframeRef}
-              src={embedUrl}
-              className="video-player-iframe"
-              allow="autoplay; encrypted-media; fullscreen"
-              allowFullScreen
-            />
-          ) : (
-            <div className="video-unavailable">Video unavailable</div>
-          )}
-        </div>
-        <div className="video-controls">
-          <button onClick={() => seekBy(-60)} title="Back 1 minute">-1m</button>
-          <button onClick={() => seekBy(-30)} title="Back 30 seconds">-30s</button>
-          <button onClick={() => seekBy(-10)} title="Back 10 seconds">-10s</button>
-          <button onClick={() => seekBy(-5)} title="Back 5 seconds">-5s</button>
-          <button className="video-play-btn" onClick={togglePlay} title={isPlaying ? "Pause" : "Play"}>
-            {isPlaying ? <Pause size={18} /> : <Play size={18} />}
-          </button>
-          <button onClick={() => seekBy(5)} title="Forward 5 seconds">+5s</button>
-          <button onClick={() => seekBy(10)} title="Forward 10 seconds">+10s</button>
-          <button onClick={() => seekBy(30)} title="Forward 30 seconds">+30s</button>
-          <button onClick={() => seekBy(60)} title="Forward 1 minute">+1m</button>
-        </div>
-        <div className="video-timestamp">
-          {formatTimestamp(currentTime)} from stream start
+        <div className="video-body">
+          <div className="video-main">
+            <div className="video-embed-wrap">
+              {playback.timestamp.videoId ? (
+                <iframe
+                  ref={iframeRef}
+                  src={embedUrl}
+                  className="video-player-iframe"
+                  allow="autoplay; encrypted-media; fullscreen"
+                  allowFullScreen
+                />
+              ) : (
+                <div className="video-unavailable">Video unavailable</div>
+              )}
+            </div>
+            <div className="video-controls">
+              <button onClick={() => seekBy(-60)} title="Back 1 minute">-1m</button>
+              <button onClick={() => seekBy(-30)} title="Back 30 seconds">-30s</button>
+              <button onClick={() => seekBy(-10)} title="Back 10 seconds">-10s</button>
+              <button onClick={() => seekBy(-5)} title="Back 5 seconds">-5s</button>
+              <button className="video-play-btn" onClick={togglePlay} title={isPlaying ? "Pause" : "Play"}>
+                {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+              </button>
+              <button onClick={() => seekBy(5)} title="Forward 5 seconds">+5s</button>
+              <button onClick={() => seekBy(10)} title="Forward 10 seconds">+10s</button>
+              <button onClick={() => seekBy(30)} title="Forward 30 seconds">+30s</button>
+              <button onClick={() => seekBy(60)} title="Forward 1 minute">+1m</button>
+            </div>
+            <div className="video-timestamp">
+              {formatTimestamp(currentTime)} from stream start
+            </div>
+          </div>
+          <NoteEditorPanel
+            match={playback.match}
+            eventId={playback.match.event.id}
+            getTime={() => playerRef.current?.getCurrentTime() ?? null}
+            onSeek={seekTo}
+          />
         </div>
       </div>
+    </div>
+  );
+}
+
+// Parse inline [m:ss] / [h:mm:ss] tokens out of a note body into de-duped,
+// clickable seek targets for the jump bar.
+function parseTimestamps(body: string): Array<{ label: string; seconds: number }> {
+  const re = /\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]/g;
+  const out: Array<{ label: string; seconds: number }> = [];
+  const seen = new Set<number>();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body))) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    const c = m[3] !== undefined ? Number(m[3]) : null;
+    const seconds = c !== null ? a * 3600 + b * 60 + c : a * 60 + b;
+    if (seen.has(seconds)) continue;
+    seen.add(seconds);
+    out.push({ label: m[0].slice(1, -1), seconds });
+  }
+  return out;
+}
+
+// Note editor beside the video. Bound to the same store note as the rail popover
+// (single source of truth). "Insert timestamp" drops the live playback time at the
+// caret; the jump bar seeks to any [m:ss] token in the note.
+function NoteEditorPanel({
+  match,
+  eventId,
+  getTime,
+  onSeek,
+}: {
+  match: Match;
+  eventId?: number;
+  getTime: () => number | null;
+  onSeek: (seconds: number) => void;
+}) {
+  const { body } = useMatchNote(match.id);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const chips = useMemo(() => parseTimestamps(body), [body]);
+
+  const insertTimestamp = () => {
+    const t = getTime();
+    if (t == null) return;
+    const token = `[${formatTimestamp(Math.floor(t))}]`;
+    const ta = taRef.current;
+    const start = ta ? ta.selectionStart : body.length;
+    const end = ta ? ta.selectionEnd : body.length;
+    const next = body.slice(0, start) + token + body.slice(end);
+    setMatchNote(match.id, eventId ?? null, next);
+    const caret = start + token.length;
+    requestAnimationFrame(() => {
+      if (!taRef.current) return;
+      taRef.current.focus();
+      taRef.current.selectionStart = taRef.current.selectionEnd = caret;
+    });
+  };
+
+  return (
+    <div className="video-note-panel">
+      <div className="video-note-head">
+        <StickyNote size={14} />
+        Match notes
+      </div>
+      <textarea
+        ref={taRef}
+        className="video-note-input"
+        value={body}
+        onChange={(e) => setMatchNote(match.id, eventId ?? null, e.target.value)}
+        placeholder="Jot notes while you watch…"
+      />
+      <button type="button" className="note-insert-btn" onClick={insertTimestamp}>
+        <Clock size={13} />
+        Insert timestamp
+      </button>
+      {chips.length > 0 && (
+        <div className="note-jump-bar">
+          {chips.map((chip) => (
+            <button type="button" key={chip.seconds} className="ts-chip" onClick={() => onSeek(chip.seconds)}>
+              {chip.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
