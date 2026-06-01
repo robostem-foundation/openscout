@@ -249,6 +249,7 @@ export function SignInButtons() {
         <GoogleLogo />
         Sign in with Google
       </button>
+      <p className="auth-appearance-hint">Log in to change appearance!</p>
     </div>
   );
 }
