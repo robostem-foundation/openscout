@@ -4,6 +4,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { LogIn, LogOut, Settings } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./supabase";
 import { setTheme, useTheme } from "./theme";
+import { setUiStyle, useUiStyle } from "./settings";
 
 export type Profile = {
   id: string;
@@ -293,9 +294,18 @@ function useOutsideClick<T extends HTMLElement>(onClose: () => void) {
 // Topbar slot, right of the search box: a "Sign up / Log in" pill when signed
 // out, and the avatar + menu when signed in.
 export function AuthSlot() {
-  const { ready, configured, user, profile, signOut } = useAuth();
+  const { ready, configured, user, profile, signOut, updateProfile } = useAuth();
+  const theme = useTheme();
+  const uiStyle = useUiStyle();
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(() => setOpen(false));
+
+  // Theme writes go to both the global store (instant) and the cloud profile,
+  // matching the Settings page. UI style syncs itself via the settings store.
+  const chooseTheme = (value: "light" | "dark" | "system") => {
+    setTheme(value);
+    void updateProfile({ theme: value });
+  };
 
   if (!configured || !ready) return null;
 
@@ -337,6 +347,37 @@ export function AuthSlot() {
               <div className="auth-menu-name">{name}</div>
               {team && <div className="auth-menu-sub">{team}</div>}
             </div>
+          </div>
+          <div className="auth-menu-seg" role="group" aria-label="Theme">
+            {THEME_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`auth-seg-btn ${theme === option.value ? "active" : ""}`}
+                onClick={() => chooseTheme(option.value)}
+                aria-pressed={theme === option.value}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <div className="auth-menu-seg" role="group" aria-label="Interface style">
+            <button
+              type="button"
+              className={`auth-seg-btn ${uiStyle === "classic" ? "active" : ""}`}
+              onClick={() => setUiStyle("classic")}
+              aria-pressed={uiStyle === "classic"}
+            >
+              Default
+            </button>
+            <button
+              type="button"
+              className={`auth-seg-btn ${uiStyle === "modern" ? "active" : ""}`}
+              onClick={() => setUiStyle("modern")}
+              aria-pressed={uiStyle === "modern"}
+            >
+              Modern
+            </button>
           </div>
           <button
             type="button"
