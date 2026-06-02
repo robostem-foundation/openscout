@@ -1709,8 +1709,8 @@ main {
 .table-summary {
   padding: 8px 15px;
   border-bottom: 1px solid var(--border);
-  background: #fcf8e3;
-  color: #8a6d3b;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -2445,9 +2445,11 @@ tbody tr:hover {
   border-color: var(--accent);
 }
 .note-popover-hint {
-  margin-top: 5px;
+  /* margin-top handled by .note-popover-footer */
   color: var(--text-muted);
   font-size: 11px;
+  flex: 1;
+  min-width: 0;
 }
 
 /* Video overlay */
@@ -2554,6 +2556,81 @@ tbody tr:hover {
   background: var(--accent);
   color: var(--accent-ink);
   border-color: var(--accent);
+}
+
+/* ── Note team chips ── */
+.note-team-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.note-team-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  letter-spacing: 0.01em;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+  opacity: 0.65;
+  color: var(--link);
+}
+.note-team-chip:hover,
+.note-team-chip.mentioned {
+  opacity: 1;
+}
+
+/* Red alliance tint */
+.note-team-chip.note-team-chip-red {
+  background: rgba(217, 83, 79, 0.1);
+  border-color: rgba(217, 83, 79, 0.28);
+}
+.note-team-chip.note-team-chip-red:hover,
+.note-team-chip.note-team-chip-red.mentioned {
+  background: rgba(217, 83, 79, 0.2);
+  border-color: rgba(217, 83, 79, 0.5);
+}
+
+/* Blue alliance tint */
+.note-team-chip.note-team-chip-blue {
+  background: rgba(51, 122, 183, 0.1);
+  border-color: rgba(51, 122, 183, 0.28);
+}
+.note-team-chip.note-team-chip-blue:hover,
+.note-team-chip.note-team-chip-blue.mentioned {
+  background: rgba(51, 122, 183, 0.2);
+  border-color: rgba(51, 122, 183, 0.5);
+}
+
+/* ── Char counter ── */
+/* Inline variant — sits inside the popover footer */
+.note-char-counter {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.note-char-counter.warn { color: #d97706; }
+.note-char-counter.danger { color: var(--danger); font-weight: 600; }
+
+/* Block variant — right-aligned row used in the video panel */
+.note-char-counter-block {
+  text-align: right;
+  margin-top: -4px; /* tighten gap with textarea above */
+}
+
+/* Popover footer: hint + optional counter on one line */
+.note-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 5px;
 }
 
 @media (max-width: 760px) {
@@ -3284,11 +3361,14 @@ tbody tr:hover {
 
 .event-groups {
   display: grid;
-  gap: 0;
+  gap: 10px;
+  padding: 10px 12px 12px;
 }
 
 .event-group {
-  border-top: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
 .event-group summary {
@@ -3296,19 +3376,23 @@ tbody tr:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 15px;
+  padding: 9px 13px;
   background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
   cursor: pointer;
   font-weight: 700;
+  list-style: none;
 }
+.event-group summary::-webkit-details-marker { display: none; }
 
 .event-group summary:hover {
-  background: var(--surface-2);
+  background: var(--surface-3, var(--surface-2));
 }
 
 .event-group summary span:first-child {
   display: grid;
-  gap: 2px;
+  gap: 1px;
+  min-width: 0;
 }
 
 .event-group summary small {
@@ -3321,6 +3405,22 @@ tbody tr:hover {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 400;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Right side of TeamEventCards summary — program badge + location + dates + level */
+.event-card-info {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.event-card-location {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -3514,6 +3614,12 @@ tbody tr:hover {
   display: grid;
   gap: 4px;
   padding: 4px 0;
+}
+
+/* "See event →" footer strip at the bottom of each TeamEventCards card */
+.event-card-footer {
+  border-top: 1px solid var(--border-soft);
+  padding: 2px 0;
 }
 
 .event-highlights {
@@ -3718,26 +3824,44 @@ tbody tr:hover {
 }
 
 .award-item {
-  padding: 10px 15px;
-  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;       /* pills spill to next line if needed */
+  gap: 5px 8px;
+  padding: 8px 13px;
+  border-top: 1px solid var(--border-soft);
+}
+.award-item:first-child {
+  border-top: none;
 }
 
-.award-item:nth-child(odd) {
-  background: var(--surface-2);
+.award-item-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
 }
+/* Tier-0 excellence: accent color */
+.award-item.award-tier-0 .award-item-icon { color: var(--accent); }
+/* Tier-1 champions: gold */
+.award-item.award-tier-1 .award-item-icon { color: #c89a00; }
+/* Tier-3 skills champion: link color */
+.award-item.award-tier-3 .award-item-icon { color: var(--link); }
 
 .award-item h3 {
   margin: 0;
   color: var(--text);
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;       /* title doesn't compress — pills wrap around it */
 }
 
-.winner-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 7px;
+/* De-emphasise the "(VRC/VEXU/VAIRC)" program qualifier */
+.award-qualifier {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-faint);
+  margin-left: 3px;
 }
 
 .winner-pill {

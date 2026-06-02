@@ -4153,7 +4153,6 @@ function TeamDetail({ param }: { param: string }) {
   const tabLayout = useTabLayout();
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const [dateDirection, setDateDirection] = useState<DateDirection>("asc");
-  const [focusedEventId, setFocusedEventId] = useState<number | null>(null);
   const [matchesBySeason, setMatchesBySeason] = useState<Record<number, AsyncBucket<Match>>>({});
   const [rankingsBySeason, setRankingsBySeason] = useState<Record<number, AsyncBucket<Ranking>>>({});
   const [skillsBySeason, setSkillsBySeason] = useState<Record<number, AsyncBucket<Skill>>>({});
@@ -4210,17 +4209,11 @@ function TeamDetail({ param }: { param: string }) {
   const selectedSkills = selectedSeasonId ? (skillsBySeason[selectedSeasonId] ?? emptyBucket<Skill>()) : emptyBucket<Skill>();
   const selectedAwards = selectedSeasonId ? (awardsBySeason[selectedSeasonId] ?? emptyBucket<Award>()) : emptyBucket<Award>();
   const activeStatus =
-    tab === "about"
-      ? selectedRankings
-      : tab === "events"
-        ? events
-        : tab === "matches"
-          ? selectedMatches
-          : tab === "rankings"
-            ? selectedRankings
-            : tab === "skills"
-              ? selectedSkills
-              : selectedAwards;
+    tab === "about"    ? selectedRankings :
+    tab === "events"   ? events :
+    tab === "rankings" ? selectedRankings :
+    tab === "skills"   ? selectedSkills :
+    selectedAwards;
 
   useEffect(() => {
     if (seasonOptions[0] && (!selectedSeasonId || !seasonOptions.some((season) => season.id === selectedSeasonId))) {
@@ -4355,16 +4348,12 @@ function TeamDetail({ param }: { param: string }) {
       <div className={`view-tabs view-tabs-${tabLayout}`}>
       <Tabs
         active={tab}
-        onChange={(nextTab) => {
-          if (nextTab === "matches") setFocusedEventId(null);
-          setTab(nextTab);
-        }}
+        onChange={setTab}
         orientation={tabLayout}
         showLayoutToggle
         tabs={[
           ["about", "About", <Info size={15} />],
           ["events", `Events ${seasonEvents.length || ""}`, <CalendarDays size={15} />],
-          ["matches", "Matches", <Gamepad2 size={15} />],
           ["rankings", "Rankings", <BarChart3 size={15} />],
           ["skills", "Skills", <Activity size={15} />],
           ["awards", "Awards", <AwardIcon size={15} />],
@@ -4405,9 +4394,8 @@ function TeamDetail({ param }: { param: string }) {
         />
       )}
       {!activeStatus.loading && tab === "events" && (
-        <TeamEventTable
+        <TeamEventCards
           events={seasonEvents}
-          loading={events.loading}
           matches={selectedMatches.data}
           rankings={selectedRankings.data}
           skills={selectedSkills.data}
@@ -4415,21 +4403,6 @@ function TeamDetail({ param }: { param: string }) {
           focusTeamId={team.id}
           isIq={isIq}
           detailsLoading={selectedMatches.loading || selectedRankings.loading || selectedSkills.loading || selectedAwards.loading}
-          onViewMatches={(eventId) => {
-            const ev = eventIndex.get(eventId);
-            navigate(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
-          }}
-        />
-      )}
-      {!activeStatus.loading && tab === "matches" && (
-        <TeamMatchesByEvent
-          matches={selectedMatches.data}
-          eventIndex={eventIndex}
-          seasonId={selectedSeasonId}
-          focusTeamId={team.id}
-          direction={dateDirection}
-          focusedEventId={focusedEventId}
-          isIq={isIq}
           onViewMatches={(eventId) => {
             const ev = eventIndex.get(eventId);
             navigate(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
@@ -4748,20 +4721,21 @@ function SkillScoreAttempt({ label, entry }: { label: string; entry?: Skill }) {
   );
 }
 
-function TeamEventTable({
+// Combined Events tab: one card per event showing program/location/dates/level in
+// the header, and awards + ranking + skills + match preview inside the card body.
+// Replaces the old separate Events (table) and Matches (grouped match list) tabs.
+function TeamEventCards({
   events,
-  loading,
   matches,
   rankings,
   skills,
   awards,
   focusTeamId,
-  isIq = false,
+  isIq,
   detailsLoading,
   onViewMatches,
 }: {
   events: Event[];
-  loading: boolean;
   matches: Match[];
   rankings: Ranking[];
   skills: Skill[];
@@ -4771,88 +4745,74 @@ function TeamEventTable({
   detailsLoading: boolean;
   onViewMatches: (eventId: number) => void;
 }) {
-  const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
-
-  useEffect(() => {
-    setExpandedEventId(null);
-  }, [events]);
+  if (!events.length) return <Empty>No events this season.</Empty>;
 
   return (
-    <table className="team-event-table">
-      <thead>
-        <tr>
-          <th>Event</th>
-          <th>Program</th>
-          <th>Location</th>
-          <th>Dates</th>
-          <th>Level</th>
-        </tr>
-      </thead>
-      {loading ? (
-        <LoadingTable columns={5} />
-      ) : (
-        <tbody>
-          {events.map((event) => {
-            const expanded = expandedEventId === event.id;
-            const eventMatches = matches.filter((match) => match.event.id === event.id);
-            const eventRankings = rankings.filter((ranking) => ranking.event.id === event.id);
-            const eventSkills = skills.filter((skill) => skill.event.id === event.id);
-            const eventAwards = awards.filter((award) => award.event.id === event.id);
+    <div className="event-groups">
+      {events.map((event) => {
+        const eventMatches  = matches.filter((m) => m.event.id === event.id);
+        const eventRankings = rankings.filter((r) => r.event.id === event.id);
+        const eventSkills   = skills.filter((s) => s.event.id === event.id);
+        const eventAwards   = awards.filter((a) => a.event.id === event.id);
+        const cat      = eventCategory(event);
+        const shortLoc = [event.location?.city, event.location?.region].filter(Boolean).join(", ");
 
-            return (
-              <Fragment key={event.id}>
-                <tr className="team-event-row" onClick={() => setExpandedEventId(expanded ? null : event.id)}>
-                  <td>
-                    <button
-                      className="event-group-name-btn"
-                      onClick={(e) => { e.stopPropagation(); onViewMatches(event.id); }}
-                    >
-                      {event.name}
-                    </button>
-                    <div className="muted">{event.sku}</div>
-                  </td>
-                  <td>
-                    <ProgramBadge program={event.program} />
-                  </td>
-                  <td>{locationLine(event)}</td>
-                  <td>
-                    <span className="date-range">{formatEventDateRange(event.start, event.end)}</span>
-                  </td>
-                  <td>
-                    <span className={`event-priority priority-${eventCategory(event).rank}`}>{eventCategory(event).label}</span>
-                  </td>
-                </tr>
-                {expanded && (
-                  <tr className="team-event-detail-row">
-                    <td colSpan={5}>
-                      <TeamEventDetail
-                        matches={eventMatches}
-                        rankings={eventRankings}
-                        skills={eventSkills}
-                        awards={eventAwards}
-                        focusTeamId={focusTeamId}
-                        isIq={isIq}
-                        loading={detailsLoading}
-                        onViewMatches={() => onViewMatches(event.id)}
-                      />
-                    </td>
-                  </tr>
+        return (
+          <details key={event.id} className="event-group">
+            <summary>
+              {/* Left: event name + SKU */}
+              <span>
+                <button
+                  className="event-group-name-btn"
+                  onClick={(e) => { e.preventDefault(); onViewMatches(event.id); }}
+                >
+                  {event.name}
+                </button>
+                <small>{event.sku}</small>
+              </span>
+              {/* Right: program badge · city/state · dates · level */}
+              <span className="event-card-info">
+                <ProgramBadge program={event.program} />
+                {shortLoc && <span className="event-card-location">{shortLoc}</span>}
+                <span className="event-group-meta">{formatEventDateRange(event.start, event.end)}</span>
+                {cat.label !== "Other" && (
+                  <span className={`event-priority priority-${cat.rank}`}>{cat.label}</span>
                 )}
-              </Fragment>
-            );
-          })}
-          {!events.length && (
-            <tr>
-              <td colSpan={5}>
-                <Empty />
-              </td>
-            </tr>
-          )}
-        </tbody>
-      )}
-    </table>
+              </span>
+            </summary>
+            {/* Stats: awards / ranking / skills */}
+            <TeamEventDetail
+              matches={eventMatches}
+              rankings={eventRankings}
+              skills={eventSkills}
+              awards={eventAwards}
+              focusTeamId={focusTeamId}
+              isIq={isIq}
+              loading={detailsLoading}
+              hideMatchPreview
+              onViewMatches={() => onViewMatches(event.id)}
+            />
+            {/* All matches — identical to the old Matches tab */}
+            {!detailsLoading && eventMatches.length > 0 && (
+              <TeamMatchTable
+                matches={eventMatches}
+                focusTeamId={focusTeamId}
+                isIq={isIq}
+              />
+            )}
+            {/* Footer: open full event page */}
+            <div className="event-card-footer">
+              <button type="button" className="view-all-matches" onClick={() => onViewMatches(event.id)}>
+                See event →
+              </button>
+            </div>
+          </details>
+        );
+      })}
+    </div>
   );
 }
+
 
 function TeamEventDetail({
   matches,
@@ -4862,6 +4822,7 @@ function TeamEventDetail({
   focusTeamId,
   isIq = false,
   loading,
+  hideMatchPreview = false,
   onViewMatches,
 }: {
   matches: Match[];
@@ -4871,6 +4832,7 @@ function TeamEventDetail({
   focusTeamId: number;
   isIq?: boolean;
   loading: boolean;
+  hideMatchPreview?: boolean;
   onViewMatches: () => void;
 }) {
   const ranking = rankings[0];
@@ -4974,7 +4936,7 @@ function TeamEventDetail({
           </div>
         </div>
       </div>
-      {elimMatches.length ? (
+      {!hideMatchPreview && (elimMatches.length ? (
         <TeamEventMatchPreview matches={elimMatches.slice(0, 3)} focusTeamId={focusTeamId} onViewMatches={onViewMatches} isIq={isIq} />
       ) : (
         <div className="team-event-no-elims">
@@ -4985,7 +4947,7 @@ function TeamEventDetail({
             </button>
           )}
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -5057,43 +5019,6 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
   );
 }
 
-function TeamMatchesByEvent({
-  matches,
-  eventIndex,
-  seasonId,
-  focusTeamId,
-  direction,
-  focusedEventId,
-  isIq = false,
-  onViewMatches,
-}: {
-  matches: Match[];
-  eventIndex: Map<number, Event>;
-  seasonId: number | null;
-  focusTeamId: number;
-  direction: DateDirection;
-  focusedEventId?: number | null;
-  isIq?: boolean;
-  onViewMatches?: (eventId: number) => void;
-}) {
-  const groups = groupItemsByEvent(matches, eventIndex, seasonId, direction);
-
-  return (
-    <Panel title="Matches" icon={<Gamepad2 />}>
-      <div className="event-groups">
-        {groups.map((group) => (
-          <details key={group.eventRef.id} className="event-group" open={focusedEventId === group.eventRef.id}>
-            <summary>
-              <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} onViewMatches={onViewMatches} />
-            </summary>
-            <TeamMatchTable matches={group.items} focusTeamId={focusTeamId} isIq={isIq} />
-          </details>
-        ))}
-        {!groups.length && <Empty>No matches returned for this season.</Empty>}
-      </div>
-    </Panel>
-  );
-}
 
 function TeamMatchTable({ matches, focusTeamId, isIq = false }: { matches: Match[]; focusTeamId: number; isIq?: boolean }) {
   const sortedMatches = [...matches].sort((a, b) => compareMatchesDisplay(a, b, preferredTeamDivisionId(matches, focusTeamId)));
@@ -5409,10 +5334,24 @@ function TeamAwardsByEvent({
               <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} onViewMatches={onViewMatches} />
             </summary>
             <div className="award-list">
-              {sortAwards(group.items).map((award) => (
-                <article className="award-item" key={award.id}>
-                  <h3>{award.title}</h3>
-                  <div className="winner-row">
+              {sortAwards(group.items).map((award) => {
+                const tier = awardPriority(award);
+                // Split "Design Award (VRC/VEXU/VAIRC)" → main + qualifier
+                const parenIdx = award.title.indexOf(" (");
+                const mainTitle = parenIdx > 0 ? award.title.slice(0, parenIdx) : award.title;
+                const qualifier = parenIdx > 0 ? award.title.slice(parenIdx + 1) : null;
+                const TierIcon = tier === 0 ? Star : tier === 1 ? Trophy : tier === 3 ? Medal : null;
+                return (
+                  <article className={`award-item award-tier-${tier}`} key={award.id}>
+                    {TierIcon && (
+                      <span className="award-item-icon" aria-hidden="true">
+                        <TierIcon size={13} />
+                      </span>
+                    )}
+                    <h3>
+                      {mainTitle}
+                      {qualifier && <span className="award-qualifier">{qualifier}</span>}
+                    </h3>
                     {awardTeamWinners(award).map((winner) => (
                       <Link
                         key={`${award.id}-${winner.team.id}`}
@@ -5422,14 +5361,9 @@ function TeamAwardsByEvent({
                         {winner.team.name}
                       </Link>
                     ))}
-                    {awardIndividualWinners(award).map((winner) => (
-                      <span key={winner} className="winner-pill">
-                        {winner}
-                      </span>
-                    ))}
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           </details>
         ))}
@@ -5745,6 +5679,61 @@ function NoteRailDot({
   );
 }
 
+// ── Note shared helpers ───────────────────────────────────────────────────────
+
+const NOTE_CHAR_LIMIT = 2000;
+
+/**
+ * Row of clickable team chips for the teams in a match.
+ * Chips that appear in the note body get a "mentioned" highlight.
+ * Clicking opens the team page. Works for both V5RC (red/blue) and IQ.
+ */
+function NoteTeamChips({ match, body }: { match: Match; body: string }) {
+  const programCode = useContext(ProgramContext);
+
+  const teams = useMemo(() => {
+    const out: Array<{ id: number; name: string; color: string }> = [];
+    for (const alliance of match.alliances) {
+      for (const entry of alliance.teams) {
+        if (entry.team?.name) {
+          out.push({ id: entry.team.id, name: entry.team.name, color: alliance.color ?? "" });
+        }
+      }
+    }
+    return out;
+  }, [match]);
+
+  const mentioned = useMemo(() => {
+    if (!body.trim() || !teams.length) return new Set<number>();
+    return new Set(
+      teams
+        .filter(({ name }) => {
+          // Non-alphanumeric boundary on both sides — handles team nums like 169W, 9181X
+          const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          return new RegExp(`(?:^|[^A-Za-z0-9])${escaped}(?:$|[^A-Za-z0-9])`, "i").test(body);
+        })
+        .map(({ id }) => id),
+    );
+  }, [body, teams]);
+
+  if (!teams.length) return null;
+
+  return (
+    <div className="note-team-chips">
+      {teams.map(({ id, name, color }) => (
+        <Link
+          key={id}
+          href={teamSlugPath(programCode, name, id)}
+          className={`note-team-chip note-team-chip-${color} ${mentioned.has(id) ? "mentioned" : ""}`}
+          title={`Open team ${name}`}
+        >
+          {name}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 // Quick note editor anchored to a match row. Binds the textarea directly to the
 // store (single source of truth shared with the video panel); the rail dot flips
 // live as you type and the debounced cloud write happens in the store.
@@ -5766,9 +5755,14 @@ function MatchNotePopover({
   const orgNote = useOrgMatchNote(scope !== "personal" ? scope : "__none__", match.id);
   const activeBody = scope === "personal" ? personalNote.body : orgNote.body;
   const handleChange = (val: string) => {
-    if (scope === "personal") setMatchNote(match.id, eventId ?? null, val);
-    else setOrgMatchNote(scope, match.id, eventId ?? null, val);
+    const v = val.slice(0, NOTE_CHAR_LIMIT);
+    if (scope === "personal") setMatchNote(match.id, eventId ?? null, v);
+    else setOrgMatchNote(scope, match.id, eventId ?? null, v);
   };
+
+  const charsUsed = activeBody.length;
+  const charsLeft = NOTE_CHAR_LIMIT - charsUsed;
+  const showCounter = charsUsed > NOTE_CHAR_LIMIT * 0.8;
 
   const ref = useOutsideClick<HTMLDivElement>(onClose);
   useEffect(() => {
@@ -5820,7 +5814,15 @@ function MatchNotePopover({
         onChange={(e) => handleChange(e.target.value)}
         placeholder={scope === "personal" ? "Add a note…" : "Add a team note…"}
       />
-      <div className="note-popover-hint">Saved automatically · empty note is removed</div>
+      <NoteTeamChips match={match} body={activeBody} />
+      <div className="note-popover-footer">
+        <span className="note-popover-hint">Saved automatically · empty clears</span>
+        {showCounter && (
+          <span className={`note-char-counter${charsLeft <= 100 ? " danger" : " warn"}`}>
+            {charsLeft}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -6278,9 +6280,14 @@ function NoteEditorPanel({
   const orgNote = useOrgMatchNote(scope !== "personal" ? scope : "__none__", match.id);
   const body = scope === "personal" ? personalNote.body : orgNote.body;
   const handleChange = (val: string) => {
-    if (scope === "personal") setMatchNote(match.id, eventId ?? null, val);
-    else setOrgMatchNote(scope, match.id, eventId ?? null, val);
+    const v = val.slice(0, NOTE_CHAR_LIMIT);
+    if (scope === "personal") setMatchNote(match.id, eventId ?? null, v);
+    else setOrgMatchNote(scope, match.id, eventId ?? null, v);
   };
+
+  const charsUsed = body.length;
+  const charsLeft = NOTE_CHAR_LIMIT - charsUsed;
+  const showCounter = charsUsed > NOTE_CHAR_LIMIT * 0.8;
 
   const taRef = useRef<HTMLTextAreaElement>(null);
   const chips = useMemo(() => parseTimestamps(body), [body]);
@@ -6347,6 +6354,12 @@ function NoteEditorPanel({
         onChange={(e) => handleChange(e.target.value)}
         placeholder={scope === "personal" ? "Jot notes while you watch…" : "Team notes…"}
       />
+      {showCounter && (
+        <div className={`note-char-counter-block note-char-counter${charsLeft <= 100 ? " danger" : " warn"}`}>
+          {charsLeft} remaining
+        </div>
+      )}
+      <NoteTeamChips match={match} body={body} />
       <button type="button" className="note-insert-btn" onClick={insertTimestamp}>
         <Clock size={13} />
         Insert timestamp
@@ -7865,9 +7878,21 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
     setInvites((prev) => prev.filter((i) => i.id !== inviteId));
   };
 
-  const handleCopy = (inviteId: string) => {
+  const handleCopy = async (inviteId: string) => {
     const url = `${window.location.origin}/join/${inviteId}`;
-    void navigator.clipboard.writeText(url);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Fallback for browsers/contexts where Clipboard API is unavailable
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none;";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try { document.execCommand("copy"); } catch { /* best-effort */ }
+      document.body.removeChild(ta);
+    }
     setCopied(inviteId);
     setTimeout(() => setCopied((c) => (c === inviteId ? null : c)), 2000);
   };
@@ -7910,7 +7935,7 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
                 type="button"
                 className="icon-button"
                 style={{ width: 32, height: 32, flexShrink: 0 }}
-                onClick={() => handleCopy(invite.id)}
+                onClick={() => void handleCopy(invite.id)}
                 title="Copy link"
                 aria-label="Copy invite link"
               >
