@@ -252,21 +252,41 @@ export async function getOrgInvites(orgId: string): Promise<OrgInvite[]> {
 export async function getOrgMembers(orgId: string): Promise<OrgMember[]> {
   const sb = supabase;
   if (!sb) return [];
-  const { data } = await sb
+
+  // Two queries instead of a PostgREST join:
+  //   • org_members.user_id references auth.users (not profiles), so PostgREST
+  //     cannot resolve .select("profiles(...)") automatically.
+  //   • profiles RLS is self-only by default; 0004_orgs_fix.sql adds a
+  //     supplementary "org peers read profiles" SELECT policy so members can
+  //     read each other's display_name + avatar_url.
+
+  // Step 1: get user IDs + roles in join order
+  const { data: memberData } = await sb
     .from("org_members")
-    .select("user_id, role, profiles(display_name, avatar_url)")
+    .select("user_id, role")
     .eq("org_id", orgId)
     .order("joined_at", { ascending: true });
-  type MemberProfileRow = {
-    user_id: string;
-    role: string;
-    profiles: { display_name: string | null; avatar_url: string | null } | null;
-  };
-  return ((data ?? []) as unknown as MemberProfileRow[]).map((row) => ({
+
+  if (!memberData || memberData.length === 0) return [];
+  const memberRows = memberData as Array<{ user_id: string; role: string }>;
+  const userIds = memberRows.map((r) => r.user_id);
+
+  // Step 2: bulk-fetch profiles for those users
+  const { data: profileData } = await sb
+    .from("profiles")
+    .select("id, display_name, avatar_url")
+    .in("id", userIds);
+
+  const profileMap = new Map<string, { display_name: string | null; avatar_url: string | null }>();
+  for (const p of (profileData ?? []) as Array<{ id: string; display_name: string | null; avatar_url: string | null }>) {
+    profileMap.set(p.id, p);
+  }
+
+  return memberRows.map((row) => ({
     userId: row.user_id,
     role: row.role as OrgRole,
-    displayName: row.profiles?.display_name ?? "Unknown",
-    avatarUrl: row.profiles?.avatar_url ?? null,
+    displayName: profileMap.get(row.user_id)?.display_name ?? "Unknown",
+    avatarUrl: profileMap.get(row.user_id)?.avatar_url ?? null,
   }));
 }
 

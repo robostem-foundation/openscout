@@ -22,6 +22,10 @@ const cache = new Map<string, OrgNotesMap>();
 // Track which orgIds have been (or are being) loaded
 const loaded = new Set<string>();
 
+// Stable sentinel — same reference every render when cache has no entry.
+// Prevents useSyncExternalStore from seeing a phantom change on each render.
+const EMPTY_NOTES_MAP: OrgNotesMap = {};
+
 let signedInUserId: string | null = null;
 
 const listeners = new Set<() => void>();
@@ -36,7 +40,7 @@ function subscribe(listener: () => void) {
 }
 
 function getForOrg(orgId: string): OrgNotesMap {
-  return cache.get(orgId) ?? {};
+  return cache.get(orgId) ?? EMPTY_NOTES_MAP;
 }
 
 function setForOrg(orgId: string, notes: OrgNotesMap) {

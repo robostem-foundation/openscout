@@ -20,6 +20,11 @@ const cache = new Map<string, OrgFavState>();
 // Track which orgIds are currently being fetched (avoid duplicate requests)
 const loading = new Set<string>();
 
+// Stable sentinel so useSyncExternalStore sees the same reference every render
+// when there is no cache entry yet — prevents the "getSnapshot result must be
+// cached" infinite-loop warning (React compares snapshots by reference).
+const EMPTY_FAV_STATE: OrgFavState = { teams: [], events: [], ready: false };
+
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -32,11 +37,11 @@ function subscribe(listener: () => void) {
 }
 
 function getForOrg(orgId: string): OrgFavState {
-  return cache.get(orgId) ?? { teams: [], events: [], ready: false };
+  return cache.get(orgId) ?? EMPTY_FAV_STATE;
 }
 
 function setForOrg(orgId: string, patch: Partial<OrgFavState>) {
-  const prev = cache.get(orgId) ?? { teams: [], events: [], ready: false };
+  const prev = cache.get(orgId) ?? EMPTY_FAV_STATE;
   cache.set(orgId, { ...prev, ...patch });
   emit();
 }
