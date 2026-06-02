@@ -6124,3 +6124,241 @@ td.quick-look-col {
   background: var(--surface);
   color: var(--text-2);
 }
+
+/* ── Command Palette (Spotlight) ─────────────────────────────────────────── */
+.spotlight-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--overlay);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-bottom: 16px;
+}
+.spotlight-modal {
+  width: min(580px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: calc(var(--radius) + 4px);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  max-height: 65vh;
+  overflow: hidden;
+}
+.spotlight-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+.spotlight-icon { color: var(--text-muted); flex-shrink: 0; }
+.spotlight-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 16px;
+  outline: none;
+  caret-color: var(--accent);
+  font-family: inherit;
+}
+.spotlight-input::placeholder { color: var(--text-faint); }
+.spotlight-clear {
+  background: none;
+  border: none;
+  padding: 3px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  transition: background 0.1s, color 0.1s;
+}
+.spotlight-clear:hover { background: var(--surface-2); color: var(--text); }
+
+.spotlight-results { overflow-y: auto; flex: 1; }
+.spotlight-section-label {
+  padding: 8px 16px 3px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.spotlight-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  transition: background 0.08s;
+}
+.spotlight-item.active { background: var(--surface-2); }
+
+.spotlight-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: var(--radius);
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.spotlight-badge.action {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.spotlight-item-text { flex: 1; min-width: 0; }
+.spotlight-item-main {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.spotlight-item-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.spotlight-item-enter {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.spotlight-item.active .spotlight-item-enter { opacity: 1; }
+
+.spotlight-loading,
+.spotlight-empty {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+.spotlight-footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  padding: 7px 16px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--surface-2);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.spotlight-footer kbd {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: inherit;
+  line-height: 1.5;
+  margin-right: 1px;
+}
+
+/* ── Keyboard shortcuts overlay ─────────────────────────────────────────── */
+.shortcuts-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  width: min(420px, calc(100vw - 32px));
+  overflow: hidden;
+}
+.shortcuts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 14px;
+}
+.shortcuts-body { padding: 12px 16px 16px; }
+.shortcuts-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.shortcuts-table td { padding: 5px 8px 5px 0; color: var(--text); vertical-align: middle; }
+.shortcuts-table td:first-child {
+  white-space: nowrap;
+  color: var(--text-2);
+  width: 1%;
+  padding-right: 24px;
+}
+.shortcuts-table kbd {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: inherit;
+  margin-right: 2px;
+}
+
+/* ── ⌘K hint in topbar/home search ─────────────────────────────────────── */
+.gs-kbd-hint {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--text-faint);
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface-2);
+  line-height: 1.5;
+  transition: opacity 0.12s, border-color 0.12s;
+  user-select: none;
+  white-space: nowrap;
+}
+.gs-kbd-hint:hover { border-color: var(--border-strong); color: var(--text-muted); }
+/* Hide hint when the user is typing */
+.global-search-wrap:focus-within .gs-kbd-hint { opacity: 0; pointer-events: none; }
+/* Extra right padding so typed text doesn't overlap the hint */
+.global-search-input { padding-right: 58px; }
+
+/* ── Panel action link (used by RecentlyViewedPanel clear button) ────────── */
+.panel-action-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.panel-action-link:hover { color: var(--text); }

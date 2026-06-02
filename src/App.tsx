@@ -36,9 +36,10 @@ import {
   User,
   UserMinus,
   Users,
+  X,
   Youtube,
 } from "lucide-react";
-import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Dispatch, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
@@ -68,6 +69,8 @@ import type { OrgInvite, OrgMember, OrgMembership, OrgRole } from "./orgs";
 import { supabase } from "./supabase";
 import { setEventsSettings, setTabLayout, setUiStyle, useSettingsEpoch, useTabLayout, useUiStyle } from "./settings";
 import type { TabLayout, UiStyle } from "./settings";
+import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
+import type { RecentEntry } from "./recently-viewed";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
 
 const programOptions = [
@@ -145,21 +148,48 @@ function emptyBucket<T>(): AsyncBucket<T> {
   return { data: [], loading: false, error: null };
 }
 
+// ── Spotlight open state (module-level so the keyboard handler can call it
+//    directly without React context, consistent with org-favorites pattern) ──
+let _spotlightOpen = false;
+const _spotlightListeners = new Set<() => void>();
+function _emitSpotlight() { for (const l of _spotlightListeners) l(); }
+function openSpotlight()  { _spotlightOpen = true;  _emitSpotlight(); }
+function closeSpotlight() { _spotlightOpen = false; _emitSpotlight(); }
+function subscribeSpotlight(l: () => void) { _spotlightListeners.add(l); return () => _spotlightListeners.delete(l); }
+function getSpotlightOpen() { return _spotlightOpen; }
+
+// ── Scroll memory — save scrollY per path, restore on real browser back ──
+const scrollMemory = new Map<string, number>();
+// Custom event name for programmatic navigation so real browser popstate
+// (back/forward) can be distinguished and trigger scroll restoration.
+const NAV_EVENT = "vex-nav";
+
 function useRoute() {
   const [path, setPath] = useState(window.location.pathname);
 
   useEffect(() => {
-    const onPop = () => setPath(window.location.pathname);
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
+    const onRealPop = () => {
+      // Real browser back/forward — restore saved scroll position
+      const savedY = scrollMemory.get(window.location.pathname);
+      if (savedY) requestAnimationFrame(() => window.scrollTo(0, savedY));
+      setPath(window.location.pathname);
+    };
+    const onNav = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", onRealPop);
+    window.addEventListener(NAV_EVENT, onNav);
+    return () => {
+      window.removeEventListener("popstate", onRealPop);
+      window.removeEventListener(NAV_EVENT, onNav);
+    };
   }, []);
 
   return path;
 }
 
 function navigate(path: string) {
+  scrollMemory.set(window.location.pathname, window.scrollY); // save before leaving
   window.history.pushState(null, "", path);
-  window.dispatchEvent(new PopStateEvent("popstate"));
+  window.dispatchEvent(new Event(NAV_EVENT));
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -298,6 +328,8 @@ async function loadGlobalEventSearchEvents() {
   }
 }
 
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPod|iPad/.test(navigator.platform);
+
 function GlobalSearch({ className = "" }: { className?: string }) {
   const [query, setQuery] = useState("");
   const debounced = useDebouncedValue(query.trim(), 220);
@@ -390,6 +422,15 @@ function GlobalSearch({ className = "" }: { className?: string }) {
           placeholder="Search teams or events..."
           className="global-search-input"
         />
+        {!query && (
+          <span
+            className="gs-kbd-hint"
+            onClick={() => { setOpen(false); openSpotlight(); }}
+            aria-hidden="true"
+          >
+            {isMac ? "⌘K" : "Ctrl K"}
+          </span>
+        )}
       </div>
 
       {showDropdown && (
@@ -1712,6 +1753,7 @@ function Home() {
               </div>
             </Panel>
           </SignedOut>
+          <RecentlyViewedPanel />
           <FavoritesPanel />
           <OrgPanel />
 
@@ -3481,6 +3523,18 @@ function EventDetail({ param }: { param: string }) {
     }
   }, [event?.id, divisions, selectedDivision]);
 
+  // Record this event in recently-viewed history once loaded
+  useEffect(() => {
+    if (!event) return;
+    pushRecentlyViewed({
+      path: window.location.pathname,
+      type: "event",
+      label: event.name,
+      sub: [seasonYearLabel(event.season?.name), locationLine(event)].filter(Boolean).join(" · "),
+      badge: seasonYearLabel(event.season?.name) ?? "'??",
+    });
+  }, [event?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (loading || error || !event) {
     return (
       <section className="page">
@@ -4228,6 +4282,18 @@ function TeamDetail({ param }: { param: string }) {
     setAwardsBySeason({});
     inFlightTeamData.current.clear();
   }, [id]);
+
+  // Record this team in recently-viewed history once loaded
+  useEffect(() => {
+    if (!team) return;
+    pushRecentlyViewed({
+      path: window.location.pathname,
+      type: "team",
+      label: team.number ?? String(team.id),
+      sub: [team.team_name, locationLine(team)].filter(Boolean).join(" · "),
+      badge: programSlug(team.program) || team.program?.code || "VEX",
+    });
+  }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!team || !seasonOptions.length) return;
@@ -8024,6 +8090,293 @@ function OrgSettingsPage({ orgId }: { orgId: string }) {
   );
 }
 
+// ── Recently Viewed Panel (home sidebar) ────────────────────────────────────
+
+function RecentlyViewedPanel() {
+  const recent = useRecentlyViewed();
+  if (recent.length === 0) return null;
+  return (
+    <Panel
+      title="Recent"
+      icon={<Clock size={15} />}
+      action={
+        <button
+          type="button"
+          className="panel-action-link"
+          onClick={clearRecentlyViewed}
+        >
+          Clear
+        </button>
+      }
+    >
+      <div className="home-fav-list">
+        {recent.slice(0, 8).map((r) => (
+          <Link key={r.path} href={r.path} className="home-fav-item">
+            <span className="home-fav-badge">{r.badge}</span>
+            <span className="home-fav-text">
+              <span className="home-fav-title">{r.label}</span>
+              <span className="home-fav-sub">{r.sub}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+// ── Command Palette (Spotlight) ──────────────────────────────────────────────
+
+type SpotlightItem =
+  | { kind: "recent"; entry: RecentEntry }
+  | { kind: "team";   team: Team }
+  | { kind: "action"; label: string; sub: string; path: string; icon: ReactNode };
+
+const SPOTLIGHT_ACTIONS: Array<{ label: string; sub: string; path: string; icon: ReactNode }> = [
+  { label: "Home",     sub: "",                  path: "/",         icon: <Shield size={13} /> },
+  { label: "Events",   sub: "Browse events",     path: "/events",   icon: <CalendarDays size={13} /> },
+  { label: "Teams",    sub: "Search teams",      path: "/teams",    icon: <Users size={13} /> },
+  { label: "Settings", sub: "Account & display", path: "/settings", icon: <Settings size={13} /> },
+];
+
+function SpotlightRow({
+  item,
+  active,
+  onMouseEnter,
+  onClick,
+}: {
+  item: SpotlightItem;
+  active: boolean;
+  onMouseEnter: () => void;
+  onClick: () => void;
+}) {
+  const cls = `spotlight-item${active ? " active" : ""}`;
+
+  if (item.kind === "team") {
+    const t = item.team;
+    return (
+      <button type="button" className={cls} onMouseEnter={onMouseEnter} onClick={onClick}>
+        <span className="spotlight-badge">{programSlug(t.program) || t.program?.code || "VEX"}</span>
+        <span className="spotlight-item-text">
+          <span className="spotlight-item-main">{t.number}{t.team_name ? ` · ${t.team_name}` : ""}</span>
+          <span className="spotlight-item-sub">{locationLine(t)}</span>
+        </span>
+        <span className="spotlight-item-enter">↵</span>
+      </button>
+    );
+  }
+
+  if (item.kind === "recent") {
+    const r = item.entry;
+    return (
+      <button type="button" className={cls} onMouseEnter={onMouseEnter} onClick={onClick}>
+        <span className="spotlight-badge">{r.badge}</span>
+        <span className="spotlight-item-text">
+          <span className="spotlight-item-main">{r.label}</span>
+          <span className="spotlight-item-sub">{r.sub}</span>
+        </span>
+        <span className="spotlight-item-enter">↵</span>
+      </button>
+    );
+  }
+
+  // action
+  return (
+    <button type="button" className={cls} onMouseEnter={onMouseEnter} onClick={onClick}>
+      <span className="spotlight-badge action">{item.icon}</span>
+      <span className="spotlight-item-text">
+        <span className="spotlight-item-main">{item.label}</span>
+        {item.sub && <span className="spotlight-item-sub">{item.sub}</span>}
+      </span>
+      <span className="spotlight-item-enter">↵</span>
+    </button>
+  );
+}
+
+function CommandPalette({ onClose }: { onClose: () => void }) {
+  const [query, setQuery] = useState("");
+  const debounced = useDebouncedValue(query.trim(), 150);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const recent = useRecentlyViewed();
+
+  // Team search — same dual-API pattern as GlobalSearch
+  useEffect(() => {
+    if (!debounced) { setTeams([]); setTeamsLoading(false); return; }
+    setTeamsLoading(true);
+    let live = true;
+    Promise.all([
+      api.teams({ teamSearch: debounced, per_page: 50 }),
+      /^\d+[a-z]?$/i.test(debounced) ? api.robotEventsTeams({ number: debounced, "program[]": vexProgramIds, per_page: 20 }) : Promise.resolve(null),
+    ])
+      .then(([rseTeams, exactTeams]) => {
+        if (!live) return;
+        setTeams(rankTeamsForSearch(uniqueTeams([...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 6));
+        setTeamsLoading(false);
+      })
+      .catch(() => { if (live) { setTeams([]); setTeamsLoading(false); } });
+    return () => { live = false; };
+  }, [debounced]);
+
+  // Reset active row when results change
+  useEffect(() => { setActiveIndex(0); }, [debounced]);
+
+  // Build flat items list for keyboard navigation
+  const items = useMemo<SpotlightItem[]>(() => {
+    if (!debounced) {
+      return [
+        ...recent.slice(0, 8).map((entry): SpotlightItem => ({ kind: "recent", entry })),
+        ...SPOTLIGHT_ACTIONS.map((a): SpotlightItem => ({ kind: "action", ...a })),
+      ];
+    }
+    const q = debounced.toLowerCase();
+    const eventMatches = recent
+      .filter((r) => r.type === "event" && r.label.toLowerCase().includes(q))
+      .slice(0, 3);
+    const actionMatches = SPOTLIGHT_ACTIONS.filter((a) => a.label.toLowerCase().includes(q)).slice(0, 2);
+    return [
+      ...teams.map((t): SpotlightItem => ({ kind: "team", team: t })),
+      ...eventMatches.map((entry): SpotlightItem => ({ kind: "recent", entry })),
+      ...actionMatches.map((a): SpotlightItem => ({ kind: "action", ...a })),
+    ];
+  }, [debounced, teams, recent]);
+
+  const handleSelect = useCallback((item: SpotlightItem) => {
+    const path = item.kind === "team" ? teamPath(item.team) : item.kind === "recent" ? item.entry.path : item.path;
+    navigate(path);
+    onClose();
+  }, [onClose]);
+
+  // Window-level keyboard handler
+  useEffect(() => {
+    const handler = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "ArrowDown") { e.preventDefault(); setActiveIndex((i) => Math.min(i + 1, items.length - 1)); return; }
+      if (e.key === "ArrowUp")   { e.preventDefault(); setActiveIndex((i) => Math.max(i - 1, 0)); return; }
+      if (e.key === "Enter")     { e.preventDefault(); if (items[activeIndex]) handleSelect(items[activeIndex]); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [items, activeIndex, onClose, handleSelect]);
+
+  const showEmpty = !!debounced && !teamsLoading && items.length === 0;
+
+  // Section labels for grouped display
+  const hasRecent  = !debounced && recent.length > 0;
+  const hasActions = !debounced;
+  const hasTeams   = !!debounced && teams.length > 0;
+  const hasEvents  = !!debounced && recent.some((r) => r.type === "event" && r.label.toLowerCase().includes(debounced.toLowerCase()));
+
+  // Offset for event section label — appears after all team rows
+  const eventOffset  = teams.length;
+
+  return (
+    <div className="spotlight-overlay" onClick={onClose}>
+      <div className="spotlight-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Command palette">
+
+        {/* Input */}
+        <div className="spotlight-input-row">
+          <Search size={17} className="spotlight-icon" />
+          <input
+            ref={inputRef}
+            autoFocus
+            className="spotlight-input"
+            placeholder="Search teams, events, or go to…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search"
+          />
+          {query && (
+            <button type="button" className="spotlight-clear" onClick={() => setQuery("")} aria-label="Clear search">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Results */}
+        <div className="spotlight-results" role="listbox">
+          {teamsLoading && <div className="spotlight-loading">Searching…</div>}
+
+          {!debounced && hasRecent && (
+            <div className="spotlight-section-label">Recent</div>
+          )}
+          {!debounced && hasActions && (
+            <div className="spotlight-section-label">{hasRecent ? "Go to" : "Quick navigation"}</div>
+          )}
+          {!!debounced && hasTeams && (
+            <div className="spotlight-section-label">Teams</div>
+          )}
+
+          {items.map((item, i) => {
+            const isEventSectionStart = !!debounced && hasEvents && i === eventOffset + teams.length;
+            return (
+              <Fragment key={
+                item.kind === "team" ? `t-${item.team.id}` :
+                item.kind === "recent" ? `r-${item.entry.path}` :
+                `a-${item.label}`
+              }>
+                {isEventSectionStart && <div className="spotlight-section-label">Events</div>}
+                <SpotlightRow
+                  item={item}
+                  active={i === activeIndex}
+                  onMouseEnter={() => setActiveIndex(i)}
+                  onClick={() => handleSelect(item)}
+                />
+              </Fragment>
+            );
+          })}
+
+          {showEmpty && (
+            <div className="spotlight-empty">No results for "{debounced}"</div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="spotlight-footer">
+          <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+          <span><kbd>↵</kbd> open</span>
+          <span><kbd>Esc</kbd> close</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Shortcuts cheat-sheet overlay ────────────────────────────────────────────
+
+function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div className="spotlight-overlay" onClick={onClose}>
+      <div className="shortcuts-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+        <div className="shortcuts-header">
+          <strong>Keyboard Shortcuts</strong>
+          <button type="button" className="video-close-btn" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <div className="shortcuts-body">
+          <table className="shortcuts-table">
+            <tbody>
+              <tr><td><kbd>{isMac ? "⌘K" : "Ctrl+K"}</kbd></td><td>Open command palette</td></tr>
+              <tr><td><kbd>/</kbd></td><td>Open command palette</td></tr>
+              <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
+              <tr><td><kbd>Esc</kbd></td><td>Close any overlay</td></tr>
+              <tr><td><kbd>G</kbd> then <kbd>H</kbd></td><td>Go to Home</td></tr>
+              <tr><td><kbd>G</kbd> then <kbd>E</kbd></td><td>Go to Events</td></tr>
+              <tr><td><kbd>G</kbd> then <kbd>T</kbd></td><td>Go to Teams</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function route(path: string) {
   if (path === "/") return <Home />;
   if (path === "/settings") return <SettingsPage />;
@@ -8044,14 +8397,64 @@ function route(path: string) {
 
 export default function App() {
   const path = useRoute();
+  const spotlightOpen = useSyncExternalStore(subscribeSpotlight, getSpotlightOpen, getSpotlightOpen);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
   useEffect(() => {
     loadYouTubeApi();
   }, []);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    let lastChordKey = "";
+    let lastChordTime = 0;
+
+    const handler = (e: globalThis.KeyboardEvent) => {
+      // Cmd+K / Ctrl+K — fires even when typing in an input
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        _spotlightOpen ? closeSpotlight() : openSpotlight();
+        return;
+      }
+
+      // All remaining shortcuts are suppressed when typing in an input
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) return;
+
+      // / → open spotlight
+      if (e.key === "/" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        openSpotlight();
+        return;
+      }
+
+      // ? → shortcuts cheat sheet
+      if (e.key === "?") {
+        setShortcutsOpen(true);
+        return;
+      }
+
+      // Chord navigation: G then H / E / T within 500ms
+      const now = Date.now();
+      if (now - lastChordTime < 500 && lastChordKey === "g") {
+        if (e.key === "h") { navigate("/");        lastChordKey = ""; lastChordTime = 0; return; }
+        if (e.key === "e") { navigate("/events");  lastChordKey = ""; lastChordTime = 0; return; }
+        if (e.key === "t") { navigate("/teams");   lastChordKey = ""; lastChordTime = 0; return; }
+      }
+      if (e.key === "g") { lastChordKey = "g"; lastChordTime = now; }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []); // intentionally stable — reads module-level _spotlightOpen directly
+
   return (
     <>
       <BetaDisclaimer />
       <Layout path={path}>{route(path)}</Layout>
       <OnboardingModal />
+      {spotlightOpen && <CommandPalette onClose={closeSpotlight} />}
+      {shortcutsOpen && <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />}
     </>
   );
 }
