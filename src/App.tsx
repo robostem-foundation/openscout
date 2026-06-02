@@ -8129,6 +8129,7 @@ function RecentlyViewedPanel() {
 type SpotlightItem =
   | { kind: "recent"; entry: RecentEntry }
   | { kind: "team";   team: Team }
+  | { kind: "event";  event: Event }
   | { kind: "action"; label: string; sub: string; path: string; icon: ReactNode };
 
 const SPOTLIGHT_ACTIONS: Array<{ label: string; sub: string; path: string; icon: ReactNode }> = [
@@ -8179,6 +8180,20 @@ function SpotlightRow({
     );
   }
 
+  if (item.kind === "event") {
+    const ev = item.event;
+    return (
+      <button type="button" className={cls} onMouseEnter={onMouseEnter} onClick={onClick}>
+        <span className="spotlight-badge">{seasonYearLabel(ev.season?.name) ?? <CalendarDays size={11} />}</span>
+        <span className="spotlight-item-text">
+          <span className="spotlight-item-main">{ev.name}</span>
+          <span className="spotlight-item-sub">{ev.sku} · {locationLine(ev)}</span>
+        </span>
+        <span className="spotlight-item-enter">↵</span>
+      </button>
+    );
+  }
+
   // action
   return (
     <button type="button" className={cls} onMouseEnter={onMouseEnter} onClick={onClick}>
@@ -8194,28 +8209,50 @@ function SpotlightRow({
 
 function CommandPalette({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
-  const debounced = useDebouncedValue(query.trim(), 150);
+  // Match GlobalSearch's 220ms debounce — same perceived speed
+  const debounced = useDebouncedValue(query.trim(), 220);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
+  const [eventsLoading, setEventsLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const recent = useRecentlyViewed();
 
-  // Team search — same dual-API pattern as GlobalSearch
+  // Mirror GlobalSearch exactly: fire both searches independently in parallel
   useEffect(() => {
-    if (!debounced) { setTeams([]); setTeamsLoading(false); return; }
-    setTeamsLoading(true);
+    if (!debounced) {
+      setTeams([]); setEvents([]);
+      setTeamsLoading(false); setEventsLoading(false);
+      return;
+    }
+
     let live = true;
+
+    // Teams — same dual-API call as GlobalSearch
+    setTeamsLoading(true);
     Promise.all([
       api.teams({ teamSearch: debounced, per_page: 50 }),
       /^\d+[a-z]?$/i.test(debounced) ? api.robotEventsTeams({ number: debounced, "program[]": vexProgramIds, per_page: 20 }) : Promise.resolve(null),
     ])
       .then(([rseTeams, exactTeams]) => {
         if (!live) return;
-        setTeams(rankTeamsForSearch(uniqueTeams([...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 6));
-        setTeamsLoading(false);
+        setTeams(rankTeamsForSearch(uniqueTeams([...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 5));
       })
-      .catch(() => { if (live) { setTeams([]); setTeamsLoading(false); } });
+      .catch(() => { if (live) setTeams([]); })
+      .finally(() => { if (live) setTeamsLoading(false); });
+
+    // Events — same loadGlobalEventSearchEvents() + filterAndSortEvents() as GlobalSearch
+    // This cache is typically already warm from a prior GlobalSearch query
+    setEventsLoading(true);
+    loadGlobalEventSearchEvents()
+      .then((searchEvents) => {
+        if (!live) return;
+        setEvents(filterAndSortEvents(searchEvents, { search: debounced, hideCanceled: true, sort: "smart" }).slice(0, 5));
+      })
+      .catch(() => { if (live) setEvents([]); })
+      .finally(() => { if (live) setEventsLoading(false); });
+
     return () => { live = false; };
   }, [debounced]);
 
@@ -8230,20 +8267,20 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
         ...SPOTLIGHT_ACTIONS.map((a): SpotlightItem => ({ kind: "action", ...a })),
       ];
     }
-    const q = debounced.toLowerCase();
-    const eventMatches = recent
-      .filter((r) => r.type === "event" && r.label.toLowerCase().includes(q))
-      .slice(0, 3);
-    const actionMatches = SPOTLIGHT_ACTIONS.filter((a) => a.label.toLowerCase().includes(q)).slice(0, 2);
+    const actionMatches = SPOTLIGHT_ACTIONS.filter((a) => a.label.toLowerCase().includes(debounced.toLowerCase())).slice(0, 2);
     return [
       ...teams.map((t): SpotlightItem => ({ kind: "team", team: t })),
-      ...eventMatches.map((entry): SpotlightItem => ({ kind: "recent", entry })),
+      ...events.map((ev): SpotlightItem => ({ kind: "event", event: ev })),
       ...actionMatches.map((a): SpotlightItem => ({ kind: "action", ...a })),
     ];
-  }, [debounced, teams, recent]);
+  }, [debounced, teams, events, recent]);
 
   const handleSelect = useCallback((item: SpotlightItem) => {
-    const path = item.kind === "team" ? teamPath(item.team) : item.kind === "recent" ? item.entry.path : item.path;
+    const path =
+      item.kind === "team"   ? teamPath(item.team) :
+      item.kind === "event"  ? eventPath(item.event) :
+      item.kind === "recent" ? item.entry.path :
+      item.path;
     navigate(path);
     onClose();
   }, [onClose]);
@@ -8260,16 +8297,16 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", handler);
   }, [items, activeIndex, onClose, handleSelect]);
 
-  const showEmpty = !!debounced && !teamsLoading && items.length === 0;
+  const loading = teamsLoading || eventsLoading;
+  const showEmpty = !!debounced && !loading && items.length === 0;
 
   // Section labels for grouped display
   const hasRecent  = !debounced && recent.length > 0;
-  const hasActions = !debounced;
   const hasTeams   = !!debounced && teams.length > 0;
-  const hasEvents  = !!debounced && recent.some((r) => r.type === "event" && r.label.toLowerCase().includes(debounced.toLowerCase()));
+  const hasEvents  = !!debounced && events.length > 0;
 
   // Offset for event section label — appears after all team rows
-  const eventOffset  = teams.length;
+  const eventOffset = teams.length;
 
   return (
     <div className="spotlight-overlay" onClick={onClose}>
@@ -8296,12 +8333,12 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 
         {/* Results */}
         <div className="spotlight-results" role="listbox">
-          {teamsLoading && <div className="spotlight-loading">Searching…</div>}
+          {loading && <div className="spotlight-loading">Searching…</div>}
 
           {!debounced && hasRecent && (
             <div className="spotlight-section-label">Recent</div>
           )}
-          {!debounced && hasActions && (
+          {!debounced && (
             <div className="spotlight-section-label">{hasRecent ? "Go to" : "Quick navigation"}</div>
           )}
           {!!debounced && hasTeams && (
@@ -8309,10 +8346,11 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
           )}
 
           {items.map((item, i) => {
-            const isEventSectionStart = !!debounced && hasEvents && i === eventOffset + teams.length;
+            const isEventSectionStart = !!debounced && hasEvents && i === eventOffset;
             return (
               <Fragment key={
-                item.kind === "team" ? `t-${item.team.id}` :
+                item.kind === "team"   ? `t-${item.team.id}` :
+                item.kind === "event"  ? `e-${item.event.id}` :
                 item.kind === "recent" ? `r-${item.entry.path}` :
                 `a-${item.label}`
               }>
