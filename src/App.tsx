@@ -3691,7 +3691,7 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
               </span>
             </th>
             <th className="quick-look-col"></th>
-            <th className="compare-col" title="Add to compare"><Scale size={13} /></th>
+            <th className="compare-col">Add Compare</th>
           </tr>
         </thead>
         {loading ? (
@@ -7329,8 +7329,8 @@ function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }:
               <th>High</th>
               <th>Low</th>
               <th>Dropped scores</th>
-              <th className="compare-col" title="Add to compare"><Scale size={13} /></th>
-              {showPicklist && <th className="picklist-col" title="Add to picklist"><ListOrdered size={13} /></th>}
+              <th className="compare-col">Add Compare</th>
+              {showPicklist && <th className="picklist-col">Add Picklist</th>}
             </tr>
           </thead>
           <tbody>
@@ -7385,7 +7385,7 @@ function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }:
             <th>SP</th>
             <th>High</th>
             <th>Avg</th>
-            <th className="compare-col" title="Add to compare"><Scale size={13} /></th>
+            <th className="compare-col">Add Compare</th>
             {showPicklist && <th className="picklist-col" />}
           </tr>
         </thead>
