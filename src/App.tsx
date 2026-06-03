@@ -7386,7 +7386,7 @@ function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }:
             <th>High</th>
             <th>Avg</th>
             <th className="compare-col">Add Compare</th>
-            {showPicklist && <th className="picklist-col" />}
+            {showPicklist && <th className="picklist-col">Add Picklist</th>}
           </tr>
         </thead>
         <tbody>
