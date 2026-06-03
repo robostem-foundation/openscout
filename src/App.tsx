@@ -13,8 +13,11 @@ import {
   Gamepad2,
   Info,
   Link2,
+  GripVertical,
   ListFilter,
+  ListOrdered,
   Link as LinkIcon,
+  MinusCircle,
   LogIn,
   LogOut,
   Medal,
@@ -50,7 +53,7 @@ import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
 import { useOrgMatchNote, setOrgMatchNote, useHasAnyOrgNote } from "./org-notes";
-import { useOrgFavorites } from "./org-favorites";
+import { useOrgFavorites, useIsOrgFavorite, toggleOrgFavorite } from "./org-favorites";
 import {
   createOrg,
   deleteOrg,
@@ -74,6 +77,7 @@ import type { TabLayout, UiStyle } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
 import { addToTray, canAddToTray, clearTray, closeCompareModal, getContextEventId, getContextSeasonId, getTrayEntries, isInTray, openCompareModal, removeFromTray, useCompareTray, useCompareModalOpen, useIsInTray } from "./compare";
+import { addToPicklist, removeFromPicklist, reorderPicklist, updatePicklistNotes, toggleCrossedOut, clearCrossedOut, usePicklist, useIsInPicklist } from "./picklist";
 import type { TrayEntry } from "./compare";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
 
@@ -1580,9 +1584,88 @@ function FavoriteButton({ id, kind }: { id: number | string; kind: "team" | "eve
   );
 }
 
+// ── Org Favorite buttons ─────────────────────────────────────────────────────
+
+/** Inner button for a single org — reads active state and toggles. */
+function OrgFavBtn({
+  orgId,
+  kind,
+  refId,
+  label,
+  onToggle,
+}: {
+  orgId: string;
+  kind: "team" | "event";
+  refId: string;
+  label?: string;
+  onToggle?: () => void;
+}) {
+  const active = useIsOrgFavorite(orgId, kind, refId);
+  return (
+    <button
+      className={`icon-button${active ? " active" : ""}`}
+      title={active ? `Remove from ${label ?? "org"}` : `Add to ${label ?? "org"}`}
+      onClick={() => {
+        void toggleOrgFavorite(orgId, kind, refId);
+        onToggle?.();
+      }}
+    >
+      {label ? (
+        <><Users size={14} /> <span style={{ fontSize: 12, marginLeft: 4 }}>{label}</span></>
+      ) : (
+        <Users size={17} />
+      )}
+    </button>
+  );
+}
+
+/**
+ * Org-favorite toggle button for TeamDetail / EventDetail headers.
+ * Hidden when signed out or not in any org. Single-org: direct toggle.
+ * Multi-org: shows a small popover to choose which org.
+ */
+function OrgFavoriteButton({ kind, refId }: { kind: "team" | "event"; refId: string }) {
+  const { user } = useAuth();
+  const orgs = useOrgs();
+  const [open, setOpen] = useState(false);
+  const popoverRef = useOutsideClick<HTMLDivElement>(() => setOpen(false));
+
+  if (!user || orgs.length === 0) return null;
+
+  if (orgs.length === 1) {
+    return <OrgFavBtn orgId={orgs[0].orgId} kind={kind} refId={refId} />;
+  }
+
+  return (
+    <div style={{ position: "relative" }} ref={popoverRef}>
+      <button
+        className="icon-button"
+        title="Add to org favorites"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Users size={17} />
+      </button>
+      {open && (
+        <div className="org-fav-popover">
+          {orgs.map((org) => (
+            <OrgFavBtn
+              key={org.orgId}
+              orgId={org.orgId}
+              kind={kind}
+              refId={refId}
+              label={org.name}
+              onToggle={() => setOpen(false)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Compare tray buttons ─────────────────────────────────────────────────────
 
-/** Icon button shown in TeamDetail header — adds/removes the team from the compare tray. */
+/** Inner button for a single org — reads active state and toggles. */
 /** Small button for team rows in tables — adds/removes from tray. */
 function CompareRowBtn({ teamId, teamNumber, programCode, teamName }: { teamId: number; teamNumber: string; programCode: string; teamName?: string }) {
   const inTray = useIsInTray(teamId);
@@ -1600,6 +1683,191 @@ function CompareRowBtn({ teamId, teamNumber, programCode, teamName }: { teamId: 
     >
       {inTray ? <Check size={11} /> : <Plus size={11} />}
     </button>
+  );
+}
+
+// ── Picklist row button ───────────────────────────────────────────────────────
+
+/** Hover-reveal button in RankingsTable rows — adds/removes a team from the org picklist. */
+function PicklistRowBtn({
+  orgId,
+  eventId,
+  teamId,
+  teamNumber,
+  teamName,
+}: {
+  orgId: string;
+  eventId: string;
+  teamId: string;
+  teamNumber: string;
+  teamName?: string;
+}) {
+  const inList = useIsInPicklist(orgId, eventId, teamId);
+  return (
+    <button
+      type="button"
+      className={`picklist-row-btn${inList ? " in-list" : ""}`}
+      title={inList ? "Remove from picklist" : "Add to picklist"}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (inList) {
+          void removeFromPicklist(orgId, eventId, teamId);
+        } else {
+          void addToPicklist(orgId, eventId, { teamId, teamNumber, teamName });
+        }
+      }}
+    >
+      {inList ? <Check size={11} /> : <Plus size={11} />}
+    </button>
+  );
+}
+
+// ── Picklist tab ──────────────────────────────────────────────────────────────
+
+/** Full picklist panel rendered as a tab in EventDetail. */
+function PicklistTab({ event, orgId }: { event: { id: number; name: string }; orgId: string }) {
+  const { entries, ready } = usePicklist(orgId, String(event.id));
+  const [allianceMode, setAllianceMode] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  // Local notes state for uncontrolled editing (save on blur)
+  const [localNotes, setLocalNotes] = useState<Record<string, string>>({});
+
+  // Sync localNotes when entries change from outside
+  useEffect(() => {
+    setLocalNotes((prev) => {
+      const next: Record<string, string> = {};
+      for (const e of entries) {
+        next[e.teamId] = e.teamId in prev ? prev[e.teamId] : e.notes;
+      }
+      return next;
+    });
+  }, [entries]);
+
+  const eventIdStr = String(event.id);
+  const remaining = entries.filter((e) => !e.crossedOut).length;
+
+  function handleDrop(targetIndex: number) {
+    if (dragIndex === null || dragIndex === targetIndex) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+    const reordered = [...entries];
+    const [moved] = reordered.splice(dragIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+    void reorderPicklist(orgId, eventIdStr, reordered);
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
+  if (!ready) {
+    return <div className="picklist-empty"><span className="muted">Loading…</span></div>;
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="picklist-empty">
+        <ListOrdered size={28} />
+        <p>No teams yet.</p>
+        <p className="muted">
+          Add teams from the <strong>Rankings</strong> tab using the{" "}
+          <Plus size={12} style={{ display: "inline-block", verticalAlign: "middle" }} /> button.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="picklist-header">
+        <span className="picklist-count">{remaining} team{remaining !== 1 ? "s" : ""} remaining</span>
+        {allianceMode && (
+          <button
+            type="button"
+            className="button-sm"
+            onClick={() => void clearCrossedOut(orgId, eventIdStr)}
+          >
+            Reset
+          </button>
+        )}
+        <button
+          type="button"
+          className={`button-sm${allianceMode ? " active" : ""}`}
+          onClick={() => setAllianceMode((v) => !v)}
+        >
+          {allianceMode ? "Exit Alliance Mode" : "Alliance Selection"}
+        </button>
+      </div>
+
+      <div className="picklist-list">
+        {entries.map((entry, i) => (
+          <div
+            key={entry.teamId}
+            className={[
+              "picklist-item",
+              entry.crossedOut ? "crossed-out" : "",
+              allianceMode ? "alliance-mode" : "",
+              dragOverIndex === i ? "drag-over" : "",
+            ].filter(Boolean).join(" ")}
+            draggable
+            onDragStart={() => setDragIndex(i)}
+            onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
+            onDragLeave={() => setDragOverIndex(null)}
+            onDrop={() => handleDrop(i)}
+            onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
+          >
+            <span className="picklist-drag-handle" title="Drag to reorder">
+              <GripVertical size={14} />
+            </span>
+            <span className="picklist-rank">#{i + 1}</span>
+            <Link
+              href={`/team/V5RC/${entry.teamNumber}`}
+              className="picklist-team-link"
+              onClick={(e: MouseEvent) => e.stopPropagation()}
+            >
+              {entry.teamNumber}
+            </Link>
+            {entry.teamName && (
+              <span className="picklist-team-name">{entry.teamName}</span>
+            )}
+            <input
+              type="text"
+              className="picklist-notes"
+              placeholder="Notes…"
+              value={localNotes[entry.teamId] ?? entry.notes}
+              onChange={(e) =>
+                setLocalNotes((prev) => ({ ...prev, [entry.teamId]: e.target.value }))
+              }
+              onBlur={(e) => void updatePicklistNotes(orgId, eventIdStr, entry.teamId, e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button
+              type="button"
+              className="picklist-cross-btn"
+              title={entry.crossedOut ? "Unmark" : "Mark as picked/crossed out"}
+              onClick={(e) => {
+                e.stopPropagation();
+                void toggleCrossedOut(orgId, eventIdStr, entry.teamId);
+              }}
+            >
+              <MinusCircle size={14} />
+            </button>
+            <button
+              type="button"
+              className="picklist-remove-btn"
+              title="Remove from picklist"
+              onClick={(e) => {
+                e.stopPropagation();
+                void removeFromPicklist(orgId, eventIdStr, entry.teamId);
+              }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -3705,7 +3973,7 @@ function PageTitle({ icon, title, subtitle }: { icon: ReactNode; title: string; 
   );
 }
 
-const EVENT_DETAIL_TABS = ["matches", "rankings", "skills", "awards", "teams", "team-matches"] as const;
+const EVENT_DETAIL_TABS = ["matches", "rankings", "skills", "awards", "teams", "team-matches", "picklist"] as const;
 type EventDetailTab = typeof EVENT_DETAIL_TABS[number];
 const TEAM_DETAIL_TABS = ["about", "events", "rankings", "skills", "awards"] as const;
 type TeamDetailTab = typeof TEAM_DETAIL_TABS[number];
@@ -3728,6 +3996,8 @@ function EventDetail({ param }: { param: string }) {
   const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
   const tabLayout = useTabLayout();
+  const orgs = useOrgs();
+  const primaryOrg = orgs[0] ?? null;
   const lookup = useAsync(async () => {
     if (allDigits(param)) return api.event(param);
     const res = await api.events({ "sku[]": param, per_page: 1 });
@@ -3800,7 +4070,7 @@ function EventDetail({ param }: { param: string }) {
   const eventAwards = awards.data?.data ?? [];
   const timestampMap = useMemo(() => new Map((matchTimestamps.data ?? []).map((timestamp) => [timestamp.id, timestamp])), [matchTimestamps.data]);
   const presetUrl = event && preset.data?.exists ? `https://jumper.robostem.org/?preset=${encodeURIComponent(jumperPresetName(event, preset.data))}` : null;
-  const activeStatus = tab === "team-matches" ? focusTeamEventMatches : tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : tab === "awards" ? awards : teams;
+  const activeStatus = tab === "team-matches" ? focusTeamEventMatches : tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : tab === "awards" ? awards : tab === "picklist" ? { loading: false, error: null } : teams;
   const keyAwards = useMemo(() => highlightAwards(eventAwards, event), [eventAwards, event]);
 
   useEffect(() => {
@@ -3878,7 +4148,10 @@ function EventDetail({ param }: { param: string }) {
             <span className={`event-priority priority-${eventCategory(event).rank}`}>{eventCategory(event).label}</span>
           </div>
         </div>
-        <FavoriteButton id={event.id} kind="event" />
+        <div className="profile-header-actions">
+          <OrgFavoriteButton kind="event" refId={String(event.id)} />
+          <FavoriteButton id={event.id} kind="event" />
+        </div>
       </div>
 
       <div className={`view-tabs view-tabs-${tabLayout}`}>
@@ -3908,6 +4181,7 @@ function EventDetail({ param }: { param: string }) {
           ["skills", "Skills", <Activity size={15} />],
           ["awards", "Awards", <AwardIcon size={15} />],
           ["teams", `Teams ${teams.data?.meta.total ?? ""}`, <Users size={15} />],
+          ["picklist", "Picklist", <ListOrdered size={15} />],
         ]}
       />
       <div className="view-tabs-body">
@@ -3945,13 +4219,18 @@ function EventDetail({ param }: { param: string }) {
           eventId={event.id}
         />
       )}
-      {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} matches={matches.data?.data ?? []} />}
+      {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} matches={matches.data?.data ?? []} orgId={primaryOrg?.orgId} eventId={String(event.id)} />}
       {tab === "skills" && <SkillsTable skills={skills.data?.data ?? []} />}
       {tab === "awards" && <AwardsList awards={awards.data?.data ?? []} />}
       {tab === "teams" && !teams.loading && teams.data && (
         <div className="table-summary">Showing 80 per page from {teams.data.data.length.toLocaleString()} RobotEvents teams.</div>
       )}
       {tab === "teams" && <TeamTable teams={teams.data?.data ?? []} loading={teams.loading} localPageSize={80} eventId={event.id} />}
+      {tab === "picklist" && (
+        primaryOrg
+          ? <PicklistTab event={event} orgId={primaryOrg.orgId} />
+          : <div className="picklist-empty"><p>Join or create an org to use shared picklists.</p></div>
+      )}
       </div>
       </div>
       {playback && <MatchVideoOverlay playback={playback} onClose={() => setPlayback(null)} />}
@@ -4741,7 +5020,10 @@ function TeamDetail({ param }: { param: string }) {
             <span>{team.registered ? "Registered" : "Inactive"}</span>
           </div>
         </div>
-        <FavoriteButton id={team.id} kind="team" />
+        <div className="profile-header-actions">
+          <OrgFavoriteButton kind="team" refId={String(team.id)} />
+          <FavoriteButton id={team.id} kind="team" />
+        </div>
       </div>
 
       <div className={`view-tabs view-tabs-${tabLayout}`}>
@@ -7030,9 +7312,10 @@ function DroppedScores({ dropped }: { dropped: Array<{ matchnum: number; score: 
   );
 }
 
-function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ranking[]; isIq?: boolean; matches?: Match[] }) {
+function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }: { rankings: Ranking[]; isIq?: boolean; matches?: Match[]; orgId?: string; eventId?: string }) {
   const sortedRankings = [...rankings].sort((a, b) => a.rank - b.rank);
   const programCode = useContext(ProgramContext);
+  const showPicklist = !!(orgId && eventId);
 
   if (isIq) {
     return (
@@ -7047,6 +7330,7 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
               <th>Low</th>
               <th>Dropped scores</th>
               <th className="compare-col">Add to compare</th>
+              {showPicklist && <th className="picklist-col" />}
             </tr>
           </thead>
           <tbody>
@@ -7067,12 +7351,17 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
                   <td className="compare-col">
                     <CompareRowBtn teamId={row.team.id} teamNumber={row.team.name} programCode={programCode ?? ""} />
                   </td>
+                  {showPicklist && (
+                    <td className="picklist-col" onClick={(e) => e.stopPropagation()}>
+                      <PicklistRowBtn orgId={orgId} eventId={eventId} teamId={String(row.team.id)} teamNumber={row.team.name} />
+                    </td>
+                  )}
                 </tr>
               );
             })}
             {!sortedRankings.length && (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={showPicklist ? 8 : 7}>
                   <Empty>No rankings returned.</Empty>
                 </td>
               </tr>
@@ -7097,6 +7386,7 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
             <th>High</th>
             <th>Avg</th>
             <th className="compare-col">Add to compare</th>
+            {showPicklist && <th className="picklist-col" />}
           </tr>
         </thead>
         <tbody>
@@ -7117,11 +7407,16 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
               <td className="compare-col">
                 <CompareRowBtn teamId={row.team.id} teamNumber={row.team.name} programCode={programCode ?? ""} />
               </td>
+              {showPicklist && (
+                <td className="picklist-col" onClick={(e) => e.stopPropagation()}>
+                  <PicklistRowBtn orgId={orgId} eventId={eventId} teamId={String(row.team.id)} teamNumber={row.team.name} />
+                </td>
+              )}
             </tr>
           ))}
           {!sortedRankings.length && (
             <tr>
-              <td colSpan={9}>
+              <td colSpan={showPicklist ? 10 : 9}>
                 <Empty>No rankings returned.</Empty>
               </td>
             </tr>
@@ -7823,22 +8118,42 @@ function OrgFavoritesList({ orgId }: { orgId: string }) {
         <div className="home-fav-empty">No shared favorites yet — add teams or events to share with the org.</div>
       )}
       {data?.teams.map((team) => (
-        <Link key={`t-${team.id}`} href={teamPath(team)} className="home-fav-item">
-          <span className="home-fav-badge team">{team.program?.code ?? "VEX"}</span>
-          <span className="home-fav-text">
-            <span className="home-fav-title">{team.number} · {team.team_name ?? "Unnamed Team"}</span>
-            <span className="home-fav-sub">{locationLine(team)}</span>
-          </span>
-        </Link>
+        <div key={`t-${team.id}`} className="home-fav-item-row">
+          <Link href={teamPath(team)} className="home-fav-item">
+            <span className="home-fav-badge team">{team.program?.code ?? "VEX"}</span>
+            <span className="home-fav-text">
+              <span className="home-fav-title">{team.number} · {team.team_name ?? "Unnamed Team"}</span>
+              <span className="home-fav-sub">{locationLine(team)}</span>
+            </span>
+          </Link>
+          <button
+            type="button"
+            className="home-fav-remove"
+            title="Remove from org favorites"
+            onClick={() => void toggleOrgFavorite(orgId, "team", String(team.id))}
+          >
+            <X size={12} />
+          </button>
+        </div>
       ))}
       {data?.events.map((event) => (
-        <Link key={`e-${event.id}`} href={eventPath(event)} className="home-fav-item">
-          <span className="home-fav-badge event">{seasonYearLabel(event.season?.name) || <CalendarDays size={13} />}</span>
-          <span className="home-fav-text">
-            <span className="home-fav-title">{event.name}</span>
-            <span className="home-fav-sub">{locationLine(event)}</span>
-          </span>
-        </Link>
+        <div key={`e-${event.id}`} className="home-fav-item-row">
+          <Link href={eventPath(event)} className="home-fav-item">
+            <span className="home-fav-badge event">{seasonYearLabel(event.season?.name) || <CalendarDays size={13} />}</span>
+            <span className="home-fav-text">
+              <span className="home-fav-title">{event.name}</span>
+              <span className="home-fav-sub">{locationLine(event)}</span>
+            </span>
+          </Link>
+          <button
+            type="button"
+            className="home-fav-remove"
+            title="Remove from org favorites"
+            onClick={() => void toggleOrgFavorite(orgId, "event", String(event.id))}
+          >
+            <X size={12} />
+          </button>
+        </div>
       ))}
     </div>
   );
