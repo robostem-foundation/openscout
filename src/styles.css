@@ -6605,16 +6605,12 @@ td.quick-look-col {
 /* ── Compare Row Button (TeamTable / RankingsTable) ────────────────────────── */
 
 .compare-col {
-  width: 96px;
-  min-width: 88px;
-  padding: 6px 8px !important;
+  width: 36px;
+  min-width: 36px;
+  padding: 0 4px !important;
   text-align: center !important;
   vertical-align: middle;
-  white-space: normal;
-}
-th.compare-col {
-  font-size: 12px;
-  line-height: 1.15;
+  white-space: nowrap;
 }
 .compare-row-btn {
   height: 24px;
@@ -6930,7 +6926,6 @@ th.compare-col {
   padding: 0 4px;
 }
 .picklist-row-btn {
-  opacity: 0;
   height: 24px;
   width: 24px;
   border: 1px solid transparent;
@@ -6940,14 +6935,17 @@ th.compare-col {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.1s, background 0.1s, color 0.1s;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
   color: var(--text-muted);
+  padding: 0;
+  margin: 0 auto;
 }
-tr:hover .picklist-row-btn {
-  opacity: 1;
+.picklist-row-btn:not(.in-list):hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
 }
 .picklist-row-btn.in-list {
-  opacity: 1;
   color: var(--accent);
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);

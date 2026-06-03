@@ -3691,7 +3691,7 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
               </span>
             </th>
             <th className="quick-look-col"></th>
-            <th className="compare-col">Add to compare</th>
+            <th className="compare-col" />
           </tr>
         </thead>
         {loading ? (
@@ -7329,7 +7329,7 @@ function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }:
               <th>High</th>
               <th>Low</th>
               <th>Dropped scores</th>
-              <th className="compare-col">Add to compare</th>
+              <th className="compare-col" />
               {showPicklist && <th className="picklist-col" />}
             </tr>
           </thead>
@@ -7385,7 +7385,7 @@ function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }:
             <th>SP</th>
             <th>High</th>
             <th>Avg</th>
-            <th className="compare-col">Add to compare</th>
+            <th className="compare-col" />
             {showPicklist && <th className="picklist-col" />}
           </tr>
         </thead>
