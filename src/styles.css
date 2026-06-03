@@ -6606,17 +6606,9 @@ td.quick-look-col {
 
 .compare-col,
 .picklist-col {
-  width: 90px;
-  min-width: 90px;
-  padding: 0 8px !important;
-  text-align: center !important;
-  vertical-align: middle;
+  width: 88px;
+  min-width: 88px;
   white-space: nowrap;
-}
-th.compare-col,
-th.picklist-col {
-  font-size: 12px;
-  color: var(--text-muted);
 }
 .compare-row-btn {
   height: 24px;
