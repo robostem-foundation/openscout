@@ -22,9 +22,11 @@ import {
   PanelLeft,
   PanelRight,
   Pause,
+  Plus,
   Rows3,
   Play,
   RotateCw,
+  Scale,
   Search,
   Settings,
   Shield,
@@ -71,6 +73,8 @@ import { setEventsSettings, setTabLayout, setUiStyle, useSettingsEpoch, useTabLa
 import type { TabLayout, UiStyle } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
+import { addToTray, canAddToTray, clearTray, closeCompareModal, getContextEventId, getContextSeasonId, getTrayEntries, isInTray, openCompareModal, removeFromTray, useCompareTray, useCompareModalOpen, useIsInTray } from "./compare";
+import type { TrayEntry } from "./compare";
 import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
 
 const programOptions = [
@@ -125,7 +129,9 @@ type TeamCacheEntry = {
 };
 
 const teamListCache = new Map<string, TeamCacheEntry>();
-let globalEventSearchCache: { data?: Event[]; updatedAt: number; promise?: Promise<Event[]> } = { updatedAt: 0 };
+let globalEventSearchCache:     { data?: Event[]; updatedAt: number; promise?: Promise<Event[]> } = { updatedAt: 0 };
+let prevSeasonEventSearchCache: { data?: Event[]; updatedAt: number; promise?: Promise<Event[]> } = { updatedAt: 0 };
+let olderSeasonEventSearchCache:{ data?: Event[]; updatedAt: number; promise?: Promise<Event[]> } = { updatedAt: 0 };
 
 // World skills leaderboards are large (multi-MB) but change slowly, so cache the
 // in-flight promise per season+grade for the whole session — subsequent team
@@ -157,6 +163,29 @@ function openSpotlight()  { _spotlightOpen = true;  _emitSpotlight(); }
 function closeSpotlight() { _spotlightOpen = false; _emitSpotlight(); }
 function subscribeSpotlight(l: () => void) { _spotlightListeners.add(l); return () => _spotlightListeners.delete(l); }
 function getSpotlightOpen() { return _spotlightOpen; }
+
+// ── Compare pick mode ───────────────────────────────────────────────────────
+let _comparePickMode = false;
+const _comparePickModeListeners = new Set<() => void>();
+function _emitComparePickMode() { for (const l of _comparePickModeListeners) l(); }
+function setComparePickMode(value: boolean) { _comparePickMode = value; _emitComparePickMode(); }
+function toggleComparePickMode() { setComparePickMode(!_comparePickMode); }
+function subscribeComparePickMode(l: () => void) { _comparePickModeListeners.add(l); return () => _comparePickModeListeners.delete(l); }
+function getComparePickMode() { return _comparePickMode; }
+function useComparePickMode() {
+  return useSyncExternalStore(subscribeComparePickMode, getComparePickMode, getComparePickMode);
+}
+
+// Module-level: current team page context — set by TeamDetail on mount, cleared on unmount.
+// Lets the global C keyboard shortcut add/remove the current team without React context.
+let _currentTeam: Team | null = null;
+
+// Module-level: current event season + event ID — set by EventDetail on mount, cleared on unmount.
+// Passed to openCompareModal() so the comparison uses the right season without an
+// extra API round-trip, and can show per-event stats when in event context.
+let _currentEventSeasonId: number | null = null;
+let _currentEventId: number | null = null;
+let _currentEventRankings: Ranking[] = [];
 
 // ── Scroll memory — save scrollY per path, restore on real browser back ──
 const scrollMemory = new Map<string, number>();
@@ -191,6 +220,52 @@ function navigate(path: string) {
   window.history.pushState(null, "", path);
   window.dispatchEvent(new Event(NAV_EVENT));
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function currentHashTab() {
+  return decodeURIComponent(window.location.hash.replace(/^#/, "")).trim().toLowerCase();
+}
+
+function hashTab<T extends string>(validTabs: readonly T[], fallback: T) {
+  const hash = currentHashTab();
+  return validTabs.includes(hash as T) ? (hash as T) : fallback;
+}
+
+function replaceCurrentHash(tab: string) {
+  const nextHash = `#${encodeURIComponent(tab)}`;
+  if (window.location.hash === nextHash) return;
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+}
+
+function urlWithHash(path: string, tab: string) {
+  return `${path}#${encodeURIComponent(tab)}`;
+}
+
+async function writeClipboardText(text: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+
+  try {
+    if (document.execCommand("copy")) return true;
+  } finally {
+    document.body.removeChild(textarea);
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const allDigits = (value: string) => /^\d+$/.test(value);
@@ -324,6 +399,70 @@ async function loadGlobalEventSearchEvents() {
     return await promise;
   } catch (error) {
     globalEventSearchCache = { data: globalEventSearchCache.data, updatedAt: globalEventSearchCache.updatedAt };
+    throw error;
+  }
+}
+
+// Previous season: ~1 year before current window. Loaded lazily only when spotlight
+// event results come back short (< 3). Same dedup / cache pattern as above.
+async function loadPrevSeasonEvents(): Promise<Event[]> {
+  const now = Date.now();
+  if (prevSeasonEventSearchCache.data && now - prevSeasonEventSearchCache.updatedAt < globalEventSearchCacheMs) {
+    return prevSeasonEventSearchCache.data;
+  }
+  if (prevSeasonEventSearchCache.promise) return prevSeasonEventSearchCache.promise;
+
+  const promise = collectAllPages<Event>((page) =>
+    api.events({
+      per_page: 250,
+      page,
+      start: dateOnly(addDays(today, -455)),
+      end: dateOnly(addDays(today, -91)),
+      "program[]": vexProgramIds,
+    }),
+  ).then((result) => {
+    prevSeasonEventSearchCache = { data: result.data, updatedAt: Date.now() };
+    return result.data;
+  });
+
+  prevSeasonEventSearchCache = { ...prevSeasonEventSearchCache, promise };
+
+  try {
+    return await promise;
+  } catch (error) {
+    prevSeasonEventSearchCache = { data: prevSeasonEventSearchCache.data, updatedAt: prevSeasonEventSearchCache.updatedAt };
+    throw error;
+  }
+}
+
+// Two seasons back: ~2 years before current window. Only fetched as a last resort
+// when both the current window and prev-season still produce fewer than 3 results.
+async function loadOlderSeasonEvents(): Promise<Event[]> {
+  const now = Date.now();
+  if (olderSeasonEventSearchCache.data && now - olderSeasonEventSearchCache.updatedAt < globalEventSearchCacheMs) {
+    return olderSeasonEventSearchCache.data;
+  }
+  if (olderSeasonEventSearchCache.promise) return olderSeasonEventSearchCache.promise;
+
+  const promise = collectAllPages<Event>((page) =>
+    api.events({
+      per_page: 250,
+      page,
+      start: dateOnly(addDays(today, -820)),
+      end: dateOnly(addDays(today, -456)),
+      "program[]": vexProgramIds,
+    }),
+  ).then((result) => {
+    olderSeasonEventSearchCache = { data: result.data, updatedAt: Date.now() };
+    return result.data;
+  });
+
+  olderSeasonEventSearchCache = { ...olderSeasonEventSearchCache, promise };
+
+  try {
+    return await promise;
+  } catch (error) {
+    olderSeasonEventSearchCache = { data: olderSeasonEventSearchCache.data, updatedAt: olderSeasonEventSearchCache.updatedAt };
     throw error;
   }
 }
@@ -1326,12 +1465,90 @@ function GradeBadge({ grade }: { grade?: string | null }) {
   return <span className="badge">{gradeCode(grade)}</span>;
 }
 
+function CompareModeButton() {
+  const active = useComparePickMode();
+  return (
+    <button
+      type="button"
+      className={`icon-button compare-mode-btn${active ? " active" : ""}`}
+      onClick={toggleComparePickMode}
+      title={active ? "Exit compare mode" : "Click team numbers to add teams to compare"}
+      aria-label={active ? "Exit compare mode" : "Enter compare mode"}
+    >
+      <span aria-hidden="true">A/B</span>
+    </button>
+  );
+}
+
+function ComparePickHint() {
+  const active = useComparePickMode();
+  if (!active) return null;
+  return (
+    <div className="compare-pick-hint">
+      Click team numbers to add or remove teams from compare.
+    </div>
+  );
+}
+
+function addOrRemoveCompareTeam(teamId: number, teamNumber: string, programCode: string, teamName?: string | null) {
+  if (isInTray(teamId)) {
+    removeFromTray(teamId);
+    return;
+  }
+  if (!canAddToTray()) return;
+  addToTray({ teamId, teamNumber, programCode, teamName: teamName ?? undefined });
+}
+
+function CompareTeamLink({
+  teamId,
+  teamNumber,
+  programCode,
+  teamName,
+  className,
+  children,
+}: {
+  teamId: number;
+  teamNumber: string;
+  programCode?: string;
+  teamName?: string | null;
+  className?: string;
+  children?: ReactNode;
+}) {
+  const compareMode = useComparePickMode();
+  const inTray = useIsInTray(teamId);
+  const full = !canAddToTray() && !inTray;
+  const content = children ?? teamNumber;
+
+  if (!compareMode) {
+    return (
+      <Link href={teamSlugPath(programCode, teamNumber, teamId)} className={className}>
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={`compare-pick-team${className ? ` ${className}` : ""}${inTray ? " in-tray" : ""}${full ? " disabled" : ""}`}
+      disabled={full}
+      title={inTray ? "Remove from comparison" : full ? "Tray full (3/3)" : "Add to comparison"}
+      onClick={(e) => {
+        e.stopPropagation();
+        addOrRemoveCompareTeam(teamId, teamNumber, programCode ?? "", teamName);
+      }}
+    >
+      {content}
+    </button>
+  );
+}
+
 function TeamMiniLink({ team, className }: { team: { id: number; name: string }; className?: string }) {
   const programCode = useContext(ProgramContext);
   return (
-    <Link href={teamSlugPath(programCode, team.name, team.id)} className={className}>
+    <CompareTeamLink teamId={team.id} teamNumber={team.name} programCode={programCode} className={className}>
       {team.name}
-    </Link>
+    </CompareTeamLink>
   );
 }
 
@@ -1359,6 +1576,29 @@ function FavoriteButton({ id, kind }: { id: number | string; kind: "team" | "eve
       onClick={() => toggleFavorite(kind, id)}
     >
       <Star size={17} fill={active ? "currentColor" : "none"} />
+    </button>
+  );
+}
+
+// ── Compare tray buttons ─────────────────────────────────────────────────────
+
+/** Icon button shown in TeamDetail header — adds/removes the team from the compare tray. */
+/** Small button for team rows in tables — adds/removes from tray. */
+function CompareRowBtn({ teamId, teamNumber, programCode, teamName }: { teamId: number; teamNumber: string; programCode: string; teamName?: string }) {
+  const inTray = useIsInTray(teamId);
+  const full = !canAddToTray() && !inTray;
+  return (
+    <button
+      type="button"
+      className={`compare-row-btn${inTray ? " in-tray" : ""}${full ? " disabled" : ""}`}
+      title={inTray ? "Remove from comparison" : full ? "Tray full (3/3)" : "Add to comparison"}
+      disabled={full}
+      onClick={(e) => {
+        e.stopPropagation();
+        inTray ? removeFromTray(teamId) : addToTray({ teamId, teamNumber, programCode, teamName });
+      }}
+    >
+      {inTray ? <Check size={11} /> : <Plus size={11} />}
     </button>
   );
 }
@@ -1817,17 +2057,40 @@ function Metric({ icon, label, value }: { icon: ReactNode; label: string; value:
   );
 }
 
-function Panel({ title, icon, children, action }: { title: ReactNode; icon: ReactNode; children: ReactNode; action?: ReactNode }) {
+function Panel({ title, icon, children, action, collapsible, storageKey, defaultCollapsed }: { title: ReactNode; icon: ReactNode; children: ReactNode; action?: ReactNode; collapsible?: boolean; storageKey?: string; defaultCollapsed?: boolean }) {
+  const [collapsed, setCollapsed] = useState(() => {
+    if (!collapsible || !storageKey) return false;
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored !== null) return stored === "1";
+    } catch { /* ignore */ }
+    return defaultCollapsed ?? false;
+  });
+  function toggle() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      if (storageKey) { try { localStorage.setItem(storageKey, next ? "1" : "0"); } catch { /* ignore */ } }
+      return next;
+    });
+  }
   return (
-    <section className="panel">
+    <section className={`panel${collapsible ? " panel-collapsible" : ""}${collapsed ? " is-collapsed" : ""}`}>
       <h2>
-        <span className="panel-heading-title">
-          {icon}
-          {title}
-        </span>
+        {collapsible ? (
+          <button type="button" className="panel-heading-title panel-heading-toggle" onClick={toggle} aria-expanded={!collapsed}>
+            <ChevronDown size={15} className="panel-collapse-chevron" />
+            {icon}
+            {title}
+          </button>
+        ) : (
+          <span className="panel-heading-title">
+            {icon}
+            {title}
+          </span>
+        )}
         {action && <span className="panel-heading-action">{action}</span>}
       </h2>
-      {children}
+      {!collapsed && children}
     </section>
   );
 }
@@ -2671,7 +2934,7 @@ function EventTable({
   const columnCount = 3 + (showPriority ? 1 : 0) + (showProgram ? 1 : 0) + (showSeason ? 1 : 0) + (showLevel ? 1 : 0) + (showGrade ? 1 : 0);
 
   return (
-    <table>
+    <table className={compact ? "compact-event-table" : undefined}>
       <thead>
         <tr>
           <th>Event</th>
@@ -2698,9 +2961,9 @@ function EventTable({
         <tbody>
           {events.map((event) => (
             <tr key={event.id}>
-              <td>
-                <Link href={eventPath(event)}>{event.name}</Link>
-                <div className="muted">{event.sku}</div>
+              <td className="event-name-cell">
+                <Link href={eventPath(event)} className="event-name-link">{event.name}</Link>
+                <div className="muted event-sku-line">{event.sku}</div>
               </td>
               {showPriority && (
                 <td>
@@ -3105,6 +3368,7 @@ function TeamsPage() {
           !isSearchingTeams && (
             <span className="teams-cache-controls">
               {lastUpdated && <span className="teams-cache-time">Updated {formatRelativeTime(lastUpdated)}</span>}
+              <CompareModeButton />
               <button
                 type="button"
                 className="teams-reload-btn"
@@ -3130,6 +3394,7 @@ function TeamsPage() {
 function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number }) {
   const [page, setPage] = useState(1);
   const [expandedTeamId, setExpandedTeamId] = useState<number | null>(null);
+  const compareMode = useComparePickMode();
   const totalPages = localPageSize ? Math.max(1, Math.ceil(teams.length / localPageSize)) : 1;
   const visibleTeams = localPageSize ? teams.slice((page - 1) * localPageSize, page * localPageSize) : teams;
 
@@ -3140,6 +3405,7 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
 
   return (
     <>
+      <ComparePickHint />
       <table className="team-table">
         <thead>
           <tr>
@@ -3157,19 +3423,26 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
               </span>
             </th>
             <th className="quick-look-col"></th>
+            <th className="compare-col">Add to compare</th>
           </tr>
         </thead>
         {loading ? (
-          <LoadingTable columns={7} />
+          <LoadingTable columns={8} />
         ) : (
           <tbody>
             {visibleTeams.map((team) => {
               const expanded = expandedTeamId === team.id;
               return (
                 <Fragment key={team.id}>
-                  <tr key={team.id} className="team-row" onClick={() => navigate(teamPath(team))}>
+                  <tr key={team.id} className={`team-row${compareMode ? " compare-pick-row" : ""}`} onClick={() => { if (!compareMode) navigate(teamPath(team)); }}>
                     <td className="team-cell truncate-cell">
-                      <span className="team-number">{team.number}</span>
+                      <CompareTeamLink
+                        teamId={team.id}
+                        teamNumber={team.number}
+                        programCode={programSlug(team.program)}
+                        teamName={team.team_name}
+                        className="team-number"
+                      />
                       {team.team_name && <span>{team.team_name}</span>}
                     </td>
                     <td>
@@ -3188,15 +3461,22 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
                         setExpandedTeamId(expanded ? null : team.id);
                       }}
                     >
-                      <button className={`quick-look-btn${expanded ? " active" : ""}`}>
+                      <button type="button" className={`quick-look-btn${expanded ? " active" : ""}`} title="Quick look" aria-label={`Quick look for ${team.number}`}>
                         <PanelRight size={14} />
-                        Quick look
                       </button>
+                    </td>
+                    <td className="compare-col" onClick={(e) => e.stopPropagation()}>
+                      <CompareRowBtn
+                        teamId={team.id}
+                        teamNumber={team.number}
+                        programCode={programSlug(team.program)}
+                        teamName={team.team_name ?? undefined}
+                      />
                     </td>
                   </tr>
                   {expanded && (
                     <tr key={`${team.id}-details`} className="team-detail-row">
-                      <td colSpan={7}>
+                      <td colSpan={8}>
                         <div className="team-detail-content">
                           <div className="team-detail-top">
                             <div>
@@ -3221,7 +3501,7 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
             })}
             {!teams.length && (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <Empty />
                 </td>
               </tr>
@@ -3425,6 +3705,17 @@ function PageTitle({ icon, title, subtitle }: { icon: ReactNode; title: string; 
   );
 }
 
+const EVENT_DETAIL_TABS = ["matches", "rankings", "skills", "awards", "teams", "team-matches"] as const;
+type EventDetailTab = typeof EVENT_DETAIL_TABS[number];
+const TEAM_DETAIL_TABS = ["about", "events", "rankings", "skills", "awards"] as const;
+type TeamDetailTab = typeof TEAM_DETAIL_TABS[number];
+
+function eventInitialTab(hasFocusTeam: boolean): EventDetailTab {
+  const fallback: EventDetailTab = hasFocusTeam ? "team-matches" : "matches";
+  const hash = hashTab(EVENT_DETAIL_TABS, fallback);
+  return hash === "team-matches" && !hasFocusTeam ? "matches" : hash;
+}
+
 function EventDetail({ param }: { param: string }) {
   const [focusTeam, setFocusTeam] = useState<{ id: number; number: string } | null>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -3433,10 +3724,7 @@ function EventDetail({ param }: { param: string }) {
     if (teamId && teamNum) return { id: Number(teamId), number: decodeURIComponent(teamNum) };
     return null;
   });
-  const [tab, setTab] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("focusTeam") ? "team-matches" : "matches";
-  });
+  const [tab, setTab] = useState<EventDetailTab>(() => eventInitialTab(!!new URLSearchParams(window.location.search).get("focusTeam")));
   const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
   const tabLayout = useTabLayout();
@@ -3523,6 +3811,16 @@ function EventDetail({ param }: { param: string }) {
     }
   }, [event?.id, divisions, selectedDivision]);
 
+  useEffect(() => {
+    const handler = () => setTab(eventInitialTab(!!focusTeam));
+    window.addEventListener("hashchange", handler);
+    return () => window.removeEventListener("hashchange", handler);
+  }, [!!focusTeam]);
+
+  useEffect(() => {
+    replaceCurrentHash(tab);
+  }, [tab]);
+
   // Record this event in recently-viewed history once loaded
   useEffect(() => {
     if (!event) return;
@@ -3535,6 +3833,19 @@ function EventDetail({ param }: { param: string }) {
     });
   }, [event?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Expose event season + event ID to comparison modal — skips season-derivation
+  // API call and enables per-event stat rows.  Cleared on unmount.
+  useEffect(() => {
+    _currentEventSeasonId = event?.season?.id ?? null;
+    _currentEventId = event?.id ?? null;
+    return () => { _currentEventSeasonId = null; _currentEventId = null; };
+  }, [event?.season?.id, event?.id]);
+
+  useEffect(() => {
+    _currentEventRankings = rankings.data?.data ?? [];
+    return () => { _currentEventRankings = []; };
+  }, [event?.id, rankings.data]);
+
   if (loading || error || !event) {
     return (
       <section className="page">
@@ -3542,6 +3853,10 @@ function EventDetail({ param }: { param: string }) {
       </section>
     );
   }
+
+  _currentEventSeasonId = event.season.id;
+  _currentEventId = event.id;
+  _currentEventRankings = rankings.data?.data ?? [];
 
   return (
     <ProgramContext.Provider value={programSlug(event.program)}>
@@ -3569,9 +3884,10 @@ function EventDetail({ param }: { param: string }) {
       <div className={`view-tabs view-tabs-${tabLayout}`}>
       <Tabs
         active={tab}
-        onChange={setTab}
+        onChange={(next) => setTab(next as EventDetailTab)}
         orientation={tabLayout}
         showLayoutToggle
+        action={<CompareModeButton />}
         tabs={[
           ...(focusTeam
             ? [
@@ -3582,7 +3898,7 @@ function EventDetail({ param }: { param: string }) {
                   () => {
                     setFocusTeam(null);
                     setTab("matches");
-                    window.history.replaceState(null, "", eventPath(event));
+                    window.history.replaceState(null, "", urlWithHash(eventPath(event), "matches"));
                   },
                 ] as [string, string, ReactNode, () => void],
               ]
@@ -3595,6 +3911,7 @@ function EventDetail({ param }: { param: string }) {
         ]}
       />
       <div className="view-tabs-body">
+      <ComparePickHint />
       {keyAwards.length > 0 && <EventHighlights awards={keyAwards} />}
       {divisions.length > 1 && (tab === "matches" || tab === "rankings") && (
         <div className="division-tabs" aria-label="Event divisions">
@@ -4203,7 +4520,7 @@ function TeamAboutTab({
 }
 
 function TeamDetail({ param }: { param: string }) {
-  const [tab, setTab] = useState("about");
+  const [tab, setTab] = useState<TeamDetailTab>(() => hashTab(TEAM_DETAIL_TABS, "about"));
   const tabLayout = useTabLayout();
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const [dateDirection, setDateDirection] = useState<DateDirection>("asc");
@@ -4276,6 +4593,16 @@ function TeamDetail({ param }: { param: string }) {
   }, [selectedSeasonId, seasonOptions]);
 
   useEffect(() => {
+    const handler = () => setTab(hashTab(TEAM_DETAIL_TABS, "about"));
+    window.addEventListener("hashchange", handler);
+    return () => window.removeEventListener("hashchange", handler);
+  }, []);
+
+  useEffect(() => {
+    replaceCurrentHash(tab);
+  }, [tab]);
+
+  useEffect(() => {
     setMatchesBySeason({});
     setRankingsBySeason({});
     setSkillsBySeason({});
@@ -4293,6 +4620,12 @@ function TeamDetail({ param }: { param: string }) {
       sub: [team.team_name, locationLine(team)].filter(Boolean).join(" · "),
       badge: programSlug(team.program) || team.program?.code || "VEX",
     });
+  }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Expose current team to the global C shortcut handler
+  useEffect(() => {
+    _currentTeam = team ?? null;
+    return () => { _currentTeam = null; };
   }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -4414,7 +4747,7 @@ function TeamDetail({ param }: { param: string }) {
       <div className={`view-tabs view-tabs-${tabLayout}`}>
       <Tabs
         active={tab}
-        onChange={setTab}
+        onChange={(next) => setTab(next as TeamDetailTab)}
         orientation={tabLayout}
         showLayoutToggle
         tabs={[
@@ -4471,7 +4804,7 @@ function TeamDetail({ param }: { param: string }) {
           detailsLoading={selectedMatches.loading || selectedRankings.loading || selectedSkills.loading || selectedAwards.loading}
           onViewMatches={(eventId) => {
             const ev = eventIndex.get(eventId);
-            navigate(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+            navigate(urlWithHash(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`, "team-matches"));
           }}
         />
       )}
@@ -4486,7 +4819,7 @@ function TeamDetail({ param }: { param: string }) {
           isIq={isIq}
           onViewMatches={(eventId) => {
             const ev = eventIndex.get(eventId);
-            navigate(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+            navigate(urlWithHash(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`, "team-matches"));
           }}
         />
       )}
@@ -4498,7 +4831,7 @@ function TeamDetail({ param }: { param: string }) {
           direction={dateDirection}
           onViewMatches={(eventId) => {
             const ev = eventIndex.get(eventId);
-            navigate(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+            navigate(urlWithHash(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`, "team-matches"));
           }}
         />
       )}
@@ -4511,7 +4844,7 @@ function TeamDetail({ param }: { param: string }) {
           direction={dateDirection}
           onViewMatches={(eventId) => {
             const ev = eventIndex.get(eventId);
-            navigate(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`);
+            navigate(urlWithHash(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`, "team-matches"));
           }}
         />
       )}
@@ -5488,12 +5821,14 @@ function Tabs({
   onChange,
   orientation = "horizontal",
   showLayoutToggle = false,
+  action,
 }: {
   tabs: Array<[string, string, ReactNode, (() => void)?]>;
   active: string;
   onChange: (tab: string) => void;
   orientation?: TabLayout;
   showLayoutToggle?: boolean;
+  action?: ReactNode;
 }) {
   if (orientation === "vertical") {
     return (
@@ -5532,6 +5867,7 @@ function Tabs({
             Horizontal view
           </button>
         )}
+        {action && <div className="view-tabs-rail-action">{action}</div>}
       </nav>
     );
   }
@@ -5564,6 +5900,7 @@ function Tabs({
   return (
     <div className="view-tabs-bar">
       {bar}
+      {action && <span className="view-tabs-bar-action">{action}</span>}
       <TabLayoutToggle layout={orientation} />
     </div>
   );
@@ -6709,6 +7046,7 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
               <th>High</th>
               <th>Low</th>
               <th>Dropped scores</th>
+              <th className="compare-col">Add to compare</th>
             </tr>
           </thead>
           <tbody>
@@ -6718,7 +7056,7 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
                 <tr key={row.id}>
                   <td>{row.rank}</td>
                   <td className="team-cell">
-                    <Link href={teamSlugPath(programCode, row.team.name, row.team.id)}>{row.team.name}</Link>
+                    <CompareTeamLink teamId={row.team.id} teamNumber={row.team.name} programCode={programCode} />
                   </td>
                   <td>{formatNumber(stats.avg)}</td>
                   <td>{stats.high ?? "-"}</td>
@@ -6726,12 +7064,15 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
                   <td>
                     <DroppedScores dropped={stats.dropped} />
                   </td>
+                  <td className="compare-col">
+                    <CompareRowBtn teamId={row.team.id} teamNumber={row.team.name} programCode={programCode ?? ""} />
+                  </td>
                 </tr>
               );
             })}
             {!sortedRankings.length && (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <Empty>No rankings returned.</Empty>
                 </td>
               </tr>
@@ -6755,6 +7096,7 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
             <th>SP</th>
             <th>High</th>
             <th>Avg</th>
+            <th className="compare-col">Add to compare</th>
           </tr>
         </thead>
         <tbody>
@@ -6762,7 +7104,7 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
             <tr key={row.id}>
               <td>{row.rank}</td>
               <td className="team-cell">
-                <Link href={teamSlugPath(programCode, row.team.name, row.team.id)}>{row.team.name}</Link>
+                <CompareTeamLink teamId={row.team.id} teamNumber={row.team.name} programCode={programCode} />
               </td>
               <td>
                 {row.wins ?? 0}-{row.losses ?? 0}-{row.ties ?? 0}
@@ -6772,11 +7114,14 @@ function RankingsTable({ rankings, isIq = false, matches = [] }: { rankings: Ran
               <td>{row.sp ?? "-"}</td>
               <td>{row.high_score ?? "-"}</td>
               <td>{formatNumber(row.average_points)}</td>
+              <td className="compare-col">
+                <CompareRowBtn teamId={row.team.id} teamNumber={row.team.name} programCode={programCode ?? ""} />
+              </td>
             </tr>
           ))}
           {!sortedRankings.length && (
             <tr>
-              <td colSpan={8}>
+              <td colSpan={9}>
                 <Empty>No rankings returned.</Empty>
               </td>
             </tr>
@@ -6840,7 +7185,7 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
               <tr key={row.team.id}>
                 <td>{row.rank ?? "-"}</td>
                 <td>
-                  <Link href={teamSlugPath(programCode, row.team.name, row.team.id)}>{row.team.name}</Link>
+                  <CompareTeamLink teamId={row.team.id} teamNumber={row.team.name} programCode={programCode} />
                 </td>
                 <td>{total || "-"}</td>
                 <td>
@@ -6940,7 +7285,7 @@ function InsightsPage() {
                 <tr key={`${row.rank}-${row.team.id}`}>
                   <td>{row.rank}</td>
                   <td>
-                    <Link href={teamSlugPath(program.toUpperCase(), row.team.number, row.team.id)}>{row.team.number}</Link>
+                    <CompareTeamLink teamId={row.team.id} teamNumber={row.team.number} programCode={program.toUpperCase()} />
                     <div className="muted">{row.team.name}</div>
                   </td>
                   <td>{formatNumber(row.superscore, 2)}</td>
@@ -8099,6 +8444,9 @@ function RecentlyViewedPanel() {
     <Panel
       title="Recent"
       icon={<Clock size={15} />}
+      collapsible
+      storageKey="vex-panel-recent-collapsed"
+      defaultCollapsed
       action={
         <button
           type="button"
@@ -8215,21 +8563,33 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   const [events, setEvents] = useState<Event[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [eventsLoading, setEventsLoading] = useState(false);
+  // True while we're fetching older seasons to fill up to 3 — results already visible but more may come
+  const [searchingOlderSeasons, setSearchingOlderSeasons] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const recent = useRecentlyViewed();
+  const trayEntries = useCompareTray();
+
+  // Pre-warm older season caches the moment the palette opens so fallback
+  // fetches are already in flight (or done) by the time the user types.
+  // The current season is already warm from GlobalSearch usage; these two aren't.
+  useEffect(() => {
+    void loadPrevSeasonEvents().catch(() => {});
+    void loadOlderSeasonEvents().catch(() => {});
+  }, []);
 
   // Mirror GlobalSearch exactly: fire both searches independently in parallel
   useEffect(() => {
     if (!debounced) {
       setTeams([]); setEvents([]);
       setTeamsLoading(false); setEventsLoading(false);
+      setSearchingOlderSeasons(false);
       return;
     }
 
     let live = true;
 
-    // Teams — same dual-API call as GlobalSearch
+    // Teams — same dual-API call as GlobalSearch, capped at 3 in the palette
     setTeamsLoading(true);
     Promise.all([
       api.teams({ teamSearch: debounced, per_page: 50 }),
@@ -8237,21 +8597,53 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     ])
       .then(([rseTeams, exactTeams]) => {
         if (!live) return;
-        setTeams(rankTeamsForSearch(uniqueTeams([...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 5));
+        setTeams(rankTeamsForSearch(uniqueTeams([...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 3));
       })
       .catch(() => { if (live) setTeams([]); })
       .finally(() => { if (live) setTeamsLoading(false); });
 
-    // Events — same loadGlobalEventSearchEvents() + filterAndSortEvents() as GlobalSearch
-    // This cache is typically already warm from a prior GlobalSearch query
+    // Events — 3 results, lazily falling back through older seasons:
+    //   • Current season results appear immediately when the first fetch resolves.
+    //   • If < 3, a subtle "Searching older seasons…" note appears while we fetch more.
+    //   • Each older-season cache is loaded on demand and reused within the 5-min TTL.
+    const SPOTLIGHT_EVENT_LIMIT = 3;
+    const opts = { search: debounced, hideCanceled: true, sort: "smart" as const };
     setEventsLoading(true);
-    loadGlobalEventSearchEvents()
-      .then((searchEvents) => {
+    setSearchingOlderSeasons(false);
+
+    const doEventSearch = async () => {
+      const currentEvents = await loadGlobalEventSearchEvents();
+      if (!live) return;
+
+      const current = filterAndSortEvents(currentEvents, opts);
+      // Surface whatever we have right now — don't wait for fallbacks
+      setEvents(current.slice(0, SPOTLIGHT_EVENT_LIMIT));
+      setEventsLoading(false);
+
+      if (current.length >= SPOTLIGHT_EVENT_LIMIT) return;
+
+      // Need older seasons — show the inline indicator while fetching
+      setSearchingOlderSeasons(true);
+      try {
+        // Season 1 fallback
+        const prev1 = await loadPrevSeasonEvents();
         if (!live) return;
-        setEvents(filterAndSortEvents(searchEvents, { search: debounced, hideCanceled: true, sort: "smart" }).slice(0, 5));
-      })
-      .catch(() => { if (live) setEvents([]); })
-      .finally(() => { if (live) setEventsLoading(false); });
+        const after1 = [...current, ...filterAndSortEvents(prev1, opts)];
+        setEvents(after1.slice(0, SPOTLIGHT_EVENT_LIMIT));
+        if (after1.length >= SPOTLIGHT_EVENT_LIMIT) return;
+
+        // Season 2 fallback
+        const prev2 = await loadOlderSeasonEvents();
+        if (!live) return;
+        setEvents([...after1, ...filterAndSortEvents(prev2, opts)].slice(0, SPOTLIGHT_EVENT_LIMIT));
+      } finally {
+        if (live) setSearchingOlderSeasons(false);
+      }
+    };
+
+    doEventSearch().catch(() => {
+      if (live) { setEvents([]); setEventsLoading(false); setSearchingOlderSeasons(false); }
+    });
 
     return () => { live = false; };
   }, [debounced]);
@@ -8261,8 +8653,14 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 
   // Build flat items list for keyboard navigation
   const items = useMemo<SpotlightItem[]>(() => {
+    // Dynamic "Open comparison" action injected when tray has ≥ 2 teams
+    const compareAction: SpotlightItem | null = trayEntries.length >= 2
+      ? { kind: "action", label: `Compare: ${trayEntries.map((e) => e.teamNumber).join(" · ")}`, sub: "Open comparison view", path: "__compare__", icon: <Scale size={13} /> }
+      : null;
+
     if (!debounced) {
       return [
+        ...(compareAction ? [compareAction] : []),
         ...recent.slice(0, 8).map((entry): SpotlightItem => ({ kind: "recent", entry })),
         ...SPOTLIGHT_ACTIONS.map((a): SpotlightItem => ({ kind: "action", ...a })),
       ];
@@ -8273,9 +8671,14 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
       ...events.map((ev): SpotlightItem => ({ kind: "event", event: ev })),
       ...actionMatches.map((a): SpotlightItem => ({ kind: "action", ...a })),
     ];
-  }, [debounced, teams, events, recent]);
+  }, [debounced, teams, events, recent, trayEntries]);
 
   const handleSelect = useCallback((item: SpotlightItem) => {
+    if (item.kind === "action" && item.path === "__compare__") {
+      openCompareModal(_currentEventSeasonId ?? undefined, _currentEventId ?? undefined);
+      onClose();
+      return;
+    }
     const path =
       item.kind === "team"   ? teamPath(item.team) :
       item.kind === "event"  ? eventPath(item.event) :
@@ -8298,7 +8701,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   }, [items, activeIndex, onClose, handleSelect]);
 
   const loading = teamsLoading || eventsLoading;
-  const showEmpty = !!debounced && !loading && items.length === 0;
+  const showEmpty = !!debounced && !loading && !searchingOlderSeasons && items.length === 0;
 
   // Section labels for grouped display
   const hasRecent  = !debounced && recent.length > 0;
@@ -8365,6 +8768,10 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
             );
           })}
 
+          {searchingOlderSeasons && (
+            <div className="spotlight-older-seasons">Searching older seasons…</div>
+          )}
+
           {showEmpty && (
             <div className="spotlight-empty">No results for "{debounced}"</div>
           )}
@@ -8382,6 +8789,584 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 }
 
 // ── Shortcuts cheat-sheet overlay ────────────────────────────────────────────
+
+// ── Compare Tray ─────────────────────────────────────────────────────────────
+
+function CompareTray({ entries }: { entries: TrayEntry[] }) {
+  const canCompare = entries.length >= 2;
+  return (
+    <div className="compare-tray visible" role="complementary" aria-label="Comparison tray">
+      {[0, 1, 2].map((i) => {
+        const e = entries[i];
+        return (
+          <div key={i} className={`compare-slot${e ? " filled" : ""}`}>
+            {e ? (
+              <>
+                <span className="compare-slot-label">{e.teamNumber}</span>
+                <button type="button" className="compare-slot-remove" onClick={() => removeFromTray(e.teamId)} aria-label={`Remove ${e.teamNumber}`}>
+                  <X size={11} />
+                </button>
+              </>
+            ) : (
+              <span className="compare-slot-empty">+</span>
+            )}
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        className="compare-tray-btn"
+        disabled={!canCompare}
+        onClick={() => openCompareModal(_currentEventSeasonId ?? undefined, _currentEventId ?? undefined)}
+      >
+        {canCompare ? "Compare" : `Add ${2 - entries.length} more`}
+      </button>
+      <button type="button" className="compare-tray-clear" onClick={clearTray}>
+        Clear
+      </button>
+    </div>
+  );
+}
+
+// ── Comparison Modal ──────────────────────────────────────────────────────────
+
+type TeamCompareSlot = {
+  entry: TrayEntry;
+  profileLoading: boolean;
+  profileError: string | null;
+  profile: Team | null;
+  dataLoading: boolean;
+  dataError: string | null;
+  events: Event[];
+  rankings: Ranking[];
+  awards: Award[];
+  seasonId: number | null;
+  worldSkillsLoading: boolean;
+  worldSkillsEntry: WorldSkillsEntry | null;
+};
+
+type CompareStats = {
+  // Season-wide performance
+  wins: number; losses: number; ties: number; totalMatches: number;
+  winRate: number | null;
+  avgAwp: number | null;
+  sigAwp: number;
+  avgWp: number | null;
+  avgAp: number | null;
+  // World Skills ranking
+  wsRank: number | null; wsScore: number | null;
+  wsDriver: number | null; wsProg: number | null;
+  // Accolades
+  awardCount: number; topAwardTitle: string | null;
+  eventCount: number;
+  // Event-specific (null when not in event context)
+  evtRank: number | null; evtRecord: string | null;
+  evtWp: number | null; evtAp: number | null; evtAwp: number | null;
+};
+
+function emptyCompareStats(): CompareStats {
+  return {
+    wins: 0, losses: 0, ties: 0, totalMatches: 0, winRate: null,
+    avgAwp: null, sigAwp: 0, avgWp: null, avgAp: null,
+    wsRank: null, wsScore: null, wsDriver: null, wsProg: null,
+    awardCount: 0, topAwardTitle: null, eventCount: 0,
+    evtRank: null, evtRecord: null, evtWp: null, evtAp: null, evtAwp: null,
+  };
+}
+
+function rankingAwp(ranking: Ranking) {
+  return Math.max(0, (ranking.wp ?? 0) - ((ranking.wins ?? 0) * 2 + (ranking.ties ?? 0)));
+}
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function currentEventRankingForTeam(teamId: number, contextEventId: number | null) {
+  if (!contextEventId) return null;
+  return _currentEventRankings.find((r) => r.event.id === contextEventId && r.team.id === teamId) ?? null;
+}
+
+async function loadCompareRankings(teamId: string, seasonId: number, numericTeamId: number, contextEventId: number | null) {
+  const load = () => collectAllPages<Ranking>((page) => api.teamRankings(teamId, { "season[]": [seasonId], per_page: 250, page }));
+  let result = await load();
+
+  if (!result.data.length) {
+    await delay(350);
+    result = await load();
+  }
+
+  const eventRanking = currentEventRankingForTeam(numericTeamId, contextEventId);
+  if (eventRanking && !result.data.some((r) => r.event.id === eventRanking.event.id)) {
+    return { ...result, data: [...result.data, eventRanking] };
+  }
+
+  return result;
+}
+
+function compareSeasonCandidates(events: Event[], contextSeasonId: number | null) {
+  if (contextSeasonId) return [contextSeasonId];
+
+  const latestBySeason = new Map<number, number>();
+  for (const event of events) {
+    if (isScrimmageEvent(event)) continue;
+    const latest = latestBySeason.get(event.season.id) ?? 0;
+    latestBySeason.set(event.season.id, Math.max(latest, event.start ? new Date(event.start).getTime() : 0));
+  }
+
+  return [...latestBySeason.entries()]
+    .sort((a, b) => b[1] - a[1] || b[0] - a[0])
+    .map(([seasonId]) => seasonId);
+}
+
+async function loadCompareSeasonRankings(
+  teamId: string,
+  numericTeamId: number,
+  contextEventId: number | null,
+  candidateSeasonIds: number[],
+) {
+  let fallback: { seasonId: number; rankingsRes: Awaited<ReturnType<typeof loadCompareRankings>> } | null = null;
+
+  for (const seasonId of candidateSeasonIds) {
+    const rankingsRes = await loadCompareRankings(teamId, seasonId, numericTeamId, contextEventId);
+    fallback ??= { seasonId, rankingsRes };
+    if (contextEventId || rankingsRes.data.length) return { seasonId, rankingsRes };
+  }
+
+  return fallback;
+}
+
+function computeCompareStats(slot: TeamCompareSlot, contextEventId: number | null): CompareStats {
+  const { profile, events, rankings, awards, seasonId, worldSkillsEntry } = slot;
+  if (!profile || !seasonId || slot.dataLoading) return emptyCompareStats();
+
+  const isIq = isIqProgramInfo(profile.program);
+  const teamId = profile.id;
+  const eventIndex = makeEventIndex(events);
+  const nonScrimmageRankings = rankings.filter((r) => !isScrimmageEvent(eventIndex.get(r.event.id)));
+
+  // ── Season record — use ranking entries for both VRC and IQ
+  let wins = 0, losses = 0, ties = 0;
+  for (const r of nonScrimmageRankings) {
+    wins   += r.wins   ?? 0;
+    losses += r.losses ?? 0;
+    ties   += r.ties   ?? 0;
+  }
+  const totalMatches = wins + losses + ties;
+  const winRate = (!isIq && totalMatches > 0) ? wins / totalMatches : null;
+
+  const withMatches = nonScrimmageRankings.filter((r) => (r.wins ?? 0) + (r.losses ?? 0) + (r.ties ?? 0) > 0);
+  const avgFromRankings = (value: (ranking: Ranking) => number | null | undefined) => {
+    const values = withMatches.map(value).filter((v): v is number => v != null);
+    return values.length ? values.reduce((s, v) => s + v, 0) / values.length : null;
+  };
+  const avgAwp = avgFromRankings((r) => rankingAwp(r));
+  const avgWp = avgFromRankings((r) => r.wp);
+  const avgAp = avgFromRankings((r) => r.ap);
+  const sigAwp = nonScrimmageRankings.reduce((sum, r) => sum + (isMarqueeEvent(eventIndex.get(r.event.id)) ? rankingAwp(r) : 0), 0);
+
+  // ── World Skills ──
+  const wsRank   = worldSkillsEntry?.rank ?? null;
+  const wsScore  = worldSkillsEntry?.scores.score ?? null;
+  const wsDriver = worldSkillsEntry?.scores.driver ?? null;
+  const wsProg   = worldSkillsEntry?.scores.programming ?? null;
+
+  // ── Awards ──
+  const teamAwards = awards.filter((a) => awardTeamWinners(a).some((w) => w.team.id === teamId));
+  const sorted = sortAwards(teamAwards);
+  const uniqueEventIds = new Set(events.filter((e) => !isScrimmageEvent(e)).map((e) => e.id));
+
+  // ── Event-specific stats (only when contextEventId is set) ──
+  const evtRanking = contextEventId ? nonScrimmageRankings.find((r) => r.event.id === contextEventId) ?? null : null;
+
+  return {
+    wins, losses, ties, totalMatches, winRate,
+    avgAwp, sigAwp, avgWp, avgAp,
+    wsRank, wsScore, wsDriver, wsProg,
+    awardCount: teamAwards.length,
+    topAwardTitle: sorted[0]?.title ?? null,
+    eventCount: uniqueEventIds.size,
+    evtRank:      evtRanking?.rank ?? null,
+    evtRecord:    evtRanking ? `${evtRanking.wins ?? 0}W ${evtRanking.losses ?? 0}L ${evtRanking.ties ?? 0}T` : null,
+    evtWp:        evtRanking?.wp ?? null,
+    evtAp:        evtRanking?.ap ?? null,
+    evtAwp:       evtRanking ? rankingAwp(evtRanking) : null,
+  };
+}
+
+type CompareRowDef =
+  | { key: string; isSection: true; label: string }
+  | { key: string; isSection?: false; label: string; getValue: (s: CompareStats, slot: TeamCompareSlot) => string | number | null; higherBetter: boolean | null };
+
+function buildCompareRows(hasEventContext: boolean): CompareRowDef[] {
+  return [
+    { key: "s-perf",    isSection: true, label: "Season Performance" },
+    { key: "winRate",   label: "Win Rate",    getValue: (s) => s.winRate != null ? `${(s.winRate * 100).toFixed(0)}%` : null, higherBetter: true },
+    { key: "record",    label: "Record",      getValue: (s) => s.totalMatches > 0 ? `${s.wins}W ${s.losses}L ${s.ties}T` : null, higherBetter: null },
+    { key: "avgAwp",    label: "Avg AWP",     getValue: (s) => s.avgAwp != null ? Number(s.avgAwp.toFixed(1)) : null, higherBetter: true },
+    { key: "sigAwp",    label: "Sig AWP",     getValue: (s) => s.sigAwp > 0 ? s.sigAwp : null, higherBetter: true },
+    { key: "avgWp",     label: "Avg WP",      getValue: (s) => s.avgWp != null ? Number(s.avgWp.toFixed(1)) : null, higherBetter: true },
+    { key: "avgAp",     label: "Avg AP",      getValue: (s) => s.avgAp != null ? Number(s.avgAp.toFixed(1)) : null, higherBetter: true },
+    ...(hasEventContext ? [
+      { key: "s-evt",      isSection: true,  label: "At This Event" } as CompareRowDef,
+      { key: "evtRank",    label: "Rank",        getValue: (s: CompareStats) => s.evtRank != null ? `#${s.evtRank}` : null, higherBetter: false } as CompareRowDef,
+      { key: "evtRecord",  label: "Record",      getValue: (s: CompareStats) => s.evtRecord, higherBetter: null } as CompareRowDef,
+      { key: "evtWp",      label: "WP",          getValue: (s: CompareStats) => s.evtWp ?? null, higherBetter: true } as CompareRowDef,
+      { key: "evtAp",      label: "AP",          getValue: (s: CompareStats) => s.evtAp ?? null, higherBetter: true } as CompareRowDef,
+      { key: "evtAwp",     label: "AWP",         getValue: (s: CompareStats) => s.evtAwp ?? null, higherBetter: true } as CompareRowDef,
+    ] : []),
+    { key: "s-ws",      isSection: true, label: "World Skills" },
+    { key: "wsRank",    label: "World Rank",  getValue: (s) => s.wsRank != null ? `#${s.wsRank}` : null, higherBetter: false },
+    { key: "wsScore",   label: "Score",       getValue: (s) => s.wsScore ?? null, higherBetter: true },
+    { key: "wsDriver",  label: "Driver",      getValue: (s) => s.wsDriver ?? null, higherBetter: true },
+    { key: "wsProg",    label: "Autonomous",  getValue: (s) => s.wsProg ?? null, higherBetter: true },
+    { key: "s-awards",  isSection: true, label: "Accolades" },
+    { key: "awards",    label: "Awards",      getValue: (s) => s.awardCount > 0 ? s.awardCount : null, higherBetter: true },
+    { key: "topAward",  label: "Top Award",   getValue: (s) => s.topAwardTitle, higherBetter: null },
+    { key: "events",    label: "Events",      getValue: (s) => s.eventCount > 0 ? s.eventCount : null, higherBetter: null },
+    { key: "s-profile", isSection: true, label: "Profile" },
+    { key: "location",  label: "Location",    getValue: (_s, slot) => slot.profile ? locationLine(slot.profile) : null, higherBetter: null },
+    { key: "grade",     label: "Grade",       getValue: (_s, slot) => slot.profile?.grade ?? null, higherBetter: null },
+  ];
+}
+
+function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: () => void }) {
+  const [slots, setSlots] = useState<TeamCompareSlot[]>(() =>
+    entries.map((entry) => ({
+      entry,
+      profileLoading: true, profileError: null, profile: null,
+      dataLoading: false, dataError: null,
+      events: [], rankings: [], awards: [],
+      seasonId: null,
+      worldSkillsLoading: false,
+      worldSkillsEntry: null,
+    }))
+  );
+  const [copyDone, setCopyDone] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+
+  // Capture context (season + event) from the store at mount time — stable for
+  // this modal instance even if the user navigates away while it is open.
+  const contextSeasonId = useMemo(() => getContextSeasonId() ?? _currentEventSeasonId, []);
+  const contextEventId  = useMemo(() => getContextEventId() ?? _currentEventId, []);
+
+  // Each team's pipeline runs fully in parallel. Profile headers appear after
+  // the light profile request; season-scoped stats fill independently after.
+  useEffect(() => {
+    const live = { value: true };
+
+    void Promise.allSettled(entries.map(async (entry, i) => {
+      const teamId = String(entry.teamId);
+      try {
+        // ── Step 1: profile ─────────────────────────────────────────────────────
+        const profile = await api.team(teamId);
+        if (!live.value) return;
+
+        // Column header appears immediately once profile is known
+        setSlots((prev) => {
+          const next = [...prev];
+          next[i] = { ...next[i], profile, profileLoading: false, dataLoading: true };
+          return next;
+        });
+
+        // ── Step 2: load team events and pick the right stats season ───────────
+        const allEventsRes = await collectAllPages<Event>((page) =>
+          api.teamEvents(teamId, {
+            "season[]": contextSeasonId ? [contextSeasonId] : undefined,
+            per_page: 250,
+            page,
+          }),
+        );
+        if (!live.value) return;
+        const allEvents = allEventsRes.data;
+
+        const seasonRankings = await loadCompareSeasonRankings(
+          teamId,
+          entry.teamId,
+          contextEventId,
+          compareSeasonCandidates(allEvents, contextSeasonId),
+        );
+        if (!live.value) return;
+
+        if (!seasonRankings) {
+          setSlots((prev) => {
+            const next = [...prev];
+            next[i] = { ...next[i], dataLoading: false, dataError: "No ranked season found for this team." };
+            return next;
+          });
+          return;
+        }
+
+        const { seasonId, rankingsRes } = seasonRankings;
+        const seasonEvents = allEvents.filter((event) => event.season.id === seasonId);
+
+        setSlots((prev) => {
+          const next = [...prev];
+          next[i] = { ...next[i], seasonId, events: seasonEvents, worldSkillsLoading: true };
+          return next;
+        });
+
+        // ── Step 3: stats (rankings / awards) ──────────────────────────────────
+        const grade = profile.grade ?? "High School";
+        const worldSkillsPromise = loadWorldSkills(seasonId, grade).catch(() => [] as WorldSkillsEntry[]);
+        const awardsRes = await collectAllPages<Award>((page) => api.teamAwards(teamId, { "season[]": [seasonId], per_page: 250, page }));
+        if (!live.value) return;
+
+        // Column stats appear as soon as this team's ranking/award data arrives.
+        setSlots((prev) => {
+          const next = [...prev];
+          next[i] = {
+            ...next[i],
+            dataLoading: false,
+            events: seasonEvents,
+            rankings: rankingsRes.data,
+            awards: awardsRes.data,
+          };
+          return next;
+        });
+
+        const wsData = await worldSkillsPromise;
+        if (!live.value) return;
+
+        const wsEntry = wsData.length
+          ? (wsData.find((e) => e.team.id === entry.teamId) ??
+             wsData.find((e) => e.team.team?.toUpperCase() === entry.teamNumber.toUpperCase()) ??
+             null)
+          : null;
+
+        setSlots((prev) => {
+          const next = [...prev];
+          next[i] = {
+            ...next[i],
+            worldSkillsLoading: false,
+            worldSkillsEntry: wsEntry,
+          };
+          return next;
+        });
+      } catch (err) {
+        if (!live.value) return;
+        setSlots((prev) => {
+          const next = [...prev];
+          // Distinguish profile-load failure from data-load failure
+          next[i] = prev[i].profileLoading
+            ? { ...next[i], profileLoading: false, dataLoading: false, profileError: String(err) }
+            : { ...next[i], dataLoading: false, worldSkillsLoading: false, dataError: String(err) };
+          return next;
+        });
+      }
+    }));
+
+    return () => { live.value = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally runs once on mount
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const compareRows = useMemo(() => buildCompareRows(!!contextEventId), [contextEventId]);
+  const stats = useMemo(() => slots.map((s) => computeCompareStats(s, contextEventId)), [slots, contextEventId]);
+  const colCount = slots.length;
+
+  // Compute best index per numeric row for green-highlight diffing
+  function getBestIndex(rowKey: string): number | null {
+    const row = compareRows.find((r) => !r.isSection && r.key === rowKey);
+    if (!row || row.isSection || row.higherBetter == null) return null;
+    const values = stats.map((s, i) => {
+      if (slots[i].profileLoading || slots[i].dataLoading || (row.key.startsWith("ws") && slots[i].worldSkillsLoading)) return null;
+      const raw = row.getValue(s, slots[i]);
+      if (raw == null) return null;
+      const num = typeof raw === "number" ? raw : parseFloat(String(raw).replace(/[^0-9.-]/g, ""));
+      return isNaN(num) ? null : num;
+    });
+    const valid = values.filter((v): v is number => v != null);
+    if (valid.length < 2) return null;
+    const target = row.higherBetter ? Math.max(...valid) : Math.min(...valid);
+    return values.findIndex((v) => v === target);
+  }
+
+  async function copyLink() {
+    const url = new URL(`/compare/${entries.map((e) => encodeURIComponent(e.teamNumber)).join("/")}`, window.location.origin);
+    url.searchParams.set("ids", entries.map((e) => e.teamId).join(","));
+    url.searchParams.set("programs", entries.map((e) => e.programCode).join(","));
+    if (contextEventId != null) url.searchParams.set("event", String(contextEventId));
+    if (contextSeasonId != null) url.searchParams.set("season", String(contextSeasonId));
+    if (import.meta.env.DEV) console.info("Compare link:", url.toString());
+    const copied = await writeClipboardText(url.toString());
+    setCopyDone(copied);
+    setCopyError(!copied);
+    setTimeout(() => {
+      setCopyDone(false);
+      setCopyError(false);
+    }, 1500);
+  }
+
+  return (
+    <div className="compare-overlay" onClick={onClose}>
+      <div
+        className="compare-modal"
+        style={{ "--col-count": colCount } as React.CSSProperties}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Compare teams"
+      >
+        {/* Header */}
+        <div className="compare-modal-header">
+          <div className="compare-modal-title">
+            <Scale size={16} />
+            <strong>Compare Teams</strong>
+          </div>
+          <div className="compare-modal-header-actions">
+            <button type="button" className="compare-copy-link" onClick={copyLink} title="Copy shareable link">
+              {copyDone ? <Check size={14} /> : <Link2 size={14} />}
+              <span>{copyDone ? "Copied!" : copyError ? "Copy failed" : "Copy link"}</span>
+            </button>
+            <button type="button" className="video-close-btn" onClick={onClose} aria-label="Close">×</button>
+          </div>
+        </div>
+
+        {/* Grid */}
+        <div className="compare-grid">
+          {/* Team header row */}
+          <div className="compare-label-cell compare-team-header-label" />
+          {slots.map((slot, i) => (
+            <div key={i} className="compare-team-header-cell">
+              {slot.profileLoading ? (
+                <>
+                  <div className="compare-skeleton compare-skeleton-title" />
+                  <div className="compare-skeleton compare-skeleton-sub" style={{ width: "60%", marginTop: 6 }} />
+                </>
+              ) : slot.profileError ? (
+                <span className="compare-error">Error loading</span>
+              ) : slot.profile ? (
+                <>
+                  <div className="compare-team-number">
+                    <Link href={teamPath(slot.profile)}>{slot.profile.number}</Link>
+                  </div>
+                  {slot.profile.team_name && <div className="compare-team-name">{slot.profile.team_name}</div>}
+                  <div className="compare-team-meta">
+                    <ProgramBadge program={slot.profile.program} />
+                    <span>{locationLine(slot.profile)}</span>
+                  </div>
+                  {slot.dataError && (
+                    <div className="compare-data-error" title={slot.dataError}>
+                      ⚠ Stats unavailable
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+          ))}
+
+          {/* Stat rows */}
+          {compareRows.map((row) => {
+            if (row.isSection) {
+              return (
+                <div key={row.key} className="compare-section-row">
+                  {row.label}
+                </div>
+              );
+            }
+            const bestIndex = getBestIndex(row.key);
+            return (
+              <Fragment key={row.key}>
+                <div className="compare-label-cell">{row.label}</div>
+                {slots.map((slot, i) => {
+                  const isWorldSkillsRow = row.key.startsWith("ws");
+                  const isProfileRow = row.key === "location" || row.key === "grade";
+                  const isLoading =
+                    slot.profileLoading ||
+                    (!isProfileRow && slot.dataLoading) ||
+                    (isWorldSkillsRow && slot.worldSkillsLoading);
+                  const hasError = !isProfileRow && !isLoading && !!slot.dataError;
+                  const value = isLoading || hasError ? null : row.getValue(stats[i], slot);
+                  const isBest = !hasError && bestIndex === i;
+                  return (
+                    <div key={i} className={`compare-data-cell${isBest ? " best-value" : ""}${hasError ? " has-error" : ""}`}>
+                      {isLoading ? (
+                        <div className="compare-skeleton" />
+                      ) : hasError ? (
+                        <span className="compare-cell-err">—</span>
+                      ) : (
+                        <span>{value ?? "—"}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </Fragment>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Compare URL route ─────────────────────────────────────────────────────────
+
+function CompareFromUrl({ param }: { param: string }) {
+  const numbers = useMemo(
+    () => param.split("/").map(decodeURIComponent).map((s) => s.trim().toUpperCase()).filter(Boolean).slice(0, 3),
+    [param],
+  );
+  const ids = useMemo(
+    () => (new URLSearchParams(window.location.search).get("ids") ?? "")
+      .split(",")
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value))
+      .slice(0, 3),
+    [param],
+  );
+  const programs = useMemo(
+    () => (new URLSearchParams(window.location.search).get("programs") ?? "")
+      .split(",")
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean)
+      .slice(0, 3),
+    [param],
+  );
+  const compareContext = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const seasonId = Number(params.get("season"));
+    const eventId = Number(params.get("event"));
+    return {
+      seasonId: Number.isFinite(seasonId) && seasonId > 0 ? seasonId : undefined,
+      eventId: Number.isFinite(eventId) && eventId > 0 ? eventId : undefined,
+    };
+  }, [param]);
+  const lookup = useAsync(async () => {
+    if (ids.length === numbers.length) {
+      const results = await Promise.all(ids.map((id) => api.team(id).catch(() => null)));
+      return results.filter((t): t is Team => t !== null);
+    }
+
+    const results = await Promise.all(
+      numbers.map((n, i) =>
+        api.robotEventsTeams({ number: n, "program[]": vexProgramIds, per_page: 10 })
+          .then((r) => {
+            const program = programs[i];
+            const filtered = program ? r.data.filter((team) => programMatchesSlug(team.program, program)) : r.data;
+            return filtered[0] ?? null;
+          })
+          .catch(() => null),
+      ),
+    );
+    return results.filter((t): t is Team => t !== null);
+  }, [numbers.join(","), ids.join(","), programs.join(",")]);
+
+  useEffect(() => {
+    if (!lookup.data?.length) return;
+    clearTray();
+    lookup.data.forEach((t) =>
+      addToTray({ teamId: t.id, teamNumber: t.number, programCode: programSlug(t.program), teamName: t.team_name ?? undefined }),
+    );
+    openCompareModal(compareContext.seasonId, compareContext.eventId);
+  }, [lookup.data, compareContext.seasonId, compareContext.eventId]);
+
+  if (lookup.loading) return <Status loading error={null} />;
+  return <Home />;
+}
 
 function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   useEffect(() => {
@@ -8407,6 +9392,8 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
               <tr><td><kbd>G</kbd> then <kbd>H</kbd></td><td>Go to Home</td></tr>
               <tr><td><kbd>G</kbd> then <kbd>E</kbd></td><td>Go to Events</td></tr>
               <tr><td><kbd>G</kbd> then <kbd>T</kbd></td><td>Go to Teams</td></tr>
+              <tr><td><kbd>C</kbd> (on team page)</td><td>Toggle team in comparison tray</td></tr>
+              <tr><td><kbd>G</kbd> then <kbd>C</kbd></td><td>Open comparison modal</td></tr>
             </tbody>
           </table>
         </div>
@@ -8426,6 +9413,8 @@ function route(path: string) {
   if (joinMatch) return <JoinOrgPage token={joinMatch[1]} />;
   const orgMatch = path.match(/^\/org\/([0-9a-f-]+)\/settings$/i);
   if (orgMatch) return <OrgSettingsPage orgId={orgMatch[1]} />;
+  const compareMatch = path.match(/^\/compare\/(.+)$/);
+  if (compareMatch) return <CompareFromUrl param={compareMatch[1]} />;
   const eventMatch = path.match(/^\/events?\/(.+)$/);
   if (eventMatch) return <EventDetail param={decodeURIComponent(eventMatch[1])} />;
   const teamMatch = path.match(/^\/teams?\/(.+)$/);
@@ -8437,6 +9426,8 @@ export default function App() {
   const path = useRoute();
   const spotlightOpen = useSyncExternalStore(subscribeSpotlight, getSpotlightOpen, getSpotlightOpen);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const trayEntries = useCompareTray();
+  const compareModalOpen = useCompareModalOpen();
 
   useEffect(() => {
     loadYouTubeApi();
@@ -8472,12 +9463,22 @@ export default function App() {
         return;
       }
 
-      // Chord navigation: G then H / E / T within 500ms
+      // C → toggle current team in compare tray (when on a team page)
+      if (e.key === "c" && !e.metaKey && !e.ctrlKey && _currentTeam !== null) {
+        const t = _currentTeam;
+        isInTray(t.id)
+          ? removeFromTray(t.id)
+          : addToTray({ teamId: t.id, teamNumber: t.number, programCode: programSlug(t.program), teamName: t.team_name ?? undefined });
+        return;
+      }
+
+      // Chord navigation: G then H / E / T / C within 500ms
       const now = Date.now();
       if (now - lastChordTime < 500 && lastChordKey === "g") {
         if (e.key === "h") { navigate("/");        lastChordKey = ""; lastChordTime = 0; return; }
         if (e.key === "e") { navigate("/events");  lastChordKey = ""; lastChordTime = 0; return; }
         if (e.key === "t") { navigate("/teams");   lastChordKey = ""; lastChordTime = 0; return; }
+        if (e.key === "c") { if (getTrayEntries().length >= 2) openCompareModal(_currentEventSeasonId ?? undefined, _currentEventId ?? undefined); lastChordKey = ""; lastChordTime = 0; return; }
       }
       if (e.key === "g") { lastChordKey = "g"; lastChordTime = now; }
     };
@@ -8493,6 +9494,8 @@ export default function App() {
       <OnboardingModal />
       {spotlightOpen && <CommandPalette onClose={closeSpotlight} />}
       {shortcutsOpen && <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />}
+      {trayEntries.length > 0 && <CompareTray entries={trayEntries} />}
+      {compareModalOpen && <ComparisonModal entries={trayEntries} onClose={closeCompareModal} />}
     </>
   );
 }
