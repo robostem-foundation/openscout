@@ -6859,3 +6859,251 @@ th.compare-col {
     padding: 0;
   }
 }
+
+/* ── Org Favorites Popover ────────────────────────────────────────────────── */
+
+.org-fav-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 300;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  min-width: 140px;
+  padding: 4px 0;
+}
+.org-fav-popover .icon-button {
+  position: static;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  border-radius: 0;
+  gap: 8px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+.org-fav-popover .icon-button:hover {
+  background: var(--surface-2);
+}
+
+/* ── Home sidebar org favorites remove button ─────────────────────────────── */
+
+.home-fav-item-row {
+  display: flex;
+  align-items: center;
+}
+.home-fav-item-row .home-fav-item {
+  flex: 1;
+  min-width: 0;
+}
+.home-fav-remove {
+  opacity: 0;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+.home-fav-item-row:hover .home-fav-remove {
+  opacity: 1;
+}
+.home-fav-remove:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+/* ── Picklist row button (in rankings table) ─────────────────────────────── */
+
+.picklist-col {
+  width: 28px;
+  padding: 0 4px;
+}
+.picklist-row-btn {
+  opacity: 0;
+  height: 24px;
+  width: 24px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+  color: var(--text-muted);
+}
+tr:hover .picklist-row-btn {
+  opacity: 1;
+}
+.picklist-row-btn.in-list {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* ── Picklist tab panel ───────────────────────────────────────────────────── */
+
+.picklist-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 12px;
+}
+.picklist-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.picklist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.picklist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  transition: background 0.1s, border-color 0.15s;
+  cursor: default;
+}
+.picklist-item.drag-over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+}
+.picklist-item.crossed-out {
+  opacity: 0.45;
+}
+.picklist-item.crossed-out .picklist-team-link {
+  text-decoration: line-through;
+}
+
+.picklist-drag-handle {
+  cursor: grab;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.picklist-drag-handle:active {
+  cursor: grabbing;
+}
+.picklist-rank {
+  width: 26px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.picklist-team-link {
+  font-weight: 600;
+  font-size: 14px;
+  flex-shrink: 0;
+  color: var(--accent);
+  text-decoration: none;
+}
+.picklist-team-link:hover {
+  text-decoration: underline;
+}
+.picklist-team-name {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.picklist-notes {
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  outline: none;
+  border-bottom: 1px solid transparent;
+  color: var(--text-2);
+  width: 180px;
+  flex-shrink: 0;
+  padding: 1px 3px;
+  transition: border-color 0.15s;
+  font-family: inherit;
+}
+.picklist-notes:focus {
+  border-bottom-color: var(--accent);
+}
+.picklist-notes::placeholder {
+  color: var(--text-faint);
+}
+
+.picklist-cross-btn,
+.picklist-remove-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+.picklist-item:hover .picklist-cross-btn,
+.picklist-item:hover .picklist-remove-btn,
+.picklist-item.crossed-out .picklist-cross-btn {
+  opacity: 1;
+}
+.picklist-item.alliance-mode .picklist-cross-btn {
+  opacity: 1;
+  color: var(--accent);
+}
+.picklist-cross-btn:hover {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.picklist-remove-btn:hover {
+  background: var(--surface-3);
+  color: #e05;
+}
+
+.picklist-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.picklist-empty svg {
+  opacity: 0.4;
+}
+.picklist-empty p {
+  margin: 0;
+  font-size: 14px;
+}
+.picklist-empty p.muted {
+  font-size: 12px;
+  color: var(--text-faint);
+}
