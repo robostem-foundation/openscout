@@ -6604,13 +6604,19 @@ td.quick-look-col {
 
 /* ── Compare Row Button (TeamTable / RankingsTable) ────────────────────────── */
 
-.compare-col {
+.compare-col,
+.picklist-col {
   width: 36px;
   min-width: 36px;
   padding: 0 4px !important;
   text-align: center !important;
   vertical-align: middle;
   white-space: nowrap;
+}
+th.compare-col,
+th.picklist-col {
+  color: var(--text-muted);
+  line-height: 0; /* removes extra height from inline icon baseline */
 }
 .compare-row-btn {
   height: 24px;
@@ -6920,11 +6926,6 @@ td.quick-look-col {
 }
 
 /* ── Picklist row button (in rankings table) ─────────────────────────────── */
-
-.picklist-col {
-  width: 28px;
-  padding: 0 4px;
-}
 .picklist-row-btn {
   height: 24px;
   width: 24px;
