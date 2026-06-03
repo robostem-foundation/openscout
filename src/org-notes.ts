@@ -30,7 +30,14 @@ let signedInUserId: string | null = null;
 
 const listeners = new Set<() => void>();
 
+// Epoch increments on every write — useSyncExternalStore uses it as a stable
+// primitive snapshot so hooks can re-derive values outside getSnapshot, avoiding
+// the "new object every call → infinite loop" pitfall.
+let epoch = 0;
+function getEpoch() { return epoch; }
+
 function emit() {
+  epoch++;
   for (const l of listeners) l();
 }
 
@@ -220,17 +227,11 @@ export function useOrgMatchNote(
   if (orgId && orgId !== "__none__" && !loaded.has(orgId)) {
     void loadForOrg(orgId);
   }
-
-  const id = String(matchId);
-  const getSnapshot = () => {
-    const entry = getForOrg(orgId)[id];
-    return {
-      body: entry?.body ?? "",
-      hasNote: Boolean(entry && entry.body.trim() !== ""),
-    };
-  };
-
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  // Subscribe via epoch (a primitive) so getSnapshot never returns a new object.
+  // Derived values are computed here, outside getSnapshot, which is correct.
+  useSyncExternalStore(subscribe, getEpoch, getEpoch);
+  const entry = getForOrg(orgId)[String(matchId)];
+  return { body: entry?.body ?? "", hasNote: Boolean(entry && entry.body.trim() !== "") };
 }
 
 /** Cheap boolean for a single org note. */
@@ -238,9 +239,8 @@ export function useHasOrgNote(orgId: string, matchId: string | number): boolean 
   if (orgId && orgId !== "__none__" && !loaded.has(orgId)) {
     void loadForOrg(orgId);
   }
-  const id = String(matchId);
-  const getSnapshot = () => Boolean(getForOrg(orgId)[id]);
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  useSyncExternalStore(subscribe, getEpoch, getEpoch);
+  return Boolean(getForOrg(orgId)[String(matchId)]);
 }
 
 /**
@@ -248,12 +248,10 @@ export function useHasOrgNote(orgId: string, matchId: string | number): boolean 
  * this match. Used by NoteRailDot so it doesn't need to call hooks in a loop.
  */
 export function useHasAnyOrgNote(matchId: string | number): boolean {
+  useSyncExternalStore(subscribe, getEpoch, getEpoch);
   const id = String(matchId);
-  const getSnapshot = () => {
-    for (const notes of cache.values()) {
-      if (notes[id]) return true;
-    }
-    return false;
-  };
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  for (const notes of cache.values()) {
+    if (notes[id]) return true;
+  }
+  return false;
 }
