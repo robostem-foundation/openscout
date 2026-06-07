@@ -12,6 +12,7 @@ npm-debug.log*
 # Internal planning docs (not for the repo)
 ACCOUNTS_PLAN.md
 FEATURES_PLAN.md
+EVENT_INFO_TAB_PLAN.md
 
 # Local git hooks
 .git/hooks/commit-msg

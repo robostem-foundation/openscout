@@ -527,33 +527,6 @@ main {
 }
 
 /* Compact event table (home page right panel) — tighter rows, no wrapping */
-.compact-event-table {
-  table-layout: fixed;
-}
-.compact-event-table td,
-.compact-event-table th {
-  padding-top: 5px;
-  padding-bottom: 5px;
-}
-.compact-event-table .event-name-cell {
-  overflow: hidden;
-}
-.compact-event-table .event-name-link,
-.compact-event-table .event-sku-line {
-  display: block;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-/* Fixed widths for narrow columns; event name column gets remaining space */
-.compact-event-table th:nth-child(2),
-.compact-event-table td:nth-child(2) { width: 72px; }
-.compact-event-table th:nth-child(3),
-.compact-event-table td:nth-child(3) { width: 58px; }
-.compact-event-table th:nth-child(4),
-.compact-event-table td:nth-child(4) { width: 130px; }
-.compact-event-table th:nth-child(5),
-.compact-event-table td:nth-child(5) { width: 110px; }
 
 /* Home sidebar: panels already spaced by grid gap — remove margin-bottom to
    avoid doubling up (gap:15px + margin-bottom:20px = 35px vs intended 15px) */
@@ -6609,6 +6582,8 @@ td.quick-look-col {
   width: 88px;
   min-width: 88px;
   white-space: nowrap;
+  text-align: center !important;
+  vertical-align: middle !important;
 }
 .compare-row-btn {
   height: 24px;
@@ -7097,4 +7072,296 @@ td.quick-look-col {
 .picklist-empty p.muted {
   font-size: 12px;
   color: var(--text-faint);
+}
+
+/* ---------------------------------------------------------------------------
+   Event Info tab
+   --------------------------------------------------------------------------- */
+
+/* "Open in VEX Events" bar at the top of the tab */
+.event-info-open-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 15px;
+  font-size: 13px;
+  color: var(--link);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.event-info-open-link:hover {
+  text-decoration: underline;
+}
+
+/* Two-column grid: info left, agenda right.
+   align-items: start → row height is driven by the Event Info panel (left).
+   The Agenda panel uses align-self: stretch so it fills that same height. */
+.event-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+  margin: 12px;
+}
+/* Both panels: no extra bottom margin (gap handles spacing) */
+.event-info-tab .event-info-grid .panel {
+  margin-bottom: 0;
+}
+/* Agenda panel (right):
+   - align-self: stretch → fills the row height (driven by Event Info on the left)
+   - overflow: hidden + min-height: 0 → stops agenda content from expanding the row
+   - flex-column → h2 is fixed, content area scrolls */
+.event-info-tab .event-info-grid .panel:last-child {
+  align-self: stretch;
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.event-info-tab .event-info-grid .panel:last-child > h2 {
+  flex: 0 0 auto;
+}
+
+/* Calendar link inside the info panel */
+.event-info-calendar-row {
+  padding: 8px 15px 10px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.event-info-calendar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--link);
+  text-decoration: none;
+}
+.event-info-calendar-link:hover {
+  text-decoration: underline;
+}
+
+/* Webcast block at the bottom of the left panel */
+.event-info-webcast {
+  padding: 10px 15px 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.event-info-webcast-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.event-info-webcast-desc {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 8px;
+  line-height: 1.45;
+}
+.event-info-webcast-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.event-info-webcast-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text);
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.event-info-webcast-link:hover {
+  background: var(--surface-3);
+}
+.event-info-webcast-link svg:last-child {
+  opacity: 0.4;
+}
+
+/* Agenda: fills remaining height of the panel, scrolls if content overflows */
+.event-info-agenda-html {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 10px 15px 14px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+  overflow-y: auto;
+}
+.event-info-agenda-html p {
+  margin: 0 0 2px;
+}
+.event-info-agenda-html p + p {
+  margin-top: 8px;
+}
+.event-info-agenda-html strong,
+.event-info-agenda-html b {
+  font-weight: 600;
+  color: var(--text);
+}
+/* Day-name paragraphs — the <strong> inside <p> acts as a section header */
+.event-info-agenda-html p:has(> strong:only-child),
+.event-info-agenda-html p:has(> b:only-child) {
+  margin-top: 12px;
+  margin-bottom: 2px;
+}
+.event-info-agenda-html p:has(> strong:only-child):first-child,
+.event-info-agenda-html p:has(> b:only-child):first-child {
+  margin-top: 0;
+}
+/* h1–h3 used by some events as day headers */
+.event-info-agenda-html h1,
+.event-info-agenda-html h2,
+.event-info-agenda-html h3 {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin: 10px 0 3px;
+}
+.event-info-agenda-html h1:first-child,
+.event-info-agenda-html h2:first-child,
+.event-info-agenda-html h3:first-child {
+  margin-top: 0;
+}
+.event-info-agenda-html ul,
+.event-info-agenda-html ol {
+  margin: 2px 0 6px 16px;
+  padding: 0;
+}
+.event-info-agenda-html li {
+  margin: 2px 0;
+}
+.event-info-agenda-html a {
+  color: var(--link);
+  text-decoration: none;
+}
+.event-info-agenda-html a:hover {
+  text-decoration: underline;
+}
+
+/* Event info panel: override the flex-wrap about-profile layout with a clean
+   two-column (label | value) grid. Scoped so team/event About panels elsewhere
+   are unaffected. */
+.event-info-tab .about-profile {
+  display: block;
+  padding: 6px 0 4px;
+}
+.event-info-tab .about-profile-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 0 12px;
+  padding: 5px 15px;
+  align-items: baseline;
+}
+.event-info-tab .about-profile-row dt {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.event-info-tab .about-profile-row dd {
+  text-align: left;
+  font-size: 13px;
+}
+
+/* Responsive: stack columns on narrow viewports */
+@media (max-width: 700px) {
+  .event-info-grid {
+    grid-template-columns: 1fr;
+    margin: 10px;
+    gap: 10px;
+  }
+}
+
+/* ── Event stats panels (below info+agenda grid) ── */
+.event-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0 12px 12px;
+}
+@media (max-width: 700px) {
+  .event-stats-grid { grid-template-columns: 1fr; }
+}
+.event-stat-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 15px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.event-stat-card:last-child { border-bottom: 0; }
+.event-stat-section .event-stat-card:last-child { border-bottom: 0; }
+.event-stat-label { font-size: 12px; color: var(--text-muted); }
+.event-stat-value { font-size: 20px; font-weight: 600; color: var(--text); line-height: 1; }
+/* World Skills group — rows fill the full panel width;
+   bracket + label float OUTSIDE the panel's right border. */
+.event-stat-world-group {
+  position: relative;
+  border-top: 1px solid var(--border-soft);
+}
+/* ] bracket spanning all four world-skills rows */
+.event-stat-world-group::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -10px;         /* right edge 9px past the panel border */
+  width: 6px;
+  border: 1.5px solid var(--border);
+  border-left: none;
+  border-radius: 0 3px 3px 0;
+  pointer-events: none;
+}
+/* Label sits just beyond the bracket, vertically centered within it */
+.event-stat-world-label {
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  writing-mode: vertical-lr;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ── Picklist move-up / move-down buttons ── */
+.picklist-move-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+.picklist-move-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 14px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text-muted);
+  padding: 0;
+  line-height: 1;
+}
+.picklist-move-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.picklist-move-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
 }

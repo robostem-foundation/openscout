@@ -37,12 +37,14 @@ import {
   StickyNote,
   Clock,
   Trophy,
+  Tv2,
   Unlink,
   User,
   UserMinus,
   Users,
   X,
   Youtube,
+  Zap,
 } from "lucide-react";
 import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Dispatch, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
@@ -79,7 +81,7 @@ import type { RecentEntry } from "./recently-viewed";
 import { addToTray, canAddToTray, clearTray, closeCompareModal, getContextEventId, getContextSeasonId, getTrayEntries, isInTray, openCompareModal, removeFromTray, useCompareTray, useCompareModalOpen, useIsInTray } from "./compare";
 import { addToPicklist, removeFromPicklist, reorderPicklist, updatePicklistNotes, toggleCrossedOut, clearCrossedOut, usePicklist, useIsInPicklist } from "./picklist";
 import type { TrayEntry } from "./compare";
-import type { Alliance, Award, CountryGroup, Event, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
+import type { Alliance, Award, CountryGroup, Event, EventInfoData, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
 
 const programOptions = [
   { label: "All Programs", value: "" },
@@ -1175,16 +1177,20 @@ function highlightAwards(awards: Award[], event?: Event | null): HighlightAward[
   const hasWinners = (award: Award) => awardTeamWinners(award).length > 0 || awardIndividualWinners(award).length > 0;
   const titleMatches = (pattern: RegExp) => awards.find((award) => pattern.test(award.title) && hasWinners(award));
   const excellence = titleMatches(/excellence award/i);
-  const champions = titleMatches(isIqProgram(event) ? /teamwork.*champions?/i : /tournament champions?|event champions?/i);
+  const champions = titleMatches(isIqProgram(event) ? /teamwork.*champions?/i : /world champions?|tournament champions?|event champions?/i);
   const skills = titleMatches(/(?:robot\s*)?skills?.*champions?/i);
   const highlights: HighlightAward[] = [];
 
+  const isWorlds = !!event && eventCategory(event).label === "Worlds";
+  const champLabel = isIqProgram(event) ? "Teamwork Champions" : isWorlds ? "World Champion" : "Tournament Champions";
   if (excellence) highlights.push({ award: excellence, label: "Excellence Award", kind: "excellence" });
-  if (champions) highlights.push({ award: champions, label: isIqProgram(event) ? "Teamwork Champions" : "Tournament Champions", kind: "champions" });
+  if (champions) highlights.push({ award: champions, label: champLabel, kind: "champions" });
   if (skills) highlights.push({ award: skills, label: "Robot Skills Champion", kind: "skills" });
 
   return highlights;
 }
+
+
 
 function jumperPresetName(event: Event, preset?: JumperPresetExists | null) {
   return preset?.preset ?? preset?.presetName ?? preset?.preset_name ?? preset?.sku ?? event.sku;
@@ -1819,6 +1825,32 @@ function PicklistTab({ event, orgId }: { event: { id: number; name: string }; or
           >
             <span className="picklist-drag-handle" title="Drag to reorder">
               <GripVertical size={14} />
+            </span>
+            <span className="picklist-move-btns">
+              <button
+                type="button"
+                className="picklist-move-btn"
+                title="Move up"
+                disabled={i === 0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const next = [...entries];
+                  [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                  void reorderPicklist(orgId, eventIdStr, next);
+                }}
+              ><ChevronUp size={11} /></button>
+              <button
+                type="button"
+                className="picklist-move-btn"
+                title="Move down"
+                disabled={i === entries.length - 1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const next = [...entries];
+                  [next[i], next[i + 1]] = [next[i + 1], next[i]];
+                  void reorderPicklist(orgId, eventIdStr, next);
+                }}
+              ><ChevronDown size={11} /></button>
             </span>
             <span className="picklist-rank">#{i + 1}</span>
             <Link
@@ -3202,7 +3234,7 @@ function EventTable({
   const columnCount = 3 + (showPriority ? 1 : 0) + (showProgram ? 1 : 0) + (showSeason ? 1 : 0) + (showLevel ? 1 : 0) + (showGrade ? 1 : 0);
 
   return (
-    <table className={compact ? "compact-event-table" : undefined}>
+    <table>
       <thead>
         <tr>
           <th>Event</th>
@@ -3659,7 +3691,7 @@ function TeamsPage() {
   );
 }
 
-function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number }) {
+function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number; divisionMap?: Map<number, string> | null }) {
   const [page, setPage] = useState(1);
   const [expandedTeamId, setExpandedTeamId] = useState<number | null>(null);
   const compareMode = useComparePickMode();
@@ -3683,15 +3715,13 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
             <th>Organization</th>
             <th>Location</th>
             <th>
-              <span
-                className="status-disclaimer"
-                data-tooltip="Push Back Season registration status. Override registrations will be updated soon."
-              >
-                Status
-              </span>
+              {divisionMap
+                ? "Division"
+                : <span className="status-disclaimer" data-tooltip="Push Back Season registration status. Override registrations will be updated soon.">Status</span>
+              }
             </th>
             <th className="quick-look-col"></th>
-            <th className="compare-col">Add Compare</th>
+            <th className="compare-col">Compare</th>
           </tr>
         </thead>
         {loading ? (
@@ -3721,7 +3751,7 @@ function TeamTable({ teams, loading, localPageSize, eventId }: { teams: Team[]; 
                     </td>
                     <td className="truncate-cell">{team.organization || "-"}</td>
                     <td className="truncate-cell">{locationLine(team)}</td>
-                    <td>{team.registered ? "Registered" : "Inactive"}</td>
+                    <td>{divisionMap ? (divisionMap.get(team.id) ?? "—") : (team.registered ? "Registered" : "Inactive")}</td>
                     <td
                       className="quick-look-col"
                       onClick={(e) => {
@@ -3973,7 +4003,7 @@ function PageTitle({ icon, title, subtitle }: { icon: ReactNode; title: string; 
   );
 }
 
-const EVENT_DETAIL_TABS = ["matches", "rankings", "skills", "awards", "teams", "team-matches", "picklist"] as const;
+const EVENT_DETAIL_TABS = ["matches", "rankings", "skills", "awards", "teams", "team-matches", "picklist", "info"] as const;
 type EventDetailTab = typeof EVENT_DETAIL_TABS[number];
 const TEAM_DETAIL_TABS = ["about", "events", "rankings", "skills", "awards"] as const;
 type TeamDetailTab = typeof TEAM_DETAIL_TABS[number];
@@ -3994,6 +4024,7 @@ function EventDetail({ param }: { param: string }) {
   });
   const [tab, setTab] = useState<EventDetailTab>(() => eventInitialTab(!!new URLSearchParams(window.location.search).get("focusTeam")));
   const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
+  const [teamsDivFilter, setTeamsDivFilter] = useState<number | null>(null);
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
   const tabLayout = useTabLayout();
   const orgs = useOrgs();
@@ -4044,6 +4075,22 @@ function EventDetail({ param }: { param: string }) {
     },
     [id, event?.id],
   );
+  // For multi-division events: load rankings for every division in parallel so we
+  // can map each team to its division on the Teams tab.
+  const allDivisionRankings = useAsync(
+    async () => {
+      if (!event || divisions.length <= 1) return null;
+      const results = await Promise.all(
+        divisions.map((div) => collectAllPages<Ranking>((page) => api.eventRankings(id, div.id, { per_page: 250, page }))),
+      );
+      const map = new Map<number, number>(); // teamId → divisionId
+      divisions.forEach((div, i) => {
+        for (const r of results[i].data) map.set(r.team.id, div.id);
+      });
+      return map;
+    },
+    [id, event?.id, divisions],
+  );
   const preset = useAsync(
     async () => {
       if (!event) return null;
@@ -4067,11 +4114,37 @@ function EventDetail({ param }: { param: string }) {
     [focusTeam?.id, id, event?.id],
   );
 
+  const eventInfo = useAsync(
+    async () => {
+      if (!event?.sku || tab !== "info") return null;
+      return api.eventInfo(event.sku);
+    },
+    [event?.sku, tab === "info"],
+  );
+
   const eventAwards = awards.data?.data ?? [];
   const timestampMap = useMemo(() => new Map((matchTimestamps.data ?? []).map((timestamp) => [timestamp.id, timestamp])), [matchTimestamps.data]);
   const presetUrl = event && preset.data?.exists ? `https://jumper.robostem.org/?preset=${encodeURIComponent(jumperPresetName(event, preset.data))}` : null;
-  const activeStatus = tab === "team-matches" ? focusTeamEventMatches : tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : tab === "awards" ? awards : tab === "picklist" ? { loading: false, error: null } : teams;
+  const activeStatus = tab === "team-matches" ? focusTeamEventMatches : tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : tab === "awards" ? awards : tab === "picklist" || tab === "info" ? { loading: false, error: null } : teams;
+
   const keyAwards = useMemo(() => highlightAwards(eventAwards, event), [eventAwards, event]);
+
+  const filteredTeams = useMemo(() => {
+    const all = teams.data?.data ?? [];
+    if (!teamsDivFilter || !allDivisionRankings.data) return all;
+    return all.filter((t) => allDivisionRankings.data!.get(t.id) === teamsDivFilter);
+  }, [teams.data, teamsDivFilter, allDivisionRankings.data]);
+
+  // For multi-division events: map each teamId to its division name for the Teams tab column
+  const teamDivisionNameMap = useMemo(() => {
+    if (!allDivisionRankings.data || divisions.length <= 1) return null;
+    const out = new Map<number, string>();
+    for (const [teamId, divId] of allDivisionRankings.data) {
+      const name = divisions.find((d) => d.id === divId)?.name ?? "—";
+      out.set(teamId, name);
+    }
+    return out;
+  }, [allDivisionRankings.data, divisions]);
 
   useEffect(() => {
     if (!event) return;
@@ -4176,6 +4249,7 @@ function EventDetail({ param }: { param: string }) {
                 ] as [string, string, ReactNode, () => void],
               ]
             : []),
+          ["info", "Info", <Info size={15} />],
           ["matches", "Results", <Gamepad2 size={15} />],
           ["rankings", "Rankings", <BarChart3 size={15} />],
           ["skills", "Skills", <Activity size={15} />],
@@ -4207,6 +4281,9 @@ function EventDetail({ param }: { param: string }) {
           <TeamMatchTable matches={focusTeamEventMatches.data?.data ?? []} focusTeamId={focusTeam.id} isIq={isIqProgram(event)} />
         </Panel>
       )}
+      {tab === "info" && (
+        <EventInfoTab event={event} infoData={eventInfo.data ?? null} loading={eventInfo.loading} />
+      )}
       {tab === "matches" && (
         <MatchesTable
           matches={matches.data?.data ?? []}
@@ -4222,10 +4299,24 @@ function EventDetail({ param }: { param: string }) {
       {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} matches={matches.data?.data ?? []} orgId={primaryOrg?.orgId} eventId={String(event.id)} />}
       {tab === "skills" && <SkillsTable skills={skills.data?.data ?? []} />}
       {tab === "awards" && <AwardsList awards={awards.data?.data ?? []} />}
-      {tab === "teams" && !teams.loading && teams.data && (
-        <div className="table-summary">Showing 80 per page from {teams.data.data.length.toLocaleString()} RobotEvents teams.</div>
+      {tab === "teams" && divisions.length > 1 && (
+        <div className="division-tabs" aria-label="Filter teams by division">
+          <span>Division</span>
+          <button className={teamsDivFilter === null ? "active" : ""} onClick={() => setTeamsDivFilter(null)}>All</button>
+          {divisions.map((div) => (
+            <button key={div.id} className={teamsDivFilter === div.id ? "active" : ""} onClick={() => setTeamsDivFilter(div.id)}>
+              {div.name}
+            </button>
+          ))}
+        </div>
       )}
-      {tab === "teams" && <TeamTable teams={teams.data?.data ?? []} loading={teams.loading} localPageSize={80} eventId={event.id} />}
+      {tab === "teams" && !teams.loading && teams.data && (
+        <div className="table-summary">
+          Showing {filteredTeams.length < (teams.data.data.length) ? `${filteredTeams.length} of ` : ""}
+          {teams.data.data.length.toLocaleString()} teams{teamsDivFilter ? ` in ${divisions.find((d) => d.id === teamsDivFilter)?.name ?? "division"}` : ""}.
+        </div>
+      )}
+      {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} localPageSize={80} eventId={event.id} divisionMap={teamDivisionNameMap} />}
       {tab === "picklist" && (
         primaryOrg
           ? <PicklistTab event={event} orgId={primaryOrg.orgId} />
@@ -4236,6 +4327,324 @@ function EventDetail({ param }: { param: string }) {
       {playback && <MatchVideoOverlay playback={playback} onClose={() => setPlayback(null)} />}
     </section>
     </ProgramContext.Provider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Event Info tab — two-column: event details + agenda, plus webcast
+// ---------------------------------------------------------------------------
+
+function formatEventDate(start: string | undefined, end: string | undefined): string {
+  if (!start && !end) return "—";
+  if (!start || !end) return start ?? end ?? "—";
+  try {
+    const s = new Date(start);
+    const e = new Date(end);
+    const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+    const sStr = s.toLocaleDateString(undefined, opts);
+    const eStr = e.toLocaleDateString(undefined, { ...opts, year: "numeric" });
+    return s.toDateString() === e.toDateString() ? eStr : `${sStr} – ${eStr}`;
+  } catch {
+    return `${start} – ${end}`;
+  }
+}
+
+function EventStatCard({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="event-stat-card">
+      <span className="event-stat-label">{label}</span>
+      <strong className="event-stat-value">{value}</strong>
+    </div>
+  );
+}
+
+function EventInfoTab({
+  event,
+  infoData,
+  loading,
+}: {
+  event: Event;
+  infoData: EventInfoData | null;
+  loading: boolean;
+}) {
+  const vexEventsUrl = `https://events.vex.com/robot-competitions/vex-robotics-competition/${encodeURIComponent(event.sku ?? String(event.id))}.html`;
+  const calendarUrl = `https://events.vex.com/calendar/${event.id}`;
+
+  // Fetch event rankings (all divisions, or a specific one) + skills for the stats section
+  const eventDivisions = event.divisions ?? [];
+  // "all" = combine every division; a number = single division id
+  const [statsDiv, setStatsDiv] = useState<"all" | number>("all");
+
+  const statsRankings = useAsync(async () => {
+    if (statsDiv !== "all") {
+      // Single division
+      const res = await collectAllPages<Ranking>((page) => api.eventRankings(event.id, statsDiv, { per_page: 250, page }));
+      return res.data;
+    }
+    // All divisions combined
+    const divs = eventDivisions.length > 0 ? eventDivisions : [{ id: 1, name: "Default" }];
+    const results = await Promise.all(
+      divs.map((div) => collectAllPages<Ranking>((page) => api.eventRankings(event.id, div.id, { per_page: 250, page })))
+    );
+    // collectAllPages returns { data: T[], meta } — flatten across all divisions
+    return results.flatMap((r) => r.data);
+  }, [event.id, statsDiv]);
+
+  const statsSkills = useAsync(async () => {
+    const res = await collectAllPages<Skill>((page) => api.eventSkills(event.id, { per_page: 250, page }));
+    return res.data;
+  }, [event.id]);
+
+  // Compute ranking stats
+  const rankStats = (() => {
+    const rows = statsRankings.data ?? [];
+    if (rows.length === 0) return null;
+    const n = rows.length;
+    const sum = (fn: (r: Ranking) => number | null | undefined) =>
+      rows.reduce((acc, r) => acc + (fn(r) ?? 0), 0);
+    const totalWp = sum((r) => r.wp);
+    const totalAp = sum((r) => r.ap);
+    // AWP = WP not earned from match wins/ties (autonomous win points)
+    // Each qual win = 2 WP, each tie = 1 WP, so AWP = wp - (wins*2 + ties)
+    const totalAwp = rows.reduce((acc, r) => {
+      const wp = r.wp ?? 0;
+      const wins = r.wins ?? 0;
+      const ties = r.ties ?? 0;
+      return acc + Math.max(0, wp - (wins * 2 + ties));
+    }, 0);
+    return {
+      teams: n,
+      avgWp: totalWp / n,
+      avgAp: totalAp / n,
+      avgAwp: totalAwp / n,
+      totalWp,
+      totalAp,
+      totalAwp,
+    };
+  })();
+
+  // Compute skills stats (best combined per team)
+  const skillStats = (() => {
+    const rows = statsSkills.data ?? [];
+    if (rows.length === 0) return null;
+    const byTeam = new Map<string, { driver: number; prog: number }>();
+    for (const s of rows) {
+      const key = String(s.team.id);
+      const cur = byTeam.get(key) ?? { driver: 0, prog: 0 };
+      if (s.type === "driver") cur.driver = Math.max(cur.driver, s.score ?? 0);
+      else cur.prog = Math.max(cur.prog, s.score ?? 0);
+      byTeam.set(key, cur);
+    }
+    const teams = [...byTeam.values()];
+    const n = teams.length;
+    if (n === 0) return null;
+    const avg = (fn: (t: { driver: number; prog: number }) => number) =>
+      teams.reduce((acc, t) => acc + fn(t), 0) / n;
+    return {
+      avgCombined: avg((t) => t.driver + t.prog),
+      avgDriver: avg((t) => t.driver),
+      avgProg: avg((t) => t.prog),
+    };
+  })();
+
+  // Load world skills leaderboard for this season/grade, then filter to event teams
+  const statsWorldSkills = useAsync(async () => {
+    const seasonId = event.season?.id;
+    if (!seasonId) return null;
+    const gc = eventGradeCode(event);
+    const grade = gc === "HS" ? "High School"
+      : gc === "MS" ? "Middle School"
+      : gc === "ES" ? "Elementary"
+      : event.grade ?? "High School"; // fallback for mixed/all-grade events
+    return loadWorldSkills(seasonId, grade).catch(() => null);
+  }, [event.id, event.season?.id]);
+
+  // Compute world skills stats for teams at this event (cross-referenced via rankings)
+  const worldSkillsStats = (() => {
+    const wsData = statsWorldSkills.data;
+    const rankRows = statsRankings.data;
+    if (!wsData || !rankRows || rankRows.length === 0) return null;
+    // Build a set of team IDs present at this event
+    const teamIds = new Set(rankRows.map((r) => r.team.id));
+    const eventWs = wsData.filter((e) => teamIds.has(e.team.id));
+    if (eventWs.length === 0) return null;
+    const n = eventWs.length;
+    const avg = (fn: (e: WorldSkillsEntry) => number) =>
+      eventWs.reduce((acc, e) => acc + fn(e), 0) / n;
+    return {
+      teamsFound: n,
+      avgRank: avg((e) => e.rank),
+      avgCombined: avg((e) => e.scores.score),
+      avgDriver: avg((e) => e.scores.driver),
+      avgProg: avg((e) => e.scores.programming),
+    };
+  })();
+
+  const webcast = infoData?.webcast ?? null;
+  const hasWebcastLinks = (webcast?.links?.length ?? 0) > 0;
+
+  return (
+    <div className="event-info-tab">
+      {/* Open in VEX Events link */}
+      <a
+        href={vexEventsUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="event-info-open-link"
+      >
+        <ExternalLink size={13} />
+        Open in VEX Events
+      </a>
+
+      <div className="event-info-grid">
+        {/* Left column — event details + webcast */}
+        <Panel title="Event Info" icon={<Info size={15} />}>
+          <dl className="about-profile">
+            <AboutProfileRow label="Date">{formatEventDate(event.start, event.end)}</AboutProfileRow>
+            {event.level && (
+              <AboutProfileRow label="Level">{event.level}</AboutProfileRow>
+            )}
+            {(() => { const g = event.grade || (eventGradeCode(event) !== "All" ? eventGradeCode(event) : null); return g ? <AboutProfileRow label="Grade">{g}</AboutProfileRow> : null; })()}
+            <AboutProfileRow label="Region">{event.location?.region ?? event.location?.city ?? "—"}</AboutProfileRow>
+            {event.location?.venue && (
+              <AboutProfileRow label="Venue">{event.location.venue}</AboutProfileRow>
+            )}
+            <AboutProfileRow label="Season">{event.season?.name ?? "—"}</AboutProfileRow>
+            <AboutProfileRow label="SKU">{event.sku ?? String(event.id)}</AboutProfileRow>
+          </dl>
+          <div className="event-info-calendar-row">
+            <a href={calendarUrl} target="_blank" rel="noopener noreferrer" className="event-info-calendar-link">
+              <CalendarDays size={12} />
+              Add to Calendar
+            </a>
+          </div>
+
+          {/* Webcast section */}
+          {(webcast || loading) && (
+            <div className="event-info-webcast">
+              <div className="event-info-webcast-label">
+                <Tv2 size={12} style={{ display: "inline", verticalAlign: "middle", marginRight: 4 }} />
+                Webcast
+              </div>
+              {loading ? (
+                <div className="event-info-webcast-desc">Loading…</div>
+              ) : webcast ? (
+                <>
+                  {webcast.description && (
+                    <div className="event-info-webcast-desc">{webcast.description}</div>
+                  )}
+                  {hasWebcastLinks && (
+                    <div className="event-info-webcast-links">
+                      {webcast.links.map((link, i) => (
+                        <a
+                          key={i}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="event-info-webcast-link"
+                        >
+                          {link.platform === "youtube" ? (
+                            <Youtube size={13} />
+                          ) : (
+                            <Tv2 size={13} />
+                          )}
+                          {link.label || "Watch Live"}
+                          <ExternalLink size={11} />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+          )}
+        </Panel>
+
+        {/* Right column — agenda */}
+        <Panel title="Agenda" icon={<CalendarDays size={15} />}>
+          {loading ? (
+            <div className="empty">Loading agenda…</div>
+          ) : infoData?.agenda?.html ? (
+            // eslint-disable-next-line react/no-danger
+            <div className="event-info-agenda-html" dangerouslySetInnerHTML={{ __html: infoData.agenda.html }} />
+          ) : (
+            <div className="empty">
+              {infoData ? "No agenda posted yet." : "Click this tab to load agenda."}
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      {/* Division picker for stats — only shown on multi-division events */}
+      {eventDivisions.length > 1 && (statsRankings.loading || rankStats || skillStats || statsWorldSkills.loading || worldSkillsStats) && (
+        <div className="division-tabs" style={{ margin: "0 12px 4px" }} aria-label="Stats division">
+          <span>Division</span>
+          <button className={statsDiv === "all" ? "active" : ""} onClick={() => setStatsDiv("all")}>All</button>
+          {eventDivisions.map((div) => (
+            <button key={div.id} className={statsDiv === div.id ? "active" : ""} onClick={() => setStatsDiv(div.id)}>
+              {div.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Stats panels — ranking + combined skills */}
+      {(statsRankings.loading || rankStats || skillStats || statsWorldSkills.loading || worldSkillsStats) && (
+        <div className="event-stats-grid">
+          <Panel title="Ranking Stats" icon={<BarChart3 size={15} />}>
+            {statsRankings.loading ? (
+              <div className="event-stat-card"><span className="event-stat-label">Loading…</span></div>
+            ) : rankStats ? (
+              <>
+                <EventStatCard label="Teams" value={rankStats.teams} />
+                <EventStatCard label="Avg WP" value={rankStats.avgWp.toFixed(1)} />
+                <EventStatCard label="Avg AP" value={rankStats.avgAp.toFixed(1)} />
+                <EventStatCard label="Avg AWP" value={rankStats.avgAwp.toFixed(2)} />
+                <EventStatCard label="Total WP" value={rankStats.totalWp.toFixed(0)} />
+                <EventStatCard label="Total AP" value={rankStats.totalAp.toFixed(0)} />
+                <EventStatCard label="Total AWP" value={rankStats.totalAwp.toFixed(0)} />
+              </>
+            ) : (
+              <div className="event-stat-card"><span className="event-stat-label muted">No ranking data</span></div>
+            )}
+          </Panel>
+
+          {(statsSkills.loading || skillStats || statsWorldSkills.loading || worldSkillsStats) && (
+            <Panel title="Skills" icon={<Zap size={15} />}>
+              {/* Event Skills section */}
+              {statsSkills.loading ? (
+                <div className="event-stat-card"><span className="event-stat-label">Loading…</span></div>
+              ) : skillStats ? (
+                <div className="event-stat-section">
+                  <EventStatCard label="Avg Combined" value={skillStats.avgCombined.toFixed(1)} />
+                  <EventStatCard label="Avg Driver" value={skillStats.avgDriver.toFixed(1)} />
+                  <EventStatCard label="Avg Programming" value={skillStats.avgProg.toFixed(1)} />
+                </div>
+              ) : null}
+
+              {/* World Skills section — vertical label outside the row cards */}
+              {(statsWorldSkills.loading || worldSkillsStats) && (
+                <div className="event-stat-world-group">
+                  <span className="event-stat-world-label">World Skills</span>
+                  <div className="event-stat-section">
+                    {statsWorldSkills.loading || statsRankings.loading ? (
+                      <div className="event-stat-card"><span className="event-stat-label">Loading…</span></div>
+                    ) : worldSkillsStats ? (
+                      <>
+                        <EventStatCard label="Avg Rank" value={`#${Math.round(worldSkillsStats.avgRank)}`} />
+                        <EventStatCard label="Avg Combined" value={worldSkillsStats.avgCombined.toFixed(1)} />
+                        <EventStatCard label="Avg Driver" value={worldSkillsStats.avgDriver.toFixed(1)} />
+                        <EventStatCard label="Avg Programming" value={worldSkillsStats.avgProg.toFixed(1)} />
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+            </Panel>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -7329,8 +7738,8 @@ function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }:
               <th>High</th>
               <th>Low</th>
               <th>Dropped scores</th>
-              <th className="compare-col">Add Compare</th>
-              {showPicklist && <th className="picklist-col">Add Picklist</th>}
+              <th className="compare-col">Compare</th>
+              {showPicklist && <th className="picklist-col">Picklist</th>}
             </tr>
           </thead>
           <tbody>
@@ -7385,8 +7794,8 @@ function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }:
             <th>SP</th>
             <th>High</th>
             <th>Avg</th>
-            <th className="compare-col">Add Compare</th>
-            {showPicklist && <th className="picklist-col">Add Picklist</th>}
+            <th className="compare-col">Compare</th>
+            {showPicklist && <th className="picklist-col">Picklist</th>}
           </tr>
         </thead>
         <tbody>

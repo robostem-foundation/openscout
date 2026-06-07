@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { proxyRequest, type ProxySource } from "./proxy.js";
+import { scrapeEventInfo } from "./eventInfoScraper.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -37,6 +38,23 @@ function proxyRoute(source: ProxySource) {
     }
   };
 }
+
+// Event info scraper — must come before the /api/re-root catch-all
+app.get("/api/event-info", async (req: express.Request, res: express.Response) => {
+  const sku = req.query.sku as string | undefined;
+  if (!sku) {
+    res.status(400).json({ error: "sku query param is required" });
+    return;
+  }
+  try {
+    const data = await scrapeEventInfo(sku);
+    res.setHeader("cache-control", "s-maxage=3600, stale-while-revalidate=86400");
+    res.json(data);
+  } catch (err) {
+    console.error("[event-info] handler error:", err);
+    res.status(500).json({ error: "Failed to fetch event info" });
+  }
+});
 
 app.get("/api/rse/*endpoint", proxyRoute("rse"));
 app.get("/api/re/*endpoint", proxyRoute("re"));
