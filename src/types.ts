@@ -81,9 +81,14 @@ export type Event = {
   location: Location;
   divisions?: Division[];
   level?: string | null;
+  grade?: string | null;
   ongoing?: boolean;
   awards_finalized?: boolean;
   event_type?: string | null;
+  // Additional fields returned by the API but not always documented
+  format?: string | null;
+  capacity?: number | null;
+  spots?: { open?: number | null; total?: number | null } | null;
 };
 
 export type Team = {
@@ -207,6 +212,15 @@ export type WorldSkillsEntry = {
     maxDriver?: number;
   };
   eligible?: boolean;
+};
+
+export type EventInfoWebcastLink = { url: string; platform: "youtube" | "vimeo" | "other"; label: string };
+
+export type EventInfoData = {
+  // Raw sanitized inner HTML from the Agenda tab (preserves organiser formatting)
+  agenda: { html: string } | null;
+  webcast: { description: string; links: EventInfoWebcastLink[] } | null;
+  sourceUrl: string;
 };
 
 export type SuperscoreRow = {
