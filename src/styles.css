@@ -3667,11 +3667,23 @@ tbody tr:hover {
   padding: 2px 0;
 }
 
+/* Strip: search toggle on the left, key-award banners fill the rest */
+.event-highlights-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  margin: -6px 0 12px;
+}
+.event-highlights-strip .event-highlights {
+  flex: 1;
+  min-width: 0;
+  margin: 0; /* strip owns the margin */
+}
+
 .event-highlights {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
   gap: 10px;
-  margin: -6px 0 12px;
 }
 
 .event-highlights article {
@@ -7365,3 +7377,67 @@ td.quick-look-col {
   opacity: 0.3;
   cursor: default;
 }
+
+/* ── Event team search bar ── */
+.event-team-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -5px 0 10px;
+}
+/* Toggle lives in the banner strip — sized to match banner height */
+.event-team-search-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.event-team-search-toggle:hover,
+.event-team-search-toggle.is-active {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+/* Expanded: icon + input + clear */
+.event-team-search-icon {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+.event-team-search-input {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  padding: 0 8px;
+  outline: none;
+}
+.event-team-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.event-team-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  padding: 0;
+}
+.event-team-search-clear:hover { color: var(--text); }
