@@ -4026,6 +4026,8 @@ function EventDetail({ param }: { param: string }) {
   const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
   const [teamsDivFilter, setTeamsDivFilter] = useState<number | null>(null);
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
+  const [teamSearch, setTeamSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const tabLayout = useTabLayout();
   const orgs = useOrgs();
   const primaryOrg = orgs[0] ?? null;
@@ -4129,11 +4131,20 @@ function EventDetail({ param }: { param: string }) {
 
   const keyAwards = useMemo(() => highlightAwards(eventAwards, event), [eventAwards, event]);
 
+  // Shared search query — declared before all filtered memos that depend on it
+  const searchQ = teamSearch.trim().toLowerCase();
+
   const filteredTeams = useMemo(() => {
-    const all = teams.data?.data ?? [];
-    if (!teamsDivFilter || !allDivisionRankings.data) return all;
-    return all.filter((t) => allDivisionRankings.data!.get(t.id) === teamsDivFilter);
-  }, [teams.data, teamsDivFilter, allDivisionRankings.data]);
+    let all = teams.data?.data ?? [];
+    if (teamsDivFilter && allDivisionRankings.data)
+      all = all.filter((t) => allDivisionRankings.data!.get(t.id) === teamsDivFilter);
+    if (searchQ)
+      all = all.filter((t) =>
+        t.number.toLowerCase().includes(searchQ) ||
+        (t.team_name ?? "").toLowerCase().includes(searchQ)
+      );
+    return all;
+  }, [teams.data, teamsDivFilter, allDivisionRankings.data, searchQ]);
 
   // For multi-division events: map each teamId to its division name for the Teams tab column
   const teamDivisionNameMap = useMemo(() => {
@@ -4145,6 +4156,35 @@ function EventDetail({ param }: { param: string }) {
     }
     return out;
   }, [allDivisionRankings.data, divisions]);
+
+  // Reset team search when navigating to a different event
+  useEffect(() => { setTeamSearch(""); setSearchOpen(false); }, [event?.id]);
+
+  const filteredMatches = useMemo(() => {
+    const all = matches.data?.data ?? [];
+    if (!searchQ) return all;
+    return all.filter((m) =>
+      m.alliances.some((a) => a.teams.some((t) => t.team.name.toLowerCase().includes(searchQ)))
+    );
+  }, [matches.data, searchQ]);
+
+  const filteredRankings = useMemo(() => {
+    const all = rankings.data?.data ?? [];
+    if (!searchQ) return all;
+    return all.filter((r) => r.team.name.toLowerCase().includes(searchQ));
+  }, [rankings.data, searchQ]);
+
+  const filteredSkills = useMemo(() => {
+    const all = skills.data?.data ?? [];
+    if (!searchQ) return all;
+    return all.filter((s) => s.team.name.toLowerCase().includes(searchQ));
+  }, [skills.data, searchQ]);
+
+  const filteredAwards = useMemo(() => {
+    const all = awards.data?.data ?? [];
+    if (!searchQ) return all;
+    return all.filter((a) => a.teamWinners?.some((w) => w.team.name.toLowerCase().includes(searchQ)));
+  }, [awards.data, searchQ]);
 
   useEffect(() => {
     if (!event) return;
@@ -4260,7 +4300,19 @@ function EventDetail({ param }: { param: string }) {
       />
       <div className="view-tabs-body">
       <ComparePickHint />
-      {keyAwards.length > 0 && <EventHighlights awards={keyAwards} />}
+      {/* Banner row — search toggle on the left, key award highlights to the right */}
+      <div className="event-highlights-strip">
+        {(tab === "matches" || tab === "rankings" || tab === "skills" || tab === "awards" || tab === "teams") && (
+          <button
+            className={`event-team-search-toggle${searchOpen || teamSearch ? " is-active" : ""}`}
+            onClick={() => setSearchOpen(true)}
+            title="Search teams"
+          >
+            <Search size={16} />
+          </button>
+        )}
+        {keyAwards.length > 0 && <EventHighlights awards={keyAwards} />}
+      </div>
       {divisions.length > 1 && (tab === "matches" || tab === "rankings") && (
         <div className="division-tabs" aria-label="Event divisions">
           <span>Division</span>
@@ -4275,6 +4327,26 @@ function EventDetail({ param }: { param: string }) {
           ))}
         </div>
       )}
+      {/* Expanded search bar — appears below division-tabs when toggle is active */}
+      {(searchOpen || teamSearch) && (tab === "matches" || tab === "rankings" || tab === "skills" || tab === "awards" || tab === "teams") && (
+        <div className="event-team-search">
+          <Search size={14} className="event-team-search-icon" />
+          <input
+            className="event-team-search-input"
+            type="text"
+            placeholder="Filter by team…"
+            value={teamSearch}
+            autoFocus
+            onChange={(e) => setTeamSearch(e.target.value)}
+            onBlur={() => { if (!teamSearch) setSearchOpen(false); }}
+          />
+          {teamSearch && (
+            <button className="event-team-search-clear" onClick={() => { setTeamSearch(""); setSearchOpen(false); }}>
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      )}
       <Status loading={activeStatus.loading} error={activeStatus.error} />
       {tab === "team-matches" && focusTeam && (
         <Panel title={`${focusTeam.number}'s Matches at this Event`} icon={<Gamepad2 />}>
@@ -4286,7 +4358,7 @@ function EventDetail({ param }: { param: string }) {
       )}
       {tab === "matches" && (
         <MatchesTable
-          matches={matches.data?.data ?? []}
+          matches={filteredMatches}
           timestampMap={timestampMap}
           presetSupported={!!preset.data?.exists}
           presetLoading={preset.loading || (preset.data?.exists ? matchTimestamps.loading : false)}
@@ -4296,9 +4368,9 @@ function EventDetail({ param }: { param: string }) {
           eventId={event.id}
         />
       )}
-      {tab === "rankings" && <RankingsTable rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} matches={matches.data?.data ?? []} orgId={primaryOrg?.orgId} eventId={String(event.id)} />}
-      {tab === "skills" && <SkillsTable skills={skills.data?.data ?? []} />}
-      {tab === "awards" && <AwardsList awards={awards.data?.data ?? []} />}
+      {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} orgId={primaryOrg?.orgId} eventId={String(event.id)} />}
+      {tab === "skills" && <SkillsTable skills={filteredSkills} />}
+      {tab === "awards" && <AwardsList awards={filteredAwards} />}
       {tab === "teams" && divisions.length > 1 && (
         <div className="division-tabs" aria-label="Filter teams by division">
           <span>Division</span>
