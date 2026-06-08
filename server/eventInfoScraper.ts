@@ -3,6 +3,7 @@
 // Imported by both the local Express dev route and the Vercel serverless function.
 
 import * as cheerio from "cheerio";
+import type { AnyNode } from "domhandler";
 
 export interface WebcastLink {
   url: string;
@@ -90,7 +91,7 @@ function findSection($: cheerio.CheerioAPI, ...names: string[]) {
 }
 
 /** Strip non-breaking spaces and normalise whitespace from a text node. */
-function nodeText($el: cheerio.Cheerio<cheerio.AnyNode>): string {
+function nodeText($el: cheerio.Cheerio<AnyNode>): string {
   return $el.text().replace(/ /g, " ").trim();
 }
 
