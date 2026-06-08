@@ -6379,6 +6379,32 @@ td.quick-look-col {
   color: var(--text-faint);
   font-style: italic;
 }
+/* ── Recents collapse / blur ────────────────────────────────────────────── */
+.spotlight-recents-wrap {
+  position: relative;
+}
+.spotlight-recents-wrap.is-collapsed {
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}
+.spotlight-show-all-recents {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: -4px;
+  padding: 5px 6px 7px;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.1s;
+}
+.spotlight-show-all-recents:hover { color: var(--link-hover); }
+
 .spotlight-footer {
   display: flex;
   align-items: center;
@@ -6467,6 +6493,15 @@ td.quick-look-col {
 .global-search-wrap:focus-within .gs-kbd-hint { opacity: 0; pointer-events: none; }
 /* Extra right padding so typed text doesn't overlap the hint */
 .global-search-input { padding-right: 58px; }
+
+/* Pill-shaped ⌘K hint for the large home-hero search bar */
+.home-hero-global-search .gs-kbd-hint {
+  right: 12px;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 12px;
+  border-color: var(--border-soft);
+}
 
 /* ── Panel action link (used by RecentlyViewedPanel clear button) ────────── */
 .panel-action-link {
@@ -6842,6 +6877,16 @@ td.quick-look-col {
 }
 
 /* ── Org Favorites Popover ────────────────────────────────────────────────── */
+
+.org-fav-labeled-btn {
+  width: auto;
+  min-width: max-content;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 
 .org-fav-popover {
   position: absolute;

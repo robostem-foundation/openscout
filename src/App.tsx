@@ -1609,7 +1609,7 @@ function OrgFavBtn({
   const active = useIsOrgFavorite(orgId, kind, refId);
   return (
     <button
-      className={`icon-button${active ? " active" : ""}`}
+      className={`icon-button${label ? " org-fav-labeled-btn" : ""}${active ? " active" : ""}`}
       title={active ? `Remove from ${label ?? "org"}` : `Add to ${label ?? "org"}`}
       onClick={() => {
         void toggleOrgFavorite(orgId, kind, refId);
@@ -1617,7 +1617,10 @@ function OrgFavBtn({
       }}
     >
       {label ? (
-        <><Users size={14} /> <span style={{ fontSize: 12, marginLeft: 4 }}>{label}</span></>
+        <>
+          <Users size={14} />
+          <span>{label}</span>
+        </>
       ) : (
         <Users size={17} />
       )}
@@ -1639,17 +1642,18 @@ function OrgFavoriteButton({ kind, refId }: { kind: "team" | "event"; refId: str
   if (!user || orgs.length === 0) return null;
 
   if (orgs.length === 1) {
-    return <OrgFavBtn orgId={orgs[0].orgId} kind={kind} refId={refId} />;
+    return <OrgFavBtn orgId={orgs[0].orgId} kind={kind} refId={refId} label="Org Favorite" />;
   }
 
   return (
     <div style={{ position: "relative" }} ref={popoverRef}>
       <button
-        className="icon-button"
+        className="icon-button org-fav-labeled-btn"
         title="Add to org favorites"
         onClick={() => setOpen((v) => !v)}
       >
-        <Users size={17} />
+        <Users size={14} />
+        <span>Org Favorite</span>
       </button>
       {open && (
         <div className="org-fav-popover">
@@ -4388,7 +4392,7 @@ function EventDetail({ param }: { param: string }) {
           {teams.data.data.length.toLocaleString()} teams{teamsDivFilter ? ` in ${divisions.find((d) => d.id === teamsDivFilter)?.name ?? "division"}` : ""}.
         </div>
       )}
-      {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} localPageSize={80} eventId={event.id} divisionMap={teamDivisionNameMap} />}
+      {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} eventId={event.id} divisionMap={teamDivisionNameMap} />}
       {tab === "picklist" && (
         primaryOrg
           ? <PicklistTab event={event} orgId={primaryOrg.orgId} />
@@ -4496,11 +4500,18 @@ function EventInfoTab({
   })();
 
   // Compute skills stats (best combined per team)
+  // When a specific division is selected, restrict to teams that appear in that
+  // division's rankings (statsRankings already reflects the statsDiv filter).
   const skillStats = (() => {
     const rows = statsSkills.data ?? [];
     if (rows.length === 0) return null;
+    // If a single division is selected, limit to its ranked team IDs
+    const divTeamIds = statsDiv !== "all" && statsRankings.data
+      ? new Set(statsRankings.data.map((r) => r.team.id))
+      : null;
     const byTeam = new Map<string, { driver: number; prog: number }>();
     for (const s of rows) {
+      if (divTeamIds && !divTeamIds.has(s.team.id)) continue;
       const key = String(s.team.id);
       const cur = byTeam.get(key) ?? { driver: 0, prog: 0 };
       if (s.type === "driver") cur.driver = Math.max(cur.driver, s.score ?? 0);
@@ -9362,9 +9373,15 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   // True while we're fetching older seasons to fill up to 3 — results already visible but more may come
   const [searchingOlderSeasons, setSearchingOlderSeasons] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [showAllRecents, setShowAllRecents] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const recent = useRecentlyViewed();
   const trayEntries = useCompareTray();
+
+  const RECENT_COLLAPSED_LIMIT = 4;
+  const RECENT_MAX = 10;
+  const visibleRecentCount = showAllRecents ? Math.min(RECENT_MAX, recent.length) : Math.min(RECENT_COLLAPSED_LIMIT, recent.length);
+  const shouldCollapseRecents = !showAllRecents && recent.length > RECENT_COLLAPSED_LIMIT;
 
   // Pre-warm older season caches the moment the palette opens so fallback
   // fetches are already in flight (or done) by the time the user types.
@@ -9457,7 +9474,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     if (!debounced) {
       return [
         ...(compareAction ? [compareAction] : []),
-        ...recent.slice(0, 8).map((entry): SpotlightItem => ({ kind: "recent", entry })),
+        ...recent.slice(0, visibleRecentCount).map((entry): SpotlightItem => ({ kind: "recent", entry })),
         ...SPOTLIGHT_ACTIONS.map((a): SpotlightItem => ({ kind: "action", ...a })),
       ];
     }
@@ -9467,7 +9484,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
       ...events.map((ev): SpotlightItem => ({ kind: "event", event: ev })),
       ...actionMatches.map((a): SpotlightItem => ({ kind: "action", ...a })),
     ];
-  }, [debounced, teams, events, recent, trayEntries]);
+  }, [debounced, teams, events, recent, trayEntries, visibleRecentCount]);
 
   const handleSelect = useCallback((item: SpotlightItem) => {
     if (item.kind === "action" && item.path === "__compare__") {
@@ -9507,6 +9524,11 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   // Offset for event section label — appears after all team rows
   const eventOffset = teams.length;
 
+  // Offsets for no-query keyboard navigation
+  const cmpOffset = !debounced && trayEntries.length >= 2 ? 1 : 0;
+  const recentOffset = cmpOffset;
+  const actionOffset = cmpOffset + visibleRecentCount;
+
   return (
     <div className="spotlight-overlay" onClick={onClose}>
       <div className="spotlight-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Command palette">
@@ -9534,18 +9556,65 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
         <div className="spotlight-results" role="listbox">
           {loading && <div className="spotlight-loading">Searching…</div>}
 
-          {!debounced && hasRecent && (
-            <div className="spotlight-section-label">Recent</div>
-          )}
+          {/* No-query state: render recents and actions in separate sections */}
           {!debounced && (
-            <div className="spotlight-section-label">{hasRecent ? "Go to" : "Quick navigation"}</div>
+            <>
+              {/* Compare action (if tray has ≥ 2 teams) */}
+              {trayEntries.length >= 2 && items[0] && (
+                <SpotlightRow
+                  item={items[0]}
+                  active={0 === activeIndex}
+                  onMouseEnter={() => setActiveIndex(0)}
+                  onClick={() => handleSelect(items[0])}
+                />
+              )}
+
+              {/* Recent section */}
+              {hasRecent && (
+                <>
+                  <div className="spotlight-section-label">Recent</div>
+                  <div className={`spotlight-recents-wrap${shouldCollapseRecents ? " is-collapsed" : ""}`}>
+                    {items.slice(recentOffset, recentOffset + visibleRecentCount).map((item, i) => (
+                      <SpotlightRow
+                        key={`r-${item.kind === "recent" ? item.entry.path : i}`}
+                        item={item}
+                        active={(recentOffset + i) === activeIndex}
+                        onMouseEnter={() => setActiveIndex(recentOffset + i)}
+                        onClick={() => handleSelect(item)}
+                      />
+                    ))}
+                  </div>
+                  {shouldCollapseRecents && (
+                    <button
+                      className="spotlight-show-all-recents"
+                      onClick={() => setShowAllRecents(true)}
+                    >
+                      Show {Math.min(recent.length, RECENT_MAX) - RECENT_COLLAPSED_LIMIT} more recent{Math.min(recent.length, RECENT_MAX) - RECENT_COLLAPSED_LIMIT > 1 ? "s" : ""}
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* Go to / Quick navigation section */}
+              <div className="spotlight-section-label">{hasRecent ? "Go to" : "Quick navigation"}</div>
+              {items.slice(actionOffset).map((item, i) => (
+                <SpotlightRow
+                  key={`a-${item.kind === "action" ? item.label : i}`}
+                  item={item}
+                  active={(actionOffset + i) === activeIndex}
+                  onMouseEnter={() => setActiveIndex(actionOffset + i)}
+                  onClick={() => handleSelect(item)}
+                />
+              ))}
+            </>
           )}
+
+          {/* Query state: flat list with team/event section labels */}
           {!!debounced && hasTeams && (
             <div className="spotlight-section-label">Teams</div>
           )}
-
-          {items.map((item, i) => {
-            const isEventSectionStart = !!debounced && hasEvents && i === eventOffset;
+          {!!debounced && items.map((item, i) => {
+            const isEventSectionStart = hasEvents && i === eventOffset;
             return (
               <Fragment key={
                 item.kind === "team"   ? `t-${item.team.id}` :
