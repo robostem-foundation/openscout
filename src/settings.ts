@@ -16,7 +16,8 @@ const EVENTS_PROGRAMS_KEY = "vex-events-programs";
 const EVENTS_FILTERS_KEY = "vex-events-filters";
 const TAB_LAYOUT_KEY = "vex-tab-layout";
 const UI_STYLE_KEY = "vex-ui-style";
-const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY, UI_STYLE_KEY] as const;
+const QUICK_VIEW_FIRST_KEY = "vex-quick-view-first";
+const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY, UI_STYLE_KEY, QUICK_VIEW_FIRST_KEY] as const;
 export type SyncedSettingKey = (typeof SYNCED_KEYS)[number];
 
 // Tab orientation for the event/team detail views. "horizontal" matches the
@@ -44,6 +45,8 @@ const listeners = new Set<() => void>();
 const tabListeners = new Set<() => void>();
 // Separate listener set for the UI-style value (same rationale as tabListeners).
 const uiListeners = new Set<() => void>();
+// Separate listener set for the quick-view-first preference (same rationale).
+const quickViewListeners = new Set<() => void>();
 
 function emit() {
   for (const listener of listeners) listener();
@@ -55,6 +58,10 @@ function emitTab() {
 
 function emitUi() {
   for (const listener of uiListeners) listener();
+}
+
+function emitQuickViewFirst() {
+  for (const listener of quickViewListeners) listener();
 }
 
 function subscribe(listener: () => void) {
@@ -78,6 +85,7 @@ function commit(values: Values) {
   emitTab(); // a load may have changed the synced tab layout
   applyUiDom(getUiStyle()); // adopt a synced UI skin on load (cloud-wins)
   emitUi();
+  emitQuickViewFirst(); // a load may have changed the synced quick-view preference
 }
 
 function sameValues(a: Values, b: Values): boolean {
@@ -272,4 +280,36 @@ export function setUiStyle(value: UiStyle) {
   if (signedIn && supabase && userId) void upsertCloud(supabase, userId, next);
   applyUiDom(value);
   emitUi();
+}
+
+// --- quick-view-first preference --------------------------------------------
+
+function subscribeQuickViewFirst(listener: () => void) {
+  quickViewListeners.add(listener);
+  return () => {
+    quickViewListeners.delete(listener);
+  };
+}
+
+// Default true: only a stored literal `false` turns it off, so a fresh user (or
+// any unset key) gets the quick-view-first behavior.
+function getQuickViewFirst(): boolean {
+  const v = currentValues[QUICK_VIEW_FIRST_KEY];
+  return v === undefined ? true : v === true;
+}
+
+// Live "open quick view first" value (signed-out → localStorage; signed-in →
+// cloud jsonb, cloud-wins on load). When false, clicking a team navigates
+// straight to the full team page (the original behavior).
+export function useQuickViewFirst(): boolean {
+  return useSyncExternalStore(subscribeQuickViewFirst, getQuickViewFirst, getQuickViewFirst);
+}
+
+export function setQuickViewFirst(value: boolean) {
+  writeLS(QUICK_VIEW_FIRST_KEY, value);
+  const next: Values = { ...currentValues, [QUICK_VIEW_FIRST_KEY]: value };
+  if (sameValues(next, currentValues)) return;
+  currentValues = next;
+  if (signedIn && supabase && userId) void upsertCloud(supabase, userId, next);
+  emitQuickViewFirst();
 }

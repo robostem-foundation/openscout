@@ -20,7 +20,35 @@ import type {
 type QueryValue = string | number | boolean | null | undefined;
 type Query = Record<string, QueryValue | QueryValue[]>;
 
-const jsonFrom = async <T>(source: "rse" | "re" | "re-root" | "jumper", path: string, query: Query = {}): Promise<T> => {
+// In-flight request dedup: identical GETs issued while one is still pending
+// share the same promise instead of firing a second network request. This
+// collapses React StrictMode's double-mount and any concurrent callers that
+// happen to request the same URL. The entry is removed once the request
+// settles, so this is request-level dedup — not a response cache.
+const inflight = new Map<string, Promise<unknown>>();
+
+const dedupedJson = <T>(url: string): Promise<T> => {
+  const existing = inflight.get(url);
+  if (existing) return existing as Promise<T>;
+
+  const promise = (async () => {
+    const response = await fetch(url);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.message ?? `Request failed with ${response.status}`);
+    }
+    return payload as T;
+  })();
+
+  inflight.set(url, promise);
+  // Clear the entry once settled so future calls re-fetch fresh data.
+  promise.finally(() => {
+    if (inflight.get(url) === promise) inflight.delete(url);
+  });
+  return promise;
+};
+
+const jsonFrom = <T>(source: "rse" | "re" | "re-root" | "jumper", path: string, query: Query = {}): Promise<T> => {
   const params = new URLSearchParams();
 
   Object.entries(query).forEach(([key, value]) => {
@@ -34,14 +62,7 @@ const jsonFrom = async <T>(source: "rse" | "re" | "re-root" | "jumper", path: st
     }
   });
 
-  const response = await fetch(`/api/${source}/${path}${params.size ? `?${params.toString()}` : ""}`);
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.message ?? `Request failed with ${response.status}`);
-  }
-
-  return payload as T;
+  return dedupedJson<T>(`/api/${source}/${path}${params.size ? `?${params.toString()}` : ""}`);
 };
 
 const rseJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("rse", path, query);
@@ -72,11 +93,9 @@ export const api = {
   teamRankings: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Ranking>>(`teams/${id}/rankings`, query),
   teamSkills: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Skill>>(`teams/${id}/skills`, query),
   teamAwards: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Award>>(`teams/${id}/awards`, query),
-  eventInfo: async (sku: string): Promise<EventInfoData> => {
+  eventInfo: (sku: string): Promise<EventInfoData> => {
     const params = new URLSearchParams({ sku });
-    const response = await fetch(`/api/event-info?${params.toString()}`);
-    if (!response.ok) throw new Error(`event-info failed with ${response.status}`);
-    return response.json() as Promise<EventInfoData>;
+    return dedupedJson<EventInfoData>(`/api/event-info?${params.toString()}`);
   },
   jumperPresetEventExists: (sku: string) => jumperJson<JumperPresetExists>("preset-event-exists", { sku }),
   jumperMatchTimestamps: (sku: string, query: Query = {}) => jumperJson<MatchTimestamp[]>("match-timestamp", { sku, ...query }),

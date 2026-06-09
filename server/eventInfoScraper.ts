@@ -22,7 +22,8 @@ export interface EventInfoData {
 const EVENTS_VEX_BASE = process.env.ROBOTEVENTS_ROOT_BASE ?? "https://events.vex.com";
 
 function eventPageUrl(sku: string): string {
-  return `${EVENTS_VEX_BASE}/robot-competitions/vex-robotics-competition/${encodeURIComponent(sku)}.html`;
+  const slug = /VIQC|VIQ/i.test(sku) ? "vex-iq-competition" : "vex-robotics-competition";
+  return `${EVENTS_VEX_BASE}/robot-competitions/${slug}/${encodeURIComponent(sku)}.html`;
 }
 
 function validateHtml(html: string, source: string): string {

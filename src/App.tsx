@@ -74,7 +74,7 @@ import {
 } from "./orgs";
 import type { OrgInvite, OrgMember, OrgMembership, OrgRole } from "./orgs";
 import { supabase } from "./supabase";
-import { setEventsSettings, setTabLayout, setUiStyle, useSettingsEpoch, useTabLayout, useUiStyle } from "./settings";
+import { setEventsSettings, setQuickViewFirst, setTabLayout, setUiStyle, useQuickViewFirst, useSettingsEpoch, useTabLayout, useUiStyle } from "./settings";
 import type { TabLayout, UiStyle } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
@@ -170,6 +170,31 @@ function closeSpotlight() { _spotlightOpen = false; _emitSpotlight(); }
 function subscribeSpotlight(l: () => void) { _spotlightListeners.add(l); return () => _spotlightListeners.delete(l); }
 function getSpotlightOpen() { return _spotlightOpen; }
 
+// ── Team quick-view panel state (module-level, same pattern as spotlight so any
+//    team link / row can open it without threading context through every call) ──
+type QuickViewState = {
+  // Optional: some entry points (e.g. alliance seed lists) only know the team
+  // number + program, so the panel resolves the id by lookup when it's absent.
+  teamId?: number;
+  teamNumber: string;
+  programCode?: string;
+  teamName?: string | null;
+  side: "left" | "right";
+} | null;
+let _quickView: QuickViewState = null;
+const _quickViewListeners = new Set<() => void>();
+function _emitQuickView() { for (const l of _quickViewListeners) l(); }
+function openQuickView(payload: NonNullable<QuickViewState>) { _quickView = payload; _emitQuickView(); }
+function closeQuickView() { _quickView = null; _emitQuickView(); }
+function subscribeQuickView(l: () => void) { _quickViewListeners.add(l); return () => _quickViewListeners.delete(l); }
+function getQuickView() { return _quickView; }
+function useQuickView() { return useSyncExternalStore(subscribeQuickView, getQuickView, getQuickView); }
+// Choose the drawer side from the click position so the panel doesn't cover what
+// you just clicked (left half → left drawer, right half → right drawer).
+function quickViewSideFromEvent(e: { clientX: number }): "left" | "right" {
+  return e.clientX < window.innerWidth / 2 ? "left" : "right";
+}
+
 // ── Compare pick mode ───────────────────────────────────────────────────────
 let _comparePickMode = false;
 const _comparePickModeListeners = new Set<() => void>();
@@ -192,6 +217,12 @@ let _currentTeam: Team | null = null;
 let _currentEventSeasonId: number | null = null;
 let _currentEventId: number | null = null;
 let _currentEventRankings: Ranking[] = [];
+
+// Module-level: opens the in-event team search — registered by EventDetail while
+// mounted, cleared on unmount. Lets the global F shortcut expand the search bar
+// (whose open state lives inside EventDetail) without React context. Null when
+// not on an event page, so F is a no-op elsewhere.
+let _openEventSearch: (() => void) | null = null;
 
 // ── Scroll memory — save scrollY per path, restore on real browser back ──
 const scrollMemory = new Map<string, number>();
@@ -305,6 +336,10 @@ const teamPath = (team: { program?: { id?: number; code?: string | null } | null
 // modern /team/{PROGRAM}/{number} URL.
 const ProgramContext = createContext<string | undefined>(undefined);
 
+// The active in-event team search term, provided by EventDetail. Team links read
+// it to bold the matching portion of their team number. Empty string = no search.
+const TeamSearchContext = createContext<string>("");
+
 function Link({
   href,
   children,
@@ -328,7 +363,9 @@ function Link({
       aria-label={ariaLabel}
       onClick={(event) => {
         onClick?.(event);
-        if (href.startsWith("/")) {
+        // Let an onClick suppress SPA navigation by calling preventDefault (used by
+        // the quick-view interception); otherwise navigate as usual for app paths.
+        if (href.startsWith("/") && !event.defaultPrevented) {
           event.preventDefault();
           navigate(href);
         }
@@ -339,7 +376,21 @@ function Link({
   );
 }
 
-function useAsync<T>(loader: () => Promise<T>, deps: unknown[]) {
+// Standard modal/overlay close: an "Esc" keycap hint next to an × button. Every
+// popup that uses this also wires an Escape key handler, so the hint is accurate.
+function CloseButton({ onClose, label = "Close" }: { onClose: () => void; label?: string }) {
+  return (
+    <span className="close-btn-wrap">
+      <kbd className="esc-hint">Esc</kbd>
+      <button type="button" className="video-close-btn" onClick={onClose} aria-label={label}>×</button>
+    </span>
+  );
+}
+
+// `delayMs` defers the loader so lower-priority requests don't all fire at once
+// on mount — keeps `loading` true while waiting so callers don't flash an empty
+// state. Used to stagger an event page's many parallel fetches.
+function useAsync<T>(loader: () => Promise<T>, deps: unknown[], delayMs = 0) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -349,19 +400,26 @@ function useAsync<T>(loader: () => Promise<T>, deps: unknown[]) {
     setLoading(true);
     setError(null);
 
-    loader()
-      .then((value) => {
-        if (live) setData(value);
-      })
-      .catch((err: Error) => {
-        if (live) setError(err.message);
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
+    const run = () => {
+      loader()
+        .then((value) => {
+          if (live) setData(value);
+        })
+        .catch((err: Error) => {
+          if (live) setError(err.message);
+        })
+        .finally(() => {
+          if (live) setLoading(false);
+        });
+    };
+
+    let timer: number | undefined;
+    if (delayMs > 0) timer = window.setTimeout(run, delayMs);
+    else run();
 
     return () => {
       live = false;
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, deps);
 
@@ -1077,6 +1135,38 @@ function iqMatchResult(match: Match): { score: number | null; dqColor: string | 
   return { score: Math.max(rv, bv), dqColor };
 }
 
+// Classifies an IQ qualification score against the event's distribution: scores in
+// the top 10% are "gold", the next 10% (top 20%) "bronze". Built from every qual
+// match score at the event so the same thresholds apply in the results table and
+// the team-focus tables. Returns a no-op classifier for events too small to rank.
+type ScoreTier = "gold" | "bronze" | null;
+function iqScoreTiers(matches: Match[]): (score: number | null | undefined) => ScoreTier {
+  const scores = matches
+    .filter((m) => m.round === 2)
+    .map((m) => iqMatchResult(m).score)
+    .filter((s): s is number => s != null && s > 0)
+    .sort((a, b) => a - b);
+  if (scores.length < 10) return () => null;
+  const quantile = (q: number) => {
+    const idx = (scores.length - 1) * q;
+    const lo = Math.floor(idx);
+    const hi = Math.ceil(idx);
+    return lo === hi ? scores[lo] : scores[lo] + (scores[hi] - scores[lo]) * (idx - lo);
+  };
+  const gold = quantile(0.9);
+  const bronze = quantile(0.8);
+  return (score) => {
+    if (score == null) return null;
+    if (score >= gold) return "gold";
+    if (score >= bronze) return "bronze";
+    return null;
+  };
+}
+
+function iqTierClass(tier: ScoreTier): string {
+  return tier === "gold" ? " score-gold" : tier === "bronze" ? " score-bronze" : "";
+}
+
 function iqDropCount(played: number) {
   if (played < 4) return 0;
   if (played < 8) return 1;
@@ -1109,12 +1199,16 @@ function iqTeamQualStats(qualMatches: Match[], teamId: number, ranking?: Ranking
   return { played, high, low, avg, dropped };
 }
 
-// IQ alliances are the partner pairs that appear in the finals, seeded by their
-// finals score (descending). Tiebreaker replays of the same pair are de-duped.
+// IQ alliances are the partner pairs that appear in the finals, seeded by
+// finals match order: the pair that plays the LAST finals match (highest F
+// number) is the 1st seed, and the pair in Finals 1 is the lowest seed.
+// Tiebreaker replays of the same pair are de-duped (first appearance wins).
 function iqFinalsAlliances(matches: Match[]): Array<[number, string[]]> {
-  const byPair = new Map<string, { teams: string[]; score: number }>();
+  const seen = new Set<string>();
+  const pairs: string[][] = [];
   matches
     .filter((match) => isIqFinalsMatch(match))
+    .sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum)
     .forEach((match) => {
       const red = match.alliances.find((alliance) => alliance.color === "red");
       const blue = match.alliances.find((alliance) => alliance.color === "blue");
@@ -1123,14 +1217,15 @@ function iqFinalsAlliances(matches: Match[]): Array<[number, string[]]> {
         ...(blue?.teams.map((entry) => entry.team.name) ?? []),
       ].filter(Boolean);
       if (!teams.length) return;
-      const score = Math.max(red?.score ?? 0, blue?.score ?? 0);
       const key = [...teams].sort().join("|");
-      const existing = byPair.get(key);
-      if (!existing || score > existing.score) byPair.set(key, { teams, score });
+      if (seen.has(key)) return;
+      seen.add(key);
+      pairs.push(teams);
     });
-  return [...byPair.values()]
-    .sort((a, b) => b.score - a.score)
-    .map((row, index) => [index + 1, row.teams] as [number, string[]]);
+  // Seed assignment: last finals pair (highest F number) → seed 1, Finals 1 pair
+  // → lowest seed. `.reverse()` then orders the list smallest-seed-first for display.
+  const n = pairs.length;
+  return pairs.map((teams, index) => [n - index, teams] as [number, string[]]).reverse();
 }
 
 // Label finals matches "Finals 1", "Finals 2"... in order; a repeat of the same
@@ -1525,13 +1620,27 @@ function CompareTeamLink({
   children?: ReactNode;
 }) {
   const compareMode = useComparePickMode();
+  const quickViewFirst = useQuickViewFirst();
+  const search = useContext(TeamSearchContext);
   const inTray = useIsInTray(teamId);
   const full = !canAddToTray() && !inTray;
-  const content = children ?? teamNumber;
+  const rawContent = children ?? teamNumber;
+  // Bold the matching part of the team number when an in-event search is active.
+  const content = search && typeof rawContent === "string" ? highlightMatch(rawContent, search) : rawContent;
 
   if (!compareMode) {
     return (
-      <Link href={teamSlugPath(programCode, teamNumber, teamId)} className={className}>
+      <Link
+        href={teamSlugPath(programCode, teamNumber, teamId)}
+        className={className}
+        onClick={(e) => {
+          // Quick view only when viewing an event; elsewhere navigate as usual.
+          if (!quickViewFirst || _currentEventId == null) return;
+          e.preventDefault();
+          e.stopPropagation();
+          openQuickView({ teamId, teamNumber, programCode, teamName, side: quickViewSideFromEvent(e) });
+        }}
+      >
         {content}
       </Link>
     );
@@ -1550,6 +1659,41 @@ function CompareTeamLink({
     >
       {content}
     </button>
+  );
+}
+
+// A plain team link (no compare-pick behavior) that still honors the quick-view
+// setting: opens the quick view in-place when on, navigates when off. Used for
+// team links that aren't CompareTeamLinks — award winner pills, alliance seeds,
+// note chips, etc. `teamId` is optional (alliance seeds only carry a number).
+function TeamQuickLink({ teamId, teamNumber, programCode, teamName, className, title, children }: {
+  teamId?: number;
+  teamNumber: string;
+  programCode?: string;
+  teamName?: string | null;
+  className?: string;
+  title?: string;
+  children?: ReactNode;
+}) {
+  const quickViewFirst = useQuickViewFirst();
+  const search = useContext(TeamSearchContext);
+  const rawContent = children ?? teamNumber;
+  const content = search && typeof rawContent === "string" ? highlightMatch(rawContent, search) : rawContent;
+  return (
+    <Link
+      href={teamSlugPath(programCode, teamNumber, teamId)}
+      className={className}
+      title={title}
+      onClick={(e) => {
+        // Quick view only when viewing an event; elsewhere navigate as usual.
+        if (!quickViewFirst || _currentEventId == null) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openQuickView({ teamId, teamNumber, programCode, teamName, side: quickViewSideFromEvent(e) });
+      }}
+    >
+      {content}
+    </Link>
   );
 }
 
@@ -2432,6 +2576,32 @@ function readEventFilters(): Partial<SavedEventFilters> {
   }
 }
 
+// Bold every case-insensitive occurrence of `query` within `text`. Returns the
+// raw string when there's no query so non-search renders are unaffected.
+function highlightMatch(text: string, query: string): ReactNode {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return text;
+  const lower = text.toLowerCase();
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  let key = 0;
+  for (;;) {
+    const idx = lower.indexOf(needle, cursor);
+    if (idx === -1) {
+      parts.push(text.slice(cursor));
+      break;
+    }
+    if (idx > cursor) parts.push(text.slice(cursor, idx));
+    parts.push(
+      <strong key={key++} className="search-highlight">
+        {text.slice(idx, idx + needle.length)}
+      </strong>,
+    );
+    cursor = idx + needle.length;
+  }
+  return parts;
+}
+
 function EventsPageInner() {
   const params = new URLSearchParams(window.location.search);
   const [quickSearch, setQuickSearch] = useState(params.get("search") ?? "");
@@ -3034,7 +3204,7 @@ function EventsPageInner() {
                     onMouseEnter={() => setActiveQuickResult(index)}
                     onClick={() => openQuickResult(event)}
                   >
-                    <span>{event.name}</span>
+                    <span>{highlightMatch(event.name, quickSearch)}</span>
                     <small>{formatEventDateRange(event.start, event.end)}</small>
                   </button>
                 ))}
@@ -3699,6 +3869,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
   const [page, setPage] = useState(1);
   const [expandedTeamId, setExpandedTeamId] = useState<number | null>(null);
   const compareMode = useComparePickMode();
+  const quickViewFirst = useQuickViewFirst();
   const totalPages = localPageSize ? Math.max(1, Math.ceil(teams.length / localPageSize)) : 1;
   const visibleTeams = localPageSize ? teams.slice((page - 1) * localPageSize, page * localPageSize) : teams;
 
@@ -3736,7 +3907,15 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
               const expanded = expandedTeamId === team.id;
               return (
                 <Fragment key={team.id}>
-                  <tr key={team.id} className={`team-row${compareMode ? " compare-pick-row" : ""}`} onClick={() => { if (!compareMode) navigate(teamPath(team)); }}>
+                  <tr key={team.id} className={`team-row${compareMode ? " compare-pick-row" : ""}`} onClick={(e) => {
+                    if (compareMode) return;
+                    // Quick view only inside an event (Teams tab); the /teams list navigates.
+                    if (quickViewFirst && _currentEventId != null) {
+                      openQuickView({ teamId: team.id, teamNumber: team.number, programCode: programSlug(team.program), teamName: team.team_name, side: quickViewSideFromEvent(e) });
+                    } else {
+                      navigate(teamPath(team));
+                    }
+                  }}>
                     <td className="team-cell truncate-cell">
                       <CompareTeamLink
                         teamId={team.id}
@@ -4046,13 +4225,10 @@ function EventDetail({ param }: { param: string }) {
   const id = event ? String(event.id) : "";
   const divisions = useMemo(() => [...(event?.divisions ?? [])].sort((a, b) => (a.order ?? a.id) - (b.order ?? b.id)), [event]);
   const division = selectedDivision ?? divisions[0]?.id ?? 1;
-  const awards = useAsync(
-    async () => {
-      if (!event) return null;
-      return collectAllPages<Award>((page) => api.eventAwards(id, { per_page: 250, page }));
-    },
-    [id, event?.id],
-  );
+  // Staggered fetch priority to avoid a thundering herd (and 429s) on mount.
+  // matches/teams (and the focus-team view below) load immediately; everything
+  // else is deferred in ~0.5s tiers so the API isn't hit with ~8 parallel
+  // requests at once.
   const matches = useAsync(
     async () => {
       if (!event) return null;
@@ -4060,12 +4236,28 @@ function EventDetail({ param }: { param: string }) {
     },
     [id, division, event?.id],
   );
+  const teams = useAsync(
+    async () => {
+      if (!event) return null;
+      return collectAllPages<Team>((page) => api.eventTeams(id, { per_page: 250, page }));
+    },
+    [id, event?.id],
+  );
   const rankings = useAsync(
     async () => {
       if (!event) return null;
       return collectAllPages<Ranking>((page) => api.eventRankings(id, division, { per_page: 250, page }));
     },
     [id, division, event?.id],
+    500,
+  );
+  const awards = useAsync(
+    async () => {
+      if (!event) return null;
+      return collectAllPages<Award>((page) => api.eventAwards(id, { per_page: 250, page }));
+    },
+    [id, event?.id],
+    500,
   );
   const skills = useAsync(
     async () => {
@@ -4073,13 +4265,7 @@ function EventDetail({ param }: { param: string }) {
       return collectAllPages<Skill>((page) => api.eventSkills(id, { per_page: 250, page }));
     },
     [id, event?.id],
-  );
-  const teams = useAsync(
-    async () => {
-      if (!event) return null;
-      return collectAllPages<Team>((page) => api.eventTeams(id, { per_page: 250, page }));
-    },
-    [id, event?.id],
+    1000,
   );
   // For multi-division events: load rankings for every division in parallel so we
   // can map each team to its division on the Teams tab.
@@ -4096,6 +4282,7 @@ function EventDetail({ param }: { param: string }) {
       return map;
     },
     [id, event?.id, divisions],
+    1000,
   );
   const preset = useAsync(
     async () => {
@@ -4103,6 +4290,7 @@ function EventDetail({ param }: { param: string }) {
       return api.jumperPresetEventExists(event.sku);
     },
     [event?.sku],
+    1500,
   );
   const matchTimestamps = useAsync(
     async () => {
@@ -4149,6 +4337,13 @@ function EventDetail({ param }: { param: string }) {
       );
     return all;
   }, [teams.data, teamsDivFilter, allDivisionRankings.data, searchQ]);
+
+  // IQ top-10%/20% score classifier, built from the full (unfiltered) division
+  // matches so the same gold/bronze thresholds apply across results + team focus.
+  const iqScoreTier = useMemo(
+    () => (isIqProgram(event) ? iqScoreTiers(matches.data?.data ?? []) : undefined),
+    [event, matches.data],
+  );
 
   // For multi-division events: map each teamId to its division name for the Teams tab column
   const teamDivisionNameMap = useMemo(() => {
@@ -4228,6 +4423,13 @@ function EventDetail({ param }: { param: string }) {
     return () => { _currentEventSeasonId = null; _currentEventId = null; };
   }, [event?.season?.id, event?.id]);
 
+  // Register the in-event search opener for the global F shortcut.
+  useEffect(() => {
+    const open = () => setSearchOpen(true);
+    _openEventSearch = open;
+    return () => { if (_openEventSearch === open) _openEventSearch = null; };
+  }, []);
+
   useEffect(() => {
     _currentEventRankings = rankings.data?.data ?? [];
     return () => { _currentEventRankings = []; };
@@ -4247,6 +4449,7 @@ function EventDetail({ param }: { param: string }) {
 
   return (
     <ProgramContext.Provider value={programSlug(event.program)}>
+    <TeamSearchContext.Provider value={searchQ}>
     <section className="page">
       <div className="profile-header">
         <div>
@@ -4310,9 +4513,10 @@ function EventDetail({ param }: { param: string }) {
           <button
             className={`event-team-search-toggle${searchOpen || teamSearch ? " is-active" : ""}`}
             onClick={() => setSearchOpen(true)}
-            title="Search teams"
+            title="Search teams (F)"
           >
             <Search size={16} />
+            <kbd className="event-team-search-kbd">F</kbd>
           </button>
         )}
         {keyAwards.length > 0 && <EventHighlights awards={keyAwards} />}
@@ -4342,6 +4546,7 @@ function EventDetail({ param }: { param: string }) {
             value={teamSearch}
             autoFocus
             onChange={(e) => setTeamSearch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") { setTeamSearch(""); setSearchOpen(false); e.currentTarget.blur(); } }}
             onBlur={() => { if (!teamSearch) setSearchOpen(false); }}
           />
           {teamSearch && (
@@ -4354,7 +4559,7 @@ function EventDetail({ param }: { param: string }) {
       <Status loading={activeStatus.loading} error={activeStatus.error} />
       {tab === "team-matches" && focusTeam && (
         <Panel title={`${focusTeam.number}'s Matches at this Event`} icon={<Gamepad2 />}>
-          <TeamMatchTable matches={focusTeamEventMatches.data?.data ?? []} focusTeamId={focusTeam.id} isIq={isIqProgram(event)} />
+          <TeamMatchTable matches={focusTeamEventMatches.data?.data ?? []} focusTeamId={focusTeam.id} isIq={isIqProgram(event)} scoreTier={iqScoreTier} />
         </Panel>
       )}
       {tab === "info" && (
@@ -4369,6 +4574,7 @@ function EventDetail({ param }: { param: string }) {
           presetUrl={presetUrl}
           onOpenMatch={(match, timestamp) => setPlayback({ match, timestamp })}
           isIq={isIqProgram(event)}
+          scoreTier={iqScoreTier}
           eventId={event.id}
         />
       )}
@@ -4402,6 +4608,7 @@ function EventDetail({ param }: { param: string }) {
       </div>
       {playback && <MatchVideoOverlay playback={playback} onClose={() => setPlayback(null)} />}
     </section>
+    </TeamSearchContext.Provider>
     </ProgramContext.Provider>
   );
 }
@@ -4443,7 +4650,8 @@ function EventInfoTab({
   infoData: EventInfoData | null;
   loading: boolean;
 }) {
-  const vexEventsUrl = `https://events.vex.com/robot-competitions/vex-robotics-competition/${encodeURIComponent(event.sku ?? String(event.id))}.html`;
+  const programUrlSlug = isIqProgram(event) ? "vex-iq-competition" : "vex-robotics-competition";
+  const vexEventsUrl = `https://events.vex.com/robot-competitions/${programUrlSlug}/${encodeURIComponent(event.sku ?? String(event.id))}.html`;
   const calendarUrl = `https://events.vex.com/calendar/${event.id}`;
 
   // Fetch event rankings (all divisions, or a specific one) + skills for the stats section
@@ -4488,14 +4696,20 @@ function EventInfoTab({
       const ties = r.ties ?? 0;
       return acc + Math.max(0, wp - (wins * 2 + ties));
     }, 0);
+    const avgRank = sum((r) => r.rank) / n;
+    const avgScore = sum((r) => r.average_points) / n;
+    const maxHighScore = Math.max(...rows.map((r) => r.high_score ?? 0));
     return {
       teams: n,
+      avgRank,
       avgWp: totalWp / n,
       avgAp: totalAp / n,
       avgAwp: totalAwp / n,
       totalWp,
       totalAp,
       totalAwp,
+      avgScore,
+      maxHighScore,
     };
   })();
 
@@ -4678,15 +4892,24 @@ function EventInfoTab({
             {statsRankings.loading ? (
               <div className="event-stat-card"><span className="event-stat-label">Loading…</span></div>
             ) : rankStats ? (
-              <>
-                <EventStatCard label="Teams" value={rankStats.teams} />
-                <EventStatCard label="Avg WP" value={rankStats.avgWp.toFixed(1)} />
-                <EventStatCard label="Avg AP" value={rankStats.avgAp.toFixed(1)} />
-                <EventStatCard label="Avg AWP" value={rankStats.avgAwp.toFixed(2)} />
-                <EventStatCard label="Total WP" value={rankStats.totalWp.toFixed(0)} />
-                <EventStatCard label="Total AP" value={rankStats.totalAp.toFixed(0)} />
-                <EventStatCard label="Total AWP" value={rankStats.totalAwp.toFixed(0)} />
-              </>
+              isIqProgram(event) ? (
+                <>
+                  <EventStatCard label="Teams" value={rankStats.teams} />
+                  <EventStatCard label="Avg Rank" value={`#${rankStats.avgRank.toFixed(1)}`} />
+                  <EventStatCard label="Avg Score" value={rankStats.avgScore.toFixed(1)} />
+                  <EventStatCard label="High Score" value={rankStats.maxHighScore} />
+                </>
+              ) : (
+                <>
+                  <EventStatCard label="Teams" value={rankStats.teams} />
+                  <EventStatCard label="Avg WP" value={rankStats.avgWp.toFixed(1)} />
+                  <EventStatCard label="Avg AP" value={rankStats.avgAp.toFixed(1)} />
+                  <EventStatCard label="Avg AWP" value={rankStats.avgAwp.toFixed(2)} />
+                  <EventStatCard label="Total WP" value={rankStats.totalWp.toFixed(0)} />
+                  <EventStatCard label="Total AP" value={rankStats.totalAp.toFixed(0)} />
+                  <EventStatCard label="Total AWP" value={rankStats.totalAwp.toFixed(0)} />
+                </>
+              )
             ) : (
               <div className="event-stat-card"><span className="event-stat-label muted">No ranking data</span></div>
             )}
@@ -4966,6 +5189,7 @@ function TeamAboutTab({
   allEvents,
   eventIndex,
   loading,
+  compact = false,
 }: {
   team: Team;
   isIq: boolean;
@@ -4977,6 +5201,8 @@ function TeamAboutTab({
   allEvents: Event[];
   eventIndex: Map<number, Event>;
   loading: boolean;
+  // Compact mode (quick-view panel): keep only the two most useful charts.
+  compact?: boolean;
 }) {
   const grade = team.grade ?? "";
   const worldSkills = useAsync(async () => {
@@ -5034,6 +5260,16 @@ function TeamAboutTab({
 
     const eventIds = new Set<number>([...rankingByEvent.keys(), ...matchRecord.keys()]);
 
+    // Group matches by event for IQ finalist seed computation
+    const matchesByEvent = new Map<number, Match[]>();
+    if (isIq) {
+      matches.forEach((m) => {
+        const list = matchesByEvent.get(m.event.id) ?? [];
+        list.push(m);
+        matchesByEvent.set(m.event.id, list);
+      });
+    }
+
     return [...eventIds]
       .sort((a, b) => dateOf(a) - dateOf(b))
       .map((eventId) => {
@@ -5050,10 +5286,33 @@ function TeamAboutTab({
         const matchCount = wins + losses + ties;
         const wp = r?.wp ?? 0;
         const ev = eventIndex.get(eventId);
+        const evMatches = isIq ? (matchesByEvent.get(eventId) ?? []) : [];
+        const finalistSeed = isIq ? (iqTeamFinals(evMatches, team.id)?.seed ?? null) : null;
+        // True qualification average — counts EVERY qual match (round 2), unlike
+        // the API's `average_points` which drops the lowest scores per the IQ rule.
+        const qualScores = isIq
+          ? evMatches
+              .filter((m) => m.round === 2)
+              .map((m) => m.alliances.find((a) => isTeamInAlliance(a, team.id))?.score)
+              .filter((s): s is number => s != null)
+          : [];
+        const allQualAvg = qualScores.length ? qualScores.reduce((s, v) => s + v, 0) / qualScores.length : 0;
+        // Best finals (teamwork) score for this team at this event.
+        const finalsScores = isIq
+          ? evMatches
+              .filter((m) => isIqFinalsMatch(m) && m.alliances.some((a) => isTeamInAlliance(a, team.id)))
+              .map((m) => {
+                const red = m.alliances.find((a) => a.color === "red");
+                const blue = m.alliances.find((a) => a.color === "blue");
+                return Math.max(red?.score ?? 0, blue?.score ?? 0);
+              })
+          : [];
+        const finalsScore = finalsScores.length ? Math.max(...finalsScores) : 0;
         return {
           name: ev?.name ?? r?.event.name ?? `Event ${eventId}`,
           date: dateOf(eventId),
           marquee: isMarqueeEvent(ev),
+          rank: r?.rank ?? 0,
           wins,
           losses,
           ties,
@@ -5063,8 +5322,10 @@ function TeamAboutTab({
           awp: Math.max(0, wp - (qualWins * 2 + qualTies)),
           winRate: matchCount ? wins / matchCount : 0,
           avgWp: qualMatches ? wp / qualMatches : 0,
-          avgPoints: r?.average_points ?? 0,
+          allQualAvg,
+          finalsScore,
           highScore: r?.high_score ?? 0,
+          finalistSeed,
         };
       });
   }, [rankings, matches, eventIndex, isIq, team.id]);
@@ -5105,8 +5366,11 @@ function TeamAboutTab({
     const awp = rankRows.reduce((s, r) => s + r.awp, 0);
     const bestDriver = skillRows.reduce((m, r) => Math.max(m, r.driver), 0);
     const bestProg = skillRows.reduce((m, r) => Math.max(m, r.prog), 0);
-    const avgPoints = rankRows.length ? rankRows.reduce((s, r) => s + r.avgPoints, 0) / rankRows.length : 0;
     const highScore = rankRows.reduce((m, r) => Math.max(m, r.highScore), 0);
+    const rankedRows = rankRows.filter((r) => r.rank > 0);
+    const avgRank = rankedRows.length ? rankedRows.reduce((s, r) => s + r.rank, 0) / rankedRows.length : 0;
+    const finalistSeeds = rankRows.map((r) => r.finalistSeed).filter((s): s is number => s !== null);
+    const avgFinalistRank = finalistSeeds.length ? finalistSeeds.reduce((s, v) => s + v, 0) / finalistSeeds.length : 0;
     return {
       wins,
       losses,
@@ -5119,9 +5383,11 @@ function TeamAboutTab({
       bestDriver,
       bestProg,
       bestCombined: bestDriver + bestProg,
-      avgPoints,
       highScore,
       events: rankRows.length,
+      avgRank,
+      avgFinalistRank,
+      finalistEventCount: finalistSeeds.length,
     };
   }, [rankRows, skillRows]);
 
@@ -5145,6 +5411,9 @@ function TeamAboutTab({
 
   const hasComp = rankRows.length > 0;
   const hasSkills = skillRows.some((r) => r.combined > 0);
+  // IQ-only graph subsets: only plot events that actually have the metric.
+  const finalsRows = rankRows.filter((r) => r.finalsScore > 0);
+  const rankedRows = rankRows.filter((r) => r.rank > 0);
 
   return (
     <div className="about-wrap">
@@ -5176,9 +5445,9 @@ function TeamAboutTab({
         <StatCard label="Events" accent="gray" icon={<CalendarDays size={14} />} value={agg.events || "—"} sub={seasonLabel} />
         {isIq ? (
           <>
-            <StatCard label="Avg Qualifying Score" accent="green" icon={<BarChart3 size={14} />} value={agg.avgPoints ? agg.avgPoints.toFixed(1) : "—"} sub="Across events" />
             <StatCard label="High Score" accent="amber" icon={<Trophy size={14} />} value={agg.highScore || "—"} sub="Best qualifying match" />
-            <StatCard label="Matches" accent="gray" icon={<Gamepad2 size={14} />} value={agg.matches || "—"} sub={`${agg.events} events`} />
+            <StatCard label="Avg Rank" accent="blue" icon={<BarChart3 size={14} />} value={agg.avgRank ? `#${agg.avgRank.toFixed(1)}` : "—"} sub="Qual ranking across events" />
+            <StatCard label="Avg Finalist Rank" accent="green" icon={<Medal size={14} />} value={agg.avgFinalistRank ? `#${agg.avgFinalistRank.toFixed(1)}` : "—"} sub={agg.finalistEventCount ? `${agg.finalistEventCount} event${agg.finalistEventCount === 1 ? "" : "s"} w/ finals` : "No finals appearances"} />
           </>
         ) : (
           <>
@@ -5240,13 +5509,13 @@ function TeamAboutTab({
           )}
 
           {isIq && hasComp && (
-            <Panel title="Avg Qualifying Score Over Time" icon={<BarChart3 size={18} />}>
+            <Panel title="Avg Score Over Time" icon={<BarChart3 size={18} />}>
               <div className="about-panel-body">
                 <TrendChart
                   area
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => r.name)}
-                  series={[{ name: "Avg score", color: "#5cb85c", values: rankRows.map((r) => r.avgPoints) }]}
+                  series={[{ name: "Avg score", color: "#5cb85c", values: rankRows.map((r) => r.allQualAvg) }]}
                   markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
                   yFormat={(v) => v.toFixed(1)}
@@ -5255,7 +5524,38 @@ function TeamAboutTab({
             </Panel>
           )}
 
-          {!isIq && hasComp && (
+          {!compact && isIq && finalsRows.length > 0 && (
+            <Panel title="Finals Score Over Time" icon={<Trophy size={18} />}>
+              <div className="about-panel-body">
+                <TrendChart
+                  area
+                  labels={finalsRows.map((r) => shortMonthYear(r.date))}
+                  tips={finalsRows.map((r) => r.name)}
+                  series={[{ name: "Finals score", color: "#f0ad4e", values: finalsRows.map((r) => r.finalsScore) }]}
+                  markers={finalsRows.map((r) => r.marquee)}
+                  yFloor={0}
+                  yFormat={(v) => v.toFixed(0)}
+                />
+              </div>
+            </Panel>
+          )}
+
+          {!compact && isIq && rankedRows.length > 0 && (
+            <Panel title="Rank Over Time" icon={<Medal size={18} />}>
+              <div className="about-panel-body">
+                <TrendChart
+                  labels={rankedRows.map((r) => shortMonthYear(r.date))}
+                  tips={rankedRows.map((r) => `${r.name} — #${r.rank}`)}
+                  series={[{ name: "Qual rank", color: "#337ab7", values: rankedRows.map((r) => r.rank) }]}
+                  markers={rankedRows.map((r) => r.marquee)}
+                  yFloor={1}
+                  yFormat={(v) => `#${Math.round(v)}`}
+                />
+              </div>
+            </Panel>
+          )}
+
+          {!compact && !isIq && hasComp && (
             <Panel title="Avg Win Points / Match" icon={<Trophy size={18} />}>
               <div className="about-panel-body">
                 <TrendChart
@@ -5270,7 +5570,7 @@ function TeamAboutTab({
             </Panel>
           )}
 
-          {!isIq && hasComp && (
+          {!compact && !isIq && hasComp && (
             <Panel title="Autonomous Win Points Per Event" icon={<Medal size={18} />}>
               <div className="about-panel-body">
                 <TrendChart
@@ -5626,6 +5926,232 @@ function TeamDetail({ param }: { param: string }) {
       </div>
     </section>
     </ProgramContext.Provider>
+  );
+}
+
+// Picklist action inside the quick-view panel. Split into its own component so
+// the picklist hooks are only mounted (and only run) when there's an org + event
+// context — keeping hook calls unconditional within this component.
+function QuickViewPicklistButton({ orgId, eventId, teamId, teamNumber, teamName }: { orgId: string; eventId: string; teamId: string; teamNumber: string; teamName?: string }) {
+  const inList = useIsInPicklist(orgId, eventId, teamId);
+  return (
+    <button
+      type="button"
+      className={`quick-view-action${inList ? " active" : ""}`}
+      onClick={() => {
+        if (inList) void removeFromPicklist(orgId, eventId, teamId);
+        else void addToPicklist(orgId, eventId, { teamId, teamNumber, teamName });
+      }}
+    >
+      {inList ? <Check size={14} /> : <Plus size={14} />}
+      {inList ? "On picklist" : "Picklist"}
+    </button>
+  );
+}
+
+// Sticky side-drawer (centered modal on narrow screens) showing a quick overview
+// of a team — reuses the full team page's About cards/graphs + awards, plus quick
+// actions. Self-contained: loads the team and its latest season's data on its own.
+function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>; onClose: () => void }) {
+  const [mounted, setMounted] = useState(false);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  const orgs = useOrgs();
+  const primaryOrg = orgs[0] ?? null;
+  const eventIdForPicklist = _currentEventId; // set by EventDetail while on an event page
+
+  // Resolve the team. Most entry points pass a numeric id; alliance-seed links only
+  // know the number + program, so fall back to a number lookup (like TeamDetail).
+  const teamQ = useAsync(async () => {
+    if (state.teamId != null) return api.team(state.teamId);
+    const res = await api.robotEventsTeams({ number: state.teamNumber.toUpperCase(), "program[]": vexProgramIds, per_page: 50 });
+    let list = res.data;
+    const slug = state.programCode;
+    if (slug) list = list.filter((entry) => programMatchesSlug(entry.program, slug));
+    return list[0] ?? null;
+  }, [state.teamId, state.teamNumber, state.programCode]);
+  const team = teamQ.data ?? null;
+  const teamId = team?.id ?? state.teamId ?? null; // resolved numeric id for data queries
+  const inTray = useIsInTray(teamId ?? 0);
+
+  const eventsQ = useAsync(
+    async () => (teamId != null ? collectAllPages<Event>((page) => api.teamEvents(teamId, { per_page: 250, page })) : null),
+    [teamId],
+  );
+  const teamEvents = eventsQ.data?.data ?? [];
+  const eventIndex = useMemo(() => makeEventIndex(teamEvents), [teamEvents]);
+
+  const latestSeason = useMemo(() => {
+    const bySeason = new Map<number, { id: number; label: string; latest: number }>();
+    teamEvents.forEach((ev) => {
+      const latest = new Date(ev.start ?? 0).getTime();
+      const existing = bySeason.get(ev.season.id);
+      if (!existing) bySeason.set(ev.season.id, { id: ev.season.id, label: shortSeasonName(ev.season.name), latest });
+      else existing.latest = Math.max(existing.latest, latest);
+    });
+    return [...bySeason.values()].sort((a, b) => b.latest - a.latest)[0] ?? null;
+  }, [teamEvents]);
+  const latestSeasonId = latestSeason?.id ?? null;
+
+  const rankingsQ = useAsync(
+    async () => (teamId != null && latestSeasonId ? (await collectAllPages<Ranking>((page) => api.teamRankings(teamId, { "season[]": [latestSeasonId], per_page: 250, page }))).data : []),
+    [teamId, latestSeasonId],
+  );
+  const skillsQ = useAsync(
+    async () => (teamId != null && latestSeasonId ? (await collectAllPages<Skill>((page) => api.teamSkills(teamId, { "season[]": [latestSeasonId], per_page: 250, page }))).data : []),
+    [teamId, latestSeasonId],
+  );
+  const matchesQ = useAsync(
+    async () => (teamId != null && latestSeasonId ? (await collectAllPages<Match>((page) => api.teamMatches(teamId, { "season[]": [latestSeasonId], per_page: 250, page }))).data : []),
+    [teamId, latestSeasonId],
+  );
+  const awardsQ = useAsync(
+    async () => (teamId != null && latestSeasonId ? (await collectAllPages<Award>((page) => api.teamAwards(teamId, { "season[]": [latestSeasonId], per_page: 250, page }))).data : []),
+    [teamId, latestSeasonId],
+  );
+
+  const seasonEvents = useMemo(
+    () => teamEvents.filter((ev) => !latestSeasonId || ev.season.id === latestSeasonId).sort(compareEventsByDirection("asc")),
+    [teamEvents, latestSeasonId],
+  );
+
+  // Slide-in on next frame; Esc + backdrop close; lock body scroll; focus the
+  // close button on open and restore focus to the trigger on close.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  useEffect(() => {
+    const trigger = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    // Close when the user navigates away (e.g. clicks an event/team link inside).
+    window.addEventListener(NAV_EVENT, onClose);
+    window.addEventListener("popstate", onClose);
+    // Only lock page scroll in the narrow-screen modal mode; the desktop drawer is
+    // non-blocking so the page behind it stays scrollable/usable.
+    const isModal = window.matchMedia("(max-width: 820px)").matches;
+    const prevOverflow = document.body.style.overflow;
+    if (isModal) document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener(NAV_EVENT, onClose);
+      window.removeEventListener("popstate", onClose);
+      if (isModal) document.body.style.overflow = prevOverflow;
+      trigger?.focus?.();
+    };
+  }, [onClose]);
+
+  const isIq = team ? isIqProgramInfo(team.program) : false;
+  const programCode = team ? programSlug(team.program) : (state.programCode ?? "");
+  const aboutLoading = eventsQ.loading || rankingsQ.loading || skillsQ.loading || matchesQ.loading;
+
+  const goFull = () => {
+    onClose();
+    navigate(teamSlugPath(state.programCode ?? programCode, state.teamNumber, teamId ?? undefined));
+  };
+
+  return (
+    <div className="quick-view-overlay" onClick={onClose}>
+      <aside
+        className={`quick-view-panel side-${state.side}${mounted ? " open" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Quick view for team ${state.teamNumber}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="quick-view-header">
+          <div className="quick-view-title">
+            <strong>{state.teamNumber}</strong>
+            {(team?.team_name ?? state.teamName) && <span> · {team?.team_name ?? state.teamName}</span>}
+          </div>
+          <span className="close-btn-wrap">
+            <kbd className="esc-hint">Esc</kbd>
+            <button ref={closeRef} type="button" className="video-close-btn" onClick={onClose} aria-label="Close quick view">×</button>
+          </span>
+        </div>
+
+        <div className="quick-view-actions">
+          <button type="button" className="quick-view-action primary" onClick={goFull}>
+            <ExternalLink size={14} /> Open full team view
+          </button>
+          <button
+            type="button"
+            className={`quick-view-action${inTray ? " active" : ""}`}
+            disabled={teamId == null || (!canAddToTray() && !inTray)}
+            onClick={() => teamId != null && addOrRemoveCompareTeam(teamId, state.teamNumber, programCode, team?.team_name)}
+          >
+            <Scale size={14} /> {inTray ? "In compare" : "Compare"}
+          </button>
+          {primaryOrg && eventIdForPicklist != null && teamId != null && (
+            <QuickViewPicklistButton
+              orgId={primaryOrg.orgId}
+              eventId={String(eventIdForPicklist)}
+              teamId={String(teamId)}
+              teamNumber={state.teamNumber}
+              teamName={team?.team_name ?? state.teamName ?? undefined}
+            />
+          )}
+        </div>
+
+        <div className="quick-view-body">
+          {teamQ.loading ? (
+            <Status loading={true} error={null} />
+          ) : !team ? (
+            <div className="empty">Team not found.</div>
+          ) : (
+            <ProgramContext.Provider value={programCode}>
+              <div className="quick-view-meta">
+                <ProgramBadge program={team.program} />
+                <span>{locationLine(team)}</span>
+                <span>{team.grade ?? "Grade unknown"}</span>
+                <span>{team.registered ? "Registered" : "Inactive"}</span>
+              </div>
+              {latestSeasonId == null ? (
+                <div className="empty">No season data for this team yet.</div>
+              ) : (
+                <>
+                  <TeamAboutTab
+                    team={team}
+                    isIq={isIq}
+                    seasonId={latestSeasonId}
+                    seasonLabel={latestSeason?.label}
+                    rankings={rankingsQ.data ?? []}
+                    skills={skillsQ.data ?? []}
+                    matches={matchesQ.data ?? []}
+                    allEvents={teamEvents}
+                    eventIndex={eventIndex}
+                    loading={aboutLoading}
+                    compact
+                  />
+                  <Panel title={`Events ${seasonEvents.length || ""}`} icon={<CalendarDays />}>
+                    {seasonEvents.length ? (
+                      <ul className="quick-view-events">
+                        {seasonEvents.map((ev) => (
+                          <li key={ev.id}>
+                            <Link href={eventPath(ev)} className="quick-view-event-name">{ev.name}</Link>
+                            <span className="quick-view-event-sub">{formatEventDateRange(ev.start, ev.end)} · {locationLine(ev)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="empty">No events this season.</div>
+                    )}
+                  </Panel>
+                  <TeamAwardsByEvent
+                    awards={awardsQ.data ?? []}
+                    eventIndex={eventIndex}
+                    seasonId={latestSeasonId}
+                    focusTeamId={team.id}
+                    direction="asc"
+                  />
+                </>
+              )}
+            </ProgramContext.Provider>
+          )}
+        </div>
+      </aside>
+    </div>
   );
 }
 
@@ -6125,7 +6651,7 @@ function TeamEventDetail({
   );
 }
 
-function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = false }: { matches: Match[]; focusTeamId: number; onViewMatches: () => void; isIq?: boolean }) {
+function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = false, scoreTier }: { matches: Match[]; focusTeamId: number; onViewMatches: () => void; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier }) {
   const divisionWins = divisionFinalWins(matches, focusTeamId);
   const lastFinalIds = lastFinalIdsByDivision(matches);
   const elimAllianceNotice = isIq ? null : firstElimAllianceNotice(matches, focusTeamId);
@@ -6163,7 +6689,7 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
                 </td>
                 {isIq ? (
                   <td className="score-cell">
-                    <span className="score iq-score">{iqResult?.score ?? "-"}</span>
+                    <span className={`score iq-score${iqTierClass(scoreTier?.(iqResult?.score) ?? null)}`}>{iqResult?.score ?? "-"}</span>
                   </td>
                 ) : (
                   <td className="score-cell">
@@ -6193,7 +6719,7 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
 }
 
 
-function TeamMatchTable({ matches, focusTeamId, isIq = false }: { matches: Match[]; focusTeamId: number; isIq?: boolean }) {
+function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier }) {
   const sortedMatches = [...matches].sort((a, b) => compareMatchesDisplay(a, b, preferredTeamDivisionId(matches, focusTeamId)));
   const divisionWins = divisionFinalWins(sortedMatches, focusTeamId);
   const lastFinalIds = lastFinalIdsByDivision(sortedMatches);
@@ -6242,7 +6768,7 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false }: { matches: Match
                 </td>
                 {isIq ? (
                   <td>
-                    <span className="score iq-score">{iqResult?.score ?? "-"}</span>
+                    <span className={`score iq-score${iqTierClass(scoreTier?.(iqResult?.score) ?? null)}`}>{iqResult?.score ?? "-"}</span>
                   </td>
                 ) : (
                   <td>
@@ -6526,13 +7052,15 @@ function TeamAwardsByEvent({
                       {qualifier && <span className="award-qualifier">{qualifier}</span>}
                     </h3>
                     {awardTeamWinners(award).map((winner) => (
-                      <Link
+                      <TeamQuickLink
                         key={`${award.id}-${winner.team.id}`}
-                        href={teamSlugPath(programCode, winner.team.name, winner.team.id)}
+                        teamId={winner.team.id}
+                        teamNumber={winner.team.name}
+                        programCode={programCode}
                         className={`winner-pill ${winner.team.id === focusTeamId ? "" : "other"}`}
                       >
                         {winner.team.name}
-                      </Link>
+                      </TeamQuickLink>
                     ))}
                   </article>
                 );
@@ -6688,6 +7216,7 @@ function MatchesTable({
   presetUrl,
   onOpenMatch,
   isIq = false,
+  scoreTier,
   eventId,
 }: {
   matches: Match[];
@@ -6697,6 +7226,7 @@ function MatchesTable({
   presetUrl: string | null;
   onOpenMatch: (match: Match, timestamp: MatchTimestamp) => void;
   isIq?: boolean;
+  scoreTier?: (score: number | null | undefined) => ScoreTier;
   eventId?: number;
 }) {
   const [qualificationDirection, setQualificationDirection] = useState<DateDirection>("asc");
@@ -6752,6 +7282,12 @@ function MatchesTable({
     <div className="results-layout">
       <section className="results-column">
         <h2>{noQuals ? "Elimination Results" : "Qualification Results"}</h2>
+        {isIq && !noQuals && (
+          <div className="iq-score-legend">
+            <span><i className="dot-gold" /> Top 10% score</span>
+            <span><i className="dot-bronze" /> Top 20% score</span>
+          </div>
+        )}
         {noQuals ? (
           renderElimGroups(true)
         ) : (
@@ -6767,6 +7303,7 @@ function MatchesTable({
             onOpenMatch={onOpenMatch}
             dayNumbers={dayNumbers}
             isIq={isIq}
+            scoreTier={scoreTier}
             showNoteRail
             eventId={eventId}
           />
@@ -6785,6 +7322,9 @@ function MatchesTable({
         {isIq ? (
           <>
             <h2>Finals matches</h2>
+            <div className="iq-score-legend">
+              <span><i className="dot-win" /> Winning score</span>
+            </div>
             <ResultsMatchTable
               matches={iqFinals}
               emptyText="No finals matches returned."
@@ -6795,6 +7335,7 @@ function MatchesTable({
               onOpenMatch={onOpenMatch}
               dayNumbers={dayNumbers}
               isIq
+              markWinningIqScore
               labelFor={(match) => iqFinalsLabelMap?.get(match.id)}
             />
           </>
@@ -6898,14 +7439,16 @@ function NoteTeamChips({ match, body }: { match: Match; body: string }) {
   return (
     <div className="note-team-chips">
       {teams.map(({ id, name, color }) => (
-        <Link
+        <TeamQuickLink
           key={id}
-          href={teamSlugPath(programCode, name, id)}
+          teamId={id}
+          teamNumber={name}
+          programCode={programCode}
           className={`note-team-chip note-team-chip-${color} ${mentioned.has(id) ? "mentioned" : ""}`}
           title={`Open team ${name}`}
         >
           {name}
-        </Link>
+        </TeamQuickLink>
       ))}
     </div>
   );
@@ -7017,6 +7560,8 @@ function ResultsMatchTable({
   dayNumbers,
   isIq = false,
   labelFor,
+  scoreTier,
+  markWinningIqScore = false,
   showNoteRail = false,
   eventId,
 }: {
@@ -7032,12 +7577,19 @@ function ResultsMatchTable({
   dayNumbers?: Map<string, number>;
   isIq?: boolean;
   labelFor?: (match: Match) => string | undefined;
+  scoreTier?: (score: number | null | undefined) => ScoreTier;
+  // IQ finals: mark the highest (winning) score green instead of tiering it.
+  markWinningIqScore?: boolean;
   showNoteRail?: boolean;
   eventId?: number;
 }) {
   const tbodyRef = useRef<HTMLTableSectionElement>(null);
   const rafRef = useRef(0);
   const latestYRef = useRef(0); // always the most-recent cursor Y; rAF reads this
+  // Winning (highest) IQ finals score — highlighted green when markWinningIqScore.
+  const winningIqScore = markWinningIqScore
+    ? matches.reduce((max, m) => Math.max(max, iqMatchResult(m).score ?? 0), 0)
+    : null;
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [popover, setPopover] = useState<{ match: Match; rect: DOMRect } | null>(null);
   const reduceMotion = useMemo(
@@ -7212,7 +7764,7 @@ function ResultsMatchTable({
               </td>
               {isIq ? (
                 <td className="score-cell">
-                  <span className="score iq-score">{iqResult?.score ?? "-"}</span>
+                  <span className={`score iq-score${winningIqScore != null && iqResult?.score != null && iqResult.score === winningIqScore ? " score-win" : iqTierClass(scoreTier?.(iqResult?.score) ?? null)}`}>{iqResult?.score ?? "-"}</span>
                 </td>
               ) : (
                 <td className="score-cell">
@@ -7370,7 +7922,7 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
               <Youtube size={16} />
               Open in YouTube
             </a>
-            <button className="video-close-btn" onClick={onClose} aria-label="Close">&times;</button>
+            <CloseButton onClose={onClose} />
           </div>
         </div>
         <div className="video-body">
@@ -7746,6 +8298,7 @@ function EliminationBracketOverlay({ matches, onClose }: { matches: Match[]; onC
 
 function AllianceSelectionTable({ alliances, iq = false }: { alliances: Array<[number, string[]]>; iq?: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const programCode = useContext(ProgramContext);
   if (!alliances.length) return <Empty>{iq ? "No finals alliances returned." : "No alliance selections returned."}</Empty>;
 
   const collapsible = alliances.length > 2;
@@ -7769,9 +8322,18 @@ function AllianceSelectionTable({ alliances, iq = false }: { alliances: Array<[n
               className={showFade && rowIndex === 2 ? "alliance-row-fade" : ""}
             >
               <td>Seed {seed}</td>
-              {Array.from({ length: 2 }).map((_, teamIndex) => (
-                <td key={teamIndex}>{teams[teamIndex] ?? ""}</td>
-              ))}
+              {Array.from({ length: 2 }).map((_, teamIndex) => {
+                const num = teams[teamIndex];
+                return (
+                  <td key={teamIndex}>
+                    {num ? (
+                      <TeamQuickLink teamNumber={num} programCode={programCode} className="alliance-team-link" />
+                    ) : (
+                      ""
+                    )}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
@@ -8009,9 +8571,9 @@ function AwardsList({ awards }: { awards: Award[] }) {
             <h3>{award.title}</h3>
             <div className="winner-row">
               {awardTeamWinners(award).map((winner) => (
-                <Link key={`${award.id}-${winner.team.id}`} href={teamSlugPath(programCode, winner.team.name, winner.team.id)} className="winner-pill">
+                <TeamQuickLink key={`${award.id}-${winner.team.id}`} teamId={winner.team.id} teamNumber={winner.team.name} programCode={programCode} className="winner-pill">
                   {winner.team.name}
-                </Link>
+                </TeamQuickLink>
               ))}
               {awardIndividualWinners(award).map((winner) => (
                 <span key={winner} className="winner-pill">
@@ -8436,11 +8998,31 @@ function UiStyleWire({ value }: { value: UiStyle }) {
   );
 }
 
+const QUICK_VIEW_OPTIONS: Array<{ value: boolean; label: string }> = [
+  { value: true, label: "Quick view first" },
+  { value: false, label: "Open full team view" },
+];
+
+// Mini wireframe preview: "quick view first" shows a content area with a side
+// drawer; "full" shows a plain full-page content area.
+function QuickViewWire({ value }: { value: boolean }) {
+  return (
+    <span className={`layout-wire qv-wire qv-wire-${value ? "quick" : "full"}`} aria-hidden="true">
+      <span className="lw-body">
+        <span className="lw-line" />
+        <span className="lw-line short" />
+      </span>
+      {value && <span className="qv-wire-panel" aria-hidden="true" />}
+    </span>
+  );
+}
+
 function AppearanceSettings() {
   const { updateProfile } = useAuth();
   const theme = useTheme(); // global theme store — already reflects the synced cloud value
   const tabLayout = useTabLayout(); // synced via user_settings jsonb (settings.ts)
   const uiStyle = useUiStyle(); // interface skin, synced via user_settings jsonb
+  const quickViewFirst = useQuickViewFirst(); // team-click behavior, synced
 
   const choose = (value: NonNullable<Profile["theme"]>) => {
     applyTheme(value); // instant local apply + localStorage
@@ -8510,6 +9092,27 @@ function AppearanceSettings() {
                 aria-pressed={tabLayout === option.value}
               >
                 <TabLayoutWire value={option.value} />
+                <span className="theme-tile-label">{option.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="settings-field">
+          <h3 className="settings-field-title">Team click behavior</h3>
+          <p className="settings-section-copy">
+            When you click a team, open a quick overview panel first, or jump straight to the full team page.
+          </p>
+          <div className="layout-picker" role="group" aria-label="Team click behavior">
+            {QUICK_VIEW_OPTIONS.map((option) => (
+              <button
+                key={String(option.value)}
+                type="button"
+                className={`theme-tile ${quickViewFirst === option.value ? "active" : ""}`}
+                onClick={() => setQuickViewFirst(option.value)}
+                aria-pressed={quickViewFirst === option.value}
+              >
+                <QuickViewWire value={option.value} />
                 <span className="theme-tile-label">{option.label}</span>
               </button>
             ))}
@@ -9705,6 +10308,8 @@ type TeamCompareSlot = {
   events: Event[];
   rankings: Ranking[];
   awards: Award[];
+  skills: Skill[];          // season skills — IQ avg driver/prog (loaded for IQ only)
+  eventMatches: Match[];    // team's matches at the context event — IQ event Low/Dropped
   seasonId: number | null;
   worldSkillsLoading: boolean;
   worldSkillsEntry: WorldSkillsEntry | null;
@@ -9718,6 +10323,13 @@ type CompareStats = {
   sigAwp: number;
   avgWp: number | null;
   avgAp: number | null;
+  // IQ season performance
+  seasonHigh: number | null;
+  avgScore: number | null;
+  avgDriverSkill: number | null;
+  avgProgSkill: number | null;
+  avgRank: number | null;
+  consistency: number | null; // % — higher = tighter qual-score spread
   // World Skills ranking
   wsRank: number | null; wsScore: number | null;
   wsDriver: number | null; wsProg: number | null;
@@ -9727,15 +10339,19 @@ type CompareStats = {
   // Event-specific (null when not in event context)
   evtRank: number | null; evtRecord: string | null;
   evtWp: number | null; evtAp: number | null; evtAwp: number | null;
+  // IQ event-specific
+  evtAvg: number | null; evtHigh: number | null; evtLow: number | null; evtDropped: number | null;
 };
 
 function emptyCompareStats(): CompareStats {
   return {
     wins: 0, losses: 0, ties: 0, totalMatches: 0, winRate: null,
     avgAwp: null, sigAwp: 0, avgWp: null, avgAp: null,
+    seasonHigh: null, avgScore: null, avgDriverSkill: null, avgProgSkill: null, avgRank: null, consistency: null,
     wsRank: null, wsScore: null, wsDriver: null, wsProg: null,
     awardCount: 0, topAwardTitle: null, eventCount: 0,
     evtRank: null, evtRecord: null, evtWp: null, evtAp: null, evtAwp: null,
+    evtAvg: null, evtHigh: null, evtLow: null, evtDropped: null,
   };
 }
 
@@ -9828,6 +10444,38 @@ function computeCompareStats(slot: TeamCompareSlot, contextEventId: number | nul
   const avgAp = avgFromRankings((r) => r.ap);
   const sigAwp = nonScrimmageRankings.reduce((sum, r) => sum + (isMarqueeEvent(eventIndex.get(r.event.id)) ? rankingAwp(r) : 0), 0);
 
+  // ── IQ season performance ──
+  // IQ rankings are cooperative (no W/L/T), so the withMatches filter above would
+  // be empty — average over the rankings that actually carry each value instead.
+  const avgOver = (vals: number[]) => (vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null);
+  const scoreVals = nonScrimmageRankings.map((r) => r.average_points).filter((v): v is number => v != null && v > 0);
+  const rankVals = nonScrimmageRankings.map((r) => r.rank).filter((v): v is number => v != null && v > 0);
+  const avgScore = avgOver(scoreVals);
+  const avgRank = avgOver(rankVals);
+  const highVals = nonScrimmageRankings.map((r) => r.high_score).filter((v): v is number => v != null && v > 0);
+  const seasonHigh = highVals.length ? Math.max(...highVals) : null;
+  // Avg best driver/prog skill per event, averaged across the season's events.
+  const avgEventSkill = (wantDriver: boolean): number | null => {
+    const byEvent = new Map<number, number>();
+    for (const s of slot.skills) {
+      if (isScrimmageEvent(eventIndex.get(s.event.id))) continue;
+      const isDriver = (s.type ?? "").toLowerCase().includes("driver");
+      if (wantDriver !== isDriver) continue;
+      byEvent.set(s.event.id, Math.max(byEvent.get(s.event.id) ?? 0, s.score ?? 0));
+    }
+    const vals = [...byEvent.values()];
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  };
+  const avgDriverSkill = isIq ? avgEventSkill(true) : null;
+  const avgProgSkill = isIq ? avgEventSkill(false) : null;
+  // Consistency: tightness of per-event average qual scores (no extra API calls).
+  let consistency: number | null = null;
+  if (scoreVals.length >= 2) {
+    const mean = scoreVals.reduce((a, b) => a + b, 0) / scoreVals.length;
+    const stdev = Math.sqrt(scoreVals.reduce((a, v) => a + (v - mean) ** 2, 0) / scoreVals.length);
+    consistency = mean > 0 ? Math.max(0, Math.min(100, 100 * (1 - stdev / mean))) : null;
+  }
+
   // ── World Skills ──
   const wsRank   = worldSkillsEntry?.rank ?? null;
   const wsScore  = worldSkillsEntry?.scores.score ?? null;
@@ -9841,10 +10489,13 @@ function computeCompareStats(slot: TeamCompareSlot, contextEventId: number | nul
 
   // ── Event-specific stats (only when contextEventId is set) ──
   const evtRanking = contextEventId ? nonScrimmageRankings.find((r) => r.event.id === contextEventId) ?? null : null;
+  // IQ: derive Avg/High/Low + dropped scores from the team's qual matches at the event.
+  const evtIq = isIq && contextEventId ? iqTeamQualStats(slot.eventMatches, teamId, evtRanking) : null;
 
   return {
     wins, losses, ties, totalMatches, winRate,
     avgAwp, sigAwp, avgWp, avgAp,
+    seasonHigh, avgScore, avgDriverSkill, avgProgSkill, avgRank, consistency,
     wsRank, wsScore, wsDriver, wsProg,
     awardCount: teamAwards.length,
     topAwardTitle: sorted[0]?.title ?? null,
@@ -9854,6 +10505,10 @@ function computeCompareStats(slot: TeamCompareSlot, contextEventId: number | nul
     evtWp:        evtRanking?.wp ?? null,
     evtAp:        evtRanking?.ap ?? null,
     evtAwp:       evtRanking ? rankingAwp(evtRanking) : null,
+    evtAvg:       evtIq?.avg ?? evtRanking?.average_points ?? null,
+    evtHigh:      evtIq?.high ?? evtRanking?.high_score ?? null,
+    evtLow:       evtIq?.low ?? null,
+    evtDropped:   evtIq ? evtIq.dropped.reduce((sum, d) => sum + d.score, 0) : null,
   };
 }
 
@@ -9861,23 +10516,47 @@ type CompareRowDef =
   | { key: string; isSection: true; label: string }
   | { key: string; isSection?: false; label: string; getValue: (s: CompareStats, slot: TeamCompareSlot) => string | number | null; higherBetter: boolean | null };
 
-function buildCompareRows(hasEventContext: boolean): CompareRowDef[] {
+function buildCompareRows(hasEventContext: boolean, isIq: boolean): CompareRowDef[] {
+  const seasonRows: CompareRowDef[] = isIq
+    ? [
+        { key: "s-perf",    isSection: true, label: "Season Performance" },
+        { key: "seasonHigh", label: "High Score", getValue: (s) => s.seasonHigh ?? null, higherBetter: true },
+        { key: "avgScore",  label: "Avg Score",   getValue: (s) => s.avgScore != null ? Number(s.avgScore.toFixed(1)) : null, higherBetter: true },
+        { key: "avgDriver", label: "Avg Driver Skill", getValue: (s) => s.avgDriverSkill != null ? Number(s.avgDriverSkill.toFixed(1)) : null, higherBetter: true },
+        { key: "avgProg",   label: "Avg Prog Skill",   getValue: (s) => s.avgProgSkill != null ? Number(s.avgProgSkill.toFixed(1)) : null, higherBetter: true },
+        { key: "avgRank",   label: "Avg Rank (Quals)", getValue: (s) => s.avgRank != null ? `#${s.avgRank.toFixed(1)}` : null, higherBetter: false },
+        { key: "consistency", label: "Consistency", getValue: (s) => s.consistency != null ? `${s.consistency.toFixed(0)}%` : null, higherBetter: true },
+      ]
+    : [
+        { key: "s-perf",    isSection: true, label: "Season Performance" },
+        { key: "winRate",   label: "Win Rate",    getValue: (s) => s.winRate != null ? `${(s.winRate * 100).toFixed(0)}%` : null, higherBetter: true },
+        { key: "record",    label: "Record",      getValue: (s) => s.totalMatches > 0 ? `${s.wins}W ${s.losses}L ${s.ties}T` : null, higherBetter: null },
+        { key: "avgAwp",    label: "Avg AWP",     getValue: (s) => s.avgAwp != null ? Number(s.avgAwp.toFixed(1)) : null, higherBetter: true },
+        { key: "sigAwp",    label: "Sig AWP",     getValue: (s) => s.sigAwp > 0 ? s.sigAwp : null, higherBetter: true },
+        { key: "avgWp",     label: "Avg WP",      getValue: (s) => s.avgWp != null ? Number(s.avgWp.toFixed(1)) : null, higherBetter: true },
+        { key: "avgAp",     label: "Avg AP",      getValue: (s) => s.avgAp != null ? Number(s.avgAp.toFixed(1)) : null, higherBetter: true },
+      ];
+  const eventRows: CompareRowDef[] = !hasEventContext
+    ? []
+    : isIq
+      ? [
+          { key: "s-evt",    isSection: true, label: "At This Event" },
+          { key: "evtAvg",     label: "Avg",            getValue: (s) => s.evtAvg != null ? Number(s.evtAvg.toFixed(1)) : null, higherBetter: true },
+          { key: "evtHigh",    label: "High",           getValue: (s) => s.evtHigh ?? null, higherBetter: true },
+          { key: "evtLow",     label: "Low",            getValue: (s) => s.evtLow ?? null, higherBetter: true },
+          { key: "evtDropped", label: "Dropped Scores", getValue: (s) => s.evtDropped ?? null, higherBetter: true },
+        ]
+      : [
+          { key: "s-evt",      isSection: true,  label: "At This Event" },
+          { key: "evtRank",    label: "Rank",        getValue: (s: CompareStats) => s.evtRank != null ? `#${s.evtRank}` : null, higherBetter: false },
+          { key: "evtRecord",  label: "Record",      getValue: (s: CompareStats) => s.evtRecord, higherBetter: null },
+          { key: "evtWp",      label: "WP",          getValue: (s: CompareStats) => s.evtWp ?? null, higherBetter: true },
+          { key: "evtAp",      label: "AP",          getValue: (s: CompareStats) => s.evtAp ?? null, higherBetter: true },
+          { key: "evtAwp",     label: "AWP",         getValue: (s: CompareStats) => s.evtAwp ?? null, higherBetter: true },
+        ];
   return [
-    { key: "s-perf",    isSection: true, label: "Season Performance" },
-    { key: "winRate",   label: "Win Rate",    getValue: (s) => s.winRate != null ? `${(s.winRate * 100).toFixed(0)}%` : null, higherBetter: true },
-    { key: "record",    label: "Record",      getValue: (s) => s.totalMatches > 0 ? `${s.wins}W ${s.losses}L ${s.ties}T` : null, higherBetter: null },
-    { key: "avgAwp",    label: "Avg AWP",     getValue: (s) => s.avgAwp != null ? Number(s.avgAwp.toFixed(1)) : null, higherBetter: true },
-    { key: "sigAwp",    label: "Sig AWP",     getValue: (s) => s.sigAwp > 0 ? s.sigAwp : null, higherBetter: true },
-    { key: "avgWp",     label: "Avg WP",      getValue: (s) => s.avgWp != null ? Number(s.avgWp.toFixed(1)) : null, higherBetter: true },
-    { key: "avgAp",     label: "Avg AP",      getValue: (s) => s.avgAp != null ? Number(s.avgAp.toFixed(1)) : null, higherBetter: true },
-    ...(hasEventContext ? [
-      { key: "s-evt",      isSection: true,  label: "At This Event" } as CompareRowDef,
-      { key: "evtRank",    label: "Rank",        getValue: (s: CompareStats) => s.evtRank != null ? `#${s.evtRank}` : null, higherBetter: false } as CompareRowDef,
-      { key: "evtRecord",  label: "Record",      getValue: (s: CompareStats) => s.evtRecord, higherBetter: null } as CompareRowDef,
-      { key: "evtWp",      label: "WP",          getValue: (s: CompareStats) => s.evtWp ?? null, higherBetter: true } as CompareRowDef,
-      { key: "evtAp",      label: "AP",          getValue: (s: CompareStats) => s.evtAp ?? null, higherBetter: true } as CompareRowDef,
-      { key: "evtAwp",     label: "AWP",         getValue: (s: CompareStats) => s.evtAwp ?? null, higherBetter: true } as CompareRowDef,
-    ] : []),
+    ...seasonRows,
+    ...eventRows,
     { key: "s-ws",      isSection: true, label: "World Skills" },
     { key: "wsRank",    label: "World Rank",  getValue: (s) => s.wsRank != null ? `#${s.wsRank}` : null, higherBetter: false },
     { key: "wsScore",   label: "Score",       getValue: (s) => s.wsScore ?? null, higherBetter: true },
@@ -9899,7 +10578,7 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
       entry,
       profileLoading: true, profileError: null, profile: null,
       dataLoading: false, dataError: null,
-      events: [], rankings: [], awards: [],
+      events: [], rankings: [], awards: [], skills: [], eventMatches: [],
       seasonId: null,
       worldSkillsLoading: false,
       worldSkillsEntry: null,
@@ -9971,8 +10650,18 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
 
         // ── Step 3: stats (rankings / awards) ──────────────────────────────────
         const grade = profile.grade ?? "High School";
+        const slotIsIq = isIqProgramInfo(profile.program);
         const worldSkillsPromise = loadWorldSkills(seasonId, grade).catch(() => [] as WorldSkillsEntry[]);
         const awardsRes = await collectAllPages<Award>((page) => api.teamAwards(teamId, { "season[]": [seasonId], per_page: 250, page }));
+        if (!live.value) return;
+        // IQ-only: season skills (avg driver/prog) + event matches (event Low/Dropped).
+        const skillsRes = slotIsIq
+          ? await collectAllPages<Skill>((page) => api.teamSkills(teamId, { "season[]": [seasonId], per_page: 250, page }))
+          : { data: [] as Skill[] };
+        if (!live.value) return;
+        const eventMatchesRes = slotIsIq && contextEventId
+          ? await collectAllPages<Match>((page) => api.teamMatches(teamId, { "event[]": [contextEventId], per_page: 250, page }))
+          : { data: [] as Match[] };
         if (!live.value) return;
 
         // Column stats appear as soon as this team's ranking/award data arrives.
@@ -9984,6 +10673,8 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
             events: seasonEvents,
             rankings: rankingsRes.data,
             awards: awardsRes.data,
+            skills: skillsRes.data,
+            eventMatches: eventMatchesRes.data,
           };
           return next;
         });
@@ -10029,7 +10720,9 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const compareRows = useMemo(() => buildCompareRows(!!contextEventId), [contextEventId]);
+  const loadedProfiles = slots.map((s) => s.profile).filter((p): p is Team => !!p);
+  const isIqCompare = loadedProfiles.length > 0 && loadedProfiles.every((p) => isIqProgramInfo(p.program));
+  const compareRows = useMemo(() => buildCompareRows(!!contextEventId, isIqCompare), [contextEventId, isIqCompare]);
   const stats = useMemo(() => slots.map((s) => computeCompareStats(s, contextEventId)), [slots, contextEventId]);
   const colCount = slots.length;
 
@@ -10087,7 +10780,7 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
               {copyDone ? <Check size={14} /> : <Link2 size={14} />}
               <span>{copyDone ? "Copied!" : copyError ? "Copy failed" : "Copy link"}</span>
             </button>
-            <button type="button" className="video-close-btn" onClick={onClose} aria-label="Close">×</button>
+            <CloseButton onClose={onClose} />
           </div>
         </div>
 
@@ -10258,6 +10951,7 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
               <tr><td><kbd>G</kbd> then <kbd>E</kbd></td><td>Go to Events</td></tr>
               <tr><td><kbd>G</kbd> then <kbd>T</kbd></td><td>Go to Teams</td></tr>
               <tr><td><kbd>C</kbd> (on team page)</td><td>Toggle team in comparison tray</td></tr>
+              <tr><td><kbd>F</kbd> (on event page)</td><td>Search teams within the event</td></tr>
               <tr><td><kbd>G</kbd> then <kbd>C</kbd></td><td>Open comparison modal</td></tr>
             </tbody>
           </table>
@@ -10293,6 +10987,7 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const trayEntries = useCompareTray();
   const compareModalOpen = useCompareModalOpen();
+  const quickView = useQuickView();
 
   useEffect(() => {
     loadYouTubeApi();
@@ -10325,6 +11020,13 @@ export default function App() {
       // ? → shortcuts cheat sheet
       if (e.key === "?") {
         setShortcutsOpen(true);
+        return;
+      }
+
+      // F → open the in-event team search (when on an event page)
+      if (e.key === "f" && !e.metaKey && !e.ctrlKey && !e.altKey && _openEventSearch !== null) {
+        e.preventDefault();
+        _openEventSearch();
         return;
       }
 
@@ -10361,6 +11063,7 @@ export default function App() {
       {shortcutsOpen && <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />}
       {trayEntries.length > 0 && <CompareTray entries={trayEntries} />}
       {compareModalOpen && <ComparisonModal entries={trayEntries} onClose={closeCompareModal} />}
+      {quickView && <TeamQuickView state={quickView} onClose={closeQuickView} />}
     </>
   );
 }
