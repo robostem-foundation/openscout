@@ -1029,6 +1029,10 @@ main {
   font: inherit;
   color: inherit;
   cursor: pointer;
+  /* Fill the heading so the whole title bar is the toggle hitbox, not just the arrow. */
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  text-align: left;
 }
 /* Override `.panel h2 svg { display: none }` so the toggle chevron stays visible */
 .panel h2 .panel-collapse-chevron {
@@ -3657,6 +3661,12 @@ tbody tr:hover {
   max-width: 100%;
   min-width: 0;
   vertical-align: middle;
+}
+
+/* The score column never wraps (red/blue scores stay on one line); the match
+   name in the first column is free to wrap. */
+.team-match-table td:last-child {
+  white-space: nowrap;
 }
 
 .team-match-name > span:not(.team-result-badge) {
@@ -6747,6 +6757,21 @@ td.quick-look-col {
   padding: 12px 14px;
 }
 
+/* Space the collapsible Events/Awards panels from the season charts above. */
+.quick-view-body > .panel {
+  margin-top: 14px;
+}
+
+/* Stop scroll from chaining to the page when a modal's scroll area hits its
+   edge. The page still scrolls when the cursor is over it (not locked). */
+.quick-view-body,
+.compare-grid,
+.video-note-panel,
+.bracket-modal-body,
+.spotlight-results {
+  overscroll-behavior: contain;
+}
+
 .quick-view-meta {
   display: flex;
   flex-wrap: wrap;
@@ -6757,10 +6782,72 @@ td.quick-look-col {
   font-size: 13px;
 }
 
+/* Lead "At this event" section: stat tiles, section titles, matches table. */
+.quick-view-section-title {
+  margin: 16px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+/* The event name heading — normal case so long names read like the rest of the site. */
+.quick-view-event-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+/* The team's division, shown once next to the Matches heading. */
+.quick-view-division {
+  margin-left: 8px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint);
+}
+
+.quick-view-stat-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* Stacked, compact tiles so 4 fit the narrow panel without overflowing. */
+.quick-view-stat-row .event-stat-card {
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.quick-view-stat-row .event-stat-label {
+  font-size: 10px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-view-stat-row .event-stat-value {
+  font-size: 16px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .quick-view-events {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 4px 14px 8px;
 }
 
 .quick-view-events li {
@@ -7831,3 +7918,454 @@ td.quick-look-col {
   padding: 0;
 }
 .event-team-search-clear:hover { color: var(--text); }
+
+/* ── World Skills page ── */
+
+/* Controls row: all three controls share one continuous bottom border */
+.ws-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0;
+  margin-bottom: 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Kill the individual segmented underline — the row provides it */
+.ws-controls .segmented {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+/* Season picker sits on the same tab bar */
+.ws-season-picker {
+  position: relative;
+  margin-bottom: 0;
+  margin-right: 0;
+}
+.ws-season-picker > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 42px;
+  padding: 10px 15px;
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  color: var(--link);
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ws-season-picker > button:hover { background: var(--surface-2); }
+.ws-season-picker.open > button {
+  border: 1px solid var(--border);
+  border-bottom-color: var(--surface);
+  background: var(--surface);
+  color: var(--text-2);
+}
+
+/* Season picker dropdown — single-select button list */
+.ws-season-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ws-season-opt:hover { background: var(--surface-2); }
+.ws-season-opt.active { color: var(--accent); font-weight: 600; }
+
+/* Toolbar */
+.ws-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* Search */
+.ws-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 220px;
+  min-width: 160px;
+  max-width: 380px;
+}
+.ws-search-icon {
+  position: absolute;
+  left: 8px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.ws-search-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 28px 0 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.ws-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.ws-search-clear {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 50%;
+  padding: 0;
+}
+.ws-search-clear:hover { color: var(--text); }
+
+/* Filter menus */
+.ws-filter-menu {
+  position: relative;
+}
+.ws-filter-menu > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ws-filter-menu > button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.ws-filter-menu > button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.ws-filter-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 200px;
+  max-height: 280px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  overflow: hidden;
+}
+.ws-filter-actions {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.ws-filter-actions button {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.ws-filter-actions button:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.ws-filter-list {
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.ws-filter-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ws-filter-list label:hover { background: var(--surface-2); }
+.ws-filter-list span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-filter-empty { padding: 8px 10px; font-size: 12px; color: var(--text-muted); }
+
+/* Toolbar action buttons */
+.ws-toolbar-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.ws-where-btn,
+.ws-csv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ws-where-btn:hover,
+.ws-csv-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.ws-where-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+/* Where Would I Place panel */
+.ws-where-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.ws-where-label {
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+.ws-where-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ws-where-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-where-field label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ws-where-field input {
+  width: 90px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.ws-where-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.ws-where-plus {
+  font-size: 16px;
+  color: var(--text-muted);
+  padding-top: 14px;
+}
+.ws-where-combined {
+  font-size: 13px;
+  color: var(--text-2);
+  padding-top: 14px;
+}
+.ws-placement-result {
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+  font-size: 13px;
+  color: var(--text);
+}
+.ws-placement-result strong { color: var(--success); }
+.ws-placement-unranked { color: var(--text-muted); }
+
+/* Filter timing */
+.ws-filter-ms {
+  color: var(--text-muted);
+  opacity: 0.55;
+  font-size: 11px;
+}
+
+/* Subtle background-refresh indicator */
+.ws-refreshing {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* UTC / Local toggle */
+.ws-utc-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.ws-utc-btn:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-strong); }
+.ws-utc-btn.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+
+/* Stats bar */
+.ws-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+
+/* Table */
+.ws-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 0;
+}
+.ws-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.ws-table th {
+  position: sticky;
+  top: 0;
+  padding: 7px 6px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  white-space: normal;
+  text-align: left;
+  vertical-align: bottom;
+  line-height: 1.3;
+}
+.ws-table td {
+  padding: 6px 6px;
+  border-bottom: 1px solid var(--border-e3, var(--border));
+  color: var(--text);
+  white-space: nowrap;
+}
+.ws-table tbody tr:last-child td { border-bottom: none; }
+.ws-table tbody tr:hover td { background: var(--surface-2); }
+
+/* Highlighted max-score cells */
+.ws-max-score { color: var(--success); font-weight: 700; }
+.ws-max-auto, .ws-max-driver { color: var(--success); }
+
+/* Truncatable text cells */
+.ws-muted-cell,
+.ws-text-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tooltip-enabled cells: overflow visible so the overlay can escape the cell */
+.ws-tip-cell {
+  position: relative;
+  overflow: visible;
+}
+/* The inner span handles truncation instead of the td */
+.ws-tip-cell .ws-cell-inner {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Tooltip overlay shown on hover */
+.ws-tip-cell::after {
+  content: attr(data-tip);
+  display: none;
+  position: absolute;
+  z-index: 200;
+  top: calc(100% + 3px);
+  left: 0;
+  min-width: 80px;
+  max-width: 360px;
+  white-space: normal;
+  word-break: break-word;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 9px;
+  font-size: 12px;
+  color: var(--text);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.14);
+  pointer-events: none;
+  line-height: 1.4;
+}
+.ws-tip-cell:hover::after { display: block; }
+
+/* Semi-bold year in timestamps */
+.ws-date-year { font-weight: 500; }
+
+/* De-emphasized secondary cells */
+.ws-muted-cell {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Row number column */
+.ws-col-num {
+  text-align: right;
+  vertical-align: middle;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Responsive: collapse some columns on narrow screens */
+@media (max-width: 768px) {
+  .ws-toolbar-actions { margin-left: 0; }
+  .ws-where-panel { gap: 8px; }
+}
+

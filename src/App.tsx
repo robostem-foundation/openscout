@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  Download,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -74,7 +75,7 @@ import {
 } from "./orgs";
 import type { OrgInvite, OrgMember, OrgMembership, OrgRole } from "./orgs";
 import { supabase } from "./supabase";
-import { setEventsSettings, setQuickViewFirst, setTabLayout, setUiStyle, useQuickViewFirst, useSettingsEpoch, useTabLayout, useUiStyle } from "./settings";
+import { setEventsSettings, setQuickViewExpandExtras, setQuickViewFirst, setTabLayout, setUiStyle, useQuickViewExpandExtras, useQuickViewFirst, useSettingsEpoch, useTabLayout, useUiStyle } from "./settings";
 import type { TabLayout, UiStyle } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
@@ -1167,6 +1168,18 @@ function iqTierClass(tier: ScoreTier): string {
   return tier === "gold" ? " score-gold" : tier === "bronze" ? " score-bronze" : "";
 }
 
+// Abbreviate the leading round word in a match name (Qualification/Qualifier → Q,
+// Practice → P, Finals → F) and drop the "#" so it fits one line (Q #16 → Q16).
+// R16/QF/SF pass through unchanged (kept with their "#", free to wrap).
+function shortMatchName(name: string): string {
+  const abbreviated = name
+    .replace(/^Qualifications?/i, "Q")
+    .replace(/^Qualifiers?/i, "Q")
+    .replace(/^Practice/i, "P")
+    .replace(/^Finals?/i, "F");
+  return abbreviated.replace(/^([QPF])\s*#?\s*(\d)/, "$1$2");
+}
+
 function iqDropCount(played: number) {
   if (played < 4) return 0;
   if (played < 8) return 1;
@@ -2056,6 +2069,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
     ["/", "stemScout"],
     ["/events", "Events"],
     ["/teams", "Teams"],
+    ["/skills", "Skills"],
     ["/insights", "Insights"],
   ];
 
@@ -2086,6 +2100,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
         <div className="footer-links">
           <Link href="/events">Events</Link>
           <Link href="/teams">Teams</Link>
+          <Link href="/skills">Skills</Link>
           <Link href="/insights">Insights</Link>
           <Link href="/terms">Terms</Link>
         </div>
@@ -2507,11 +2522,13 @@ function Metric({ icon, label, value }: { icon: ReactNode; label: string; value:
 
 function Panel({ title, icon, children, action, collapsible, storageKey, defaultCollapsed }: { title: ReactNode; icon: ReactNode; children: ReactNode; action?: ReactNode; collapsible?: boolean; storageKey?: string; defaultCollapsed?: boolean }) {
   const [collapsed, setCollapsed] = useState(() => {
-    if (!collapsible || !storageKey) return false;
-    try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored !== null) return stored === "1";
-    } catch { /* ignore */ }
+    if (!collapsible) return false;
+    if (storageKey) {
+      try {
+        const stored = localStorage.getItem(storageKey);
+        if (stored !== null) return stored === "1";
+      } catch { /* ignore */ }
+    }
     return defaultCollapsed ?? false;
   });
   function toggle() {
@@ -5957,7 +5974,12 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const orgs = useOrgs();
   const primaryOrg = orgs[0] ?? null;
-  const eventIdForPicklist = _currentEventId; // set by EventDetail while on an event page
+  const expandExtras = useQuickViewExpandExtras();
+  // Capture the event context once — quick view is opened from an event, and the
+  // panel closes on navigation, so these stay valid for its lifetime.
+  const contextEventId = useRef(_currentEventId).current;
+  const contextSeasonId = useRef(_currentEventSeasonId).current;
+  const eventIdForPicklist = contextEventId;
 
   // Resolve the team. Most entry points pass a numeric id; alliance-seed links only
   // know the number + program, so fall back to a number lookup (like TeamDetail).
@@ -5990,28 +6012,47 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
     });
     return [...bySeason.values()].sort((a, b) => b.latest - a.latest)[0] ?? null;
   }, [teamEvents]);
-  const latestSeasonId = latestSeason?.id ?? null;
+  // Prefer the season of the event we were opened from, so its data is loaded.
+  const seasonId = contextSeasonId ?? latestSeason?.id ?? null;
+  const seasonLabel = useMemo(() => {
+    const ev = teamEvents.find((e) => e.season.id === seasonId);
+    return ev ? shortSeasonName(ev.season.name) : latestSeason?.label;
+  }, [teamEvents, seasonId, latestSeason]);
 
   const rankingsQ = useAsync(
-    async () => (teamId != null && latestSeasonId ? (await collectAllPages<Ranking>((page) => api.teamRankings(teamId, { "season[]": [latestSeasonId], per_page: 250, page }))).data : []),
-    [teamId, latestSeasonId],
+    async () => (teamId != null && seasonId ? (await collectAllPages<Ranking>((page) => api.teamRankings(teamId, { "season[]": [seasonId], per_page: 250, page }))).data : []),
+    [teamId, seasonId],
   );
   const skillsQ = useAsync(
-    async () => (teamId != null && latestSeasonId ? (await collectAllPages<Skill>((page) => api.teamSkills(teamId, { "season[]": [latestSeasonId], per_page: 250, page }))).data : []),
-    [teamId, latestSeasonId],
+    async () => (teamId != null && seasonId ? (await collectAllPages<Skill>((page) => api.teamSkills(teamId, { "season[]": [seasonId], per_page: 250, page }))).data : []),
+    [teamId, seasonId],
   );
   const matchesQ = useAsync(
-    async () => (teamId != null && latestSeasonId ? (await collectAllPages<Match>((page) => api.teamMatches(teamId, { "season[]": [latestSeasonId], per_page: 250, page }))).data : []),
-    [teamId, latestSeasonId],
+    async () => (teamId != null && seasonId ? (await collectAllPages<Match>((page) => api.teamMatches(teamId, { "season[]": [seasonId], per_page: 250, page }))).data : []),
+    [teamId, seasonId],
   );
   const awardsQ = useAsync(
-    async () => (teamId != null && latestSeasonId ? (await collectAllPages<Award>((page) => api.teamAwards(teamId, { "season[]": [latestSeasonId], per_page: 250, page }))).data : []),
-    [teamId, latestSeasonId],
+    async () => (teamId != null && seasonId ? (await collectAllPages<Award>((page) => api.teamAwards(teamId, { "season[]": [seasonId], per_page: 250, page }))).data : []),
+    [teamId, seasonId],
   );
 
   const seasonEvents = useMemo(
-    () => teamEvents.filter((ev) => !latestSeasonId || ev.season.id === latestSeasonId).sort(compareEventsByDirection("asc")),
-    [teamEvents, latestSeasonId],
+    () => teamEvents.filter((ev) => !seasonId || ev.season.id === seasonId).sort(compareEventsByDirection("asc")),
+    [teamEvents, seasonId],
+  );
+
+  // ── The event we were opened from: ranking, this team's matches, skills ──
+  const eventRanking = useMemo(
+    () => (contextEventId != null ? (rankingsQ.data ?? []).find((r) => r.event.id === contextEventId) ?? null : null),
+    [rankingsQ.data, contextEventId],
+  );
+  const eventMatches = useMemo(
+    () => (contextEventId != null ? (matchesQ.data ?? []).filter((m) => m.event.id === contextEventId) : []),
+    [matchesQ.data, contextEventId],
+  );
+  const eventSkills = useMemo(
+    () => (contextEventId != null ? (skillsQ.data ?? []).filter((s) => s.event.id === contextEventId) : []),
+    [skillsQ.data, contextEventId],
   );
 
   // Slide-in on next frame; Esc + backdrop close; lock body scroll; focus the
@@ -6045,6 +6086,39 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   const isIq = team ? isIqProgramInfo(team.program) : false;
   const programCode = team ? programSlug(team.program) : (state.programCode ?? "");
   const aboutLoading = eventsQ.loading || rankingsQ.loading || skillsQ.loading || matchesQ.loading;
+  const eventLoading = rankingsQ.loading || (isIq && matchesQ.loading);
+  const contextEvent = contextEventId != null ? eventIndex.get(contextEventId) : undefined;
+
+  // Event stat tiles for the panel's lead section.
+  const iqEvt = isIq && teamId != null ? iqTeamQualStats(eventMatches, teamId, eventRanking) : null;
+  const teamDivision = eventRanking?.division?.name ?? eventMatches.find((m) => m.division?.name)?.division?.name ?? null;
+  const fmtNum = (v: number | null | undefined) => (v == null ? "—" : Number.isInteger(v) ? String(v) : v.toFixed(1));
+  const rankRow: Array<{ label: string; value: ReactNode }> = isIq
+    ? [
+        { label: "Rank", value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—" },
+        { label: "Avg", value: fmtNum(iqEvt?.avg ?? eventRanking?.average_points ?? null) },
+        { label: "High", value: fmtNum(iqEvt?.high ?? eventRanking?.high_score ?? null) },
+        { label: "Low", value: fmtNum(iqEvt?.low ?? null) },
+      ]
+    : [
+        { label: "Rank", value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—" },
+        { label: "Record", value: eventRanking ? `${eventRanking.wins ?? 0}-${eventRanking.losses ?? 0}-${eventRanking.ties ?? 0}` : "—" },
+        { label: "WP", value: fmtNum(eventRanking?.wp ?? null) },
+        { label: "AP", value: fmtNum(eventRanking?.ap ?? null) },
+      ];
+  // Skills row: rank + driver/prog (attempts shown in the label) + combined.
+  const driverSkill = eventSkills.find((s) => (s.type ?? "").toLowerCase().includes("driver"));
+  const progSkill = eventSkills.find((s) => !(s.type ?? "").toLowerCase().includes("driver"));
+  const skillRanks = eventSkills.map((s) => s.rank).filter((r): r is number => r != null && r > 0);
+  const skillsRank = skillRanks.length ? Math.min(...skillRanks) : null;
+  const skillLabel = (base: string, s?: Skill) => (s?.attempts != null ? `${base} (${s.attempts})` : base);
+  const combinedSkill = driverSkill || progSkill ? (driverSkill?.score ?? 0) + (progSkill?.score ?? 0) : null;
+  const skillsRow: Array<{ label: string; value: ReactNode }> = [
+    { label: "Skills Rank", value: skillsRank != null ? `#${skillsRank}` : "—" },
+    { label: skillLabel("Driver", driverSkill), value: driverSkill?.score ?? "—" },
+    { label: skillLabel("Prog", progSkill), value: progSkill?.score ?? "—" },
+    { label: "Combined", value: combinedSkill ?? "—" },
+  ];
 
   const goFull = () => {
     onClose();
@@ -6105,17 +6179,42 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
                 <ProgramBadge program={team.program} />
                 <span>{locationLine(team)}</span>
                 <span>{team.grade ?? "Grade unknown"}</span>
-                <span>{team.registered ? "Registered" : "Inactive"}</span>
               </div>
-              {latestSeasonId == null ? (
+              {seasonId == null ? (
                 <div className="empty">No season data for this team yet.</div>
               ) : (
                 <>
+                  {/* Lead with stats for the event we were opened from. */}
+                  {contextEventId != null && (
+                    <section className="quick-view-event">
+                      {contextEvent && <div className="quick-view-event-title">{contextEvent.name}</div>}
+                      <div className="quick-view-stat-row">
+                        {rankRow.map((c) => <EventStatCard key={c.label} label={c.label} value={eventLoading ? "…" : c.value} />)}
+                      </div>
+                      <div className="quick-view-stat-row">
+                        {skillsRow.map((c) => <EventStatCard key={c.label} label={c.label} value={skillsQ.loading ? "…" : c.value} />)}
+                      </div>
+                      <div className="quick-view-section-title">
+                        Matches
+                        {teamDivision && <span className="quick-view-division">{teamDivision}</span>}
+                      </div>
+                      {matchesQ.loading ? (
+                        <div className="empty">Loading matches…</div>
+                      ) : eventMatches.length ? (
+                        <TeamMatchTable matches={eventMatches} focusTeamId={team.id} isIq={isIq} hideDivision />
+                      ) : (
+                        <div className="empty">No matches for this team at this event.</div>
+                      )}
+                    </section>
+                  )}
+
+                  {/* Season stats below the fold. */}
+                  <div className="quick-view-section-title">Season stats{seasonLabel ? ` · ${seasonLabel}` : ""}</div>
                   <TeamAboutTab
                     team={team}
                     isIq={isIq}
-                    seasonId={latestSeasonId}
-                    seasonLabel={latestSeason?.label}
+                    seasonId={seasonId}
+                    seasonLabel={seasonLabel}
                     rankings={rankingsQ.data ?? []}
                     skills={skillsQ.data ?? []}
                     matches={matchesQ.data ?? []}
@@ -6124,7 +6223,7 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
                     loading={aboutLoading}
                     compact
                   />
-                  <Panel title={`Events ${seasonEvents.length || ""}`} icon={<CalendarDays />}>
+                  <Panel title={`Events ${seasonEvents.length || ""}`} icon={<CalendarDays />} collapsible defaultCollapsed={!expandExtras}>
                     {seasonEvents.length ? (
                       <ul className="quick-view-events">
                         {seasonEvents.map((ev) => (
@@ -6141,9 +6240,11 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
                   <TeamAwardsByEvent
                     awards={awardsQ.data ?? []}
                     eventIndex={eventIndex}
-                    seasonId={latestSeasonId}
+                    seasonId={seasonId}
                     focusTeamId={team.id}
                     direction="asc"
+                    collapsible
+                    defaultCollapsed={!expandExtras}
                   />
                 </>
               )}
@@ -6664,7 +6765,7 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
           const iqResult = isIq ? iqMatchResult(match) : null;
           const outcome = isIq ? null : teamMatchOutcome(match, focusTeamId);
           const divisionWin = lastFinalIds.get(match.division.id) === match.id ? divisionWins.get(match.division.id) : undefined;
-          const displayName = isIq && isIqFinalsMatch(match) ? "Finals" : match.name;
+          const displayName = shortMatchName(isIq && isIqFinalsMatch(match) ? "Finals" : match.name);
           return (
             <Fragment key={match.id}>
               {elimAllianceNotice?.matchId === match.id && (
@@ -6678,7 +6779,7 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
                 <td className="truncate-cell">
                   <span className="team-match-name">
                     {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
-                    <span>{displayName}</span>
+                    <span className="team-match-label">{displayName}</span>
                   </span>
                 </td>
                 <td className={`red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
@@ -6719,14 +6820,14 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
 }
 
 
-function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier }) {
+function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDivision = false }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; hideDivision?: boolean }) {
   const sortedMatches = [...matches].sort((a, b) => compareMatchesDisplay(a, b, preferredTeamDivisionId(matches, focusTeamId)));
   const divisionWins = divisionFinalWins(sortedMatches, focusTeamId);
   const lastFinalIds = lastFinalIdsByDivision(sortedMatches);
   const elimAllianceNotice = isIq ? null : firstElimAllianceNotice(sortedMatches, focusTeamId);
 
   return (
-    <table>
+    <table className="team-match-table">
       <thead>
         <tr>
           <th>Match</th>
@@ -6741,7 +6842,7 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier }: { mat
           const iqResult = isIq ? iqMatchResult(match) : null;
           const outcome = isIq ? null : teamMatchOutcome(match, focusTeamId);
           const divisionWin = lastFinalIds.get(match.division.id) === match.id ? divisionWins.get(match.division.id) : undefined;
-          const displayName = isIq && isIqFinalsMatch(match) ? "Finals" : match.name;
+          const displayName = shortMatchName(isIq && isIqFinalsMatch(match) ? "Finals" : match.name);
 
           return (
             <Fragment key={match.id}>
@@ -6756,8 +6857,8 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier }: { mat
                 <td>
                   <span className="team-match-name">
                     {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
-                    <span>{displayName}</span>
-                    {match.division?.name && <span className="muted inline-muted">{match.division.name}</span>}
+                    <span className="team-match-label">{displayName}</span>
+                    {!hideDivision && match.division?.name && <span className="muted inline-muted">{match.division.name}</span>}
                   </span>
                 </td>
                 <td className={`red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
@@ -7013,6 +7114,8 @@ function TeamAwardsByEvent({
   focusTeamId,
   direction,
   onViewMatches,
+  collapsible,
+  defaultCollapsed,
 }: {
   awards: Award[];
   eventIndex: Map<number, Event>;
@@ -7020,12 +7123,14 @@ function TeamAwardsByEvent({
   focusTeamId: number;
   direction: DateDirection;
   onViewMatches?: (eventId: number) => void;
+  collapsible?: boolean;
+  defaultCollapsed?: boolean;
 }) {
   const groups = groupItemsByEvent(awards, eventIndex, seasonId, direction);
   const programCode = useContext(ProgramContext);
 
   return (
-    <Panel title="Awards" icon={<Medal />}>
+    <Panel title="Awards" icon={<Medal />} collapsible={collapsible} defaultCollapsed={defaultCollapsed}>
       <div className="event-groups">
         {groups.map((group) => (
           <details key={group.eventRef.id} className="event-group" open>
@@ -8589,6 +8694,591 @@ function AwardsList({ awards }: { awards: Award[] }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// World Skills page — helpers
+// ---------------------------------------------------------------------------
+
+const WS_PREFS_KEY = "ws-prefs-v2";
+const WS_CACHE_PREFIX = "ws-cache:";
+
+type WsPrefs = { program?: string; grade?: string; seasonByProgram?: Record<string, number>; gradeByProgram?: Record<string, string> };
+
+function loadWsPrefs(): WsPrefs {
+  try { return JSON.parse(localStorage.getItem(WS_PREFS_KEY) ?? "{}"); } catch { return {}; }
+}
+function saveWsPrefs(prefs: WsPrefs) {
+  try { localStorage.setItem(WS_PREFS_KEY, JSON.stringify(prefs)); } catch {}
+}
+function wsGradeToParam(g: string) {
+  if (g === "High School") return "hs";
+  if (g === "Middle School") return "ms";
+  return "es";
+}
+function wsGradeFromParam(p: string | null): string | null {
+  if (p === "hs") return "High School";
+  if (p === "ms") return "Middle School";
+  if (p === "es") return "Elementary";
+  return null;
+}
+function getCachedSkills(seasonId: number, grade: string): WorldSkillsEntry[] | null {
+  try {
+    const raw = localStorage.getItem(`${WS_CACHE_PREFIX}${seasonId}:${grade}`);
+    return raw ? (JSON.parse(raw) as WorldSkillsEntry[]) : null;
+  } catch { return null; }
+}
+function setCachedSkills(seasonId: number, grade: string, data: WorldSkillsEntry[]) {
+  try { localStorage.setItem(`${WS_CACHE_PREFIX}${seasonId}:${grade}`, JSON.stringify(data)); } catch {}
+}
+
+const WS_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"] as const;
+function formatSkillsDate(raw: string | null | undefined, useUtc: boolean): string {
+  if (!raw) return "—";
+  const d = new Date(raw.replace(" ", "T") + "Z");
+  if (isNaN(d.getTime())) return raw;
+  const month = useUtc ? d.getUTCMonth() : d.getMonth();
+  const day   = useUtc ? d.getUTCDate()  : d.getDate();
+  const year  = useUtc ? d.getUTCFullYear() : d.getFullYear();
+  const h     = useUtc ? d.getUTCHours()   : d.getHours();
+  const m     = useUtc ? d.getUTCMinutes() : d.getMinutes();
+  return `${WS_MONTHS[month]} ${day} (${String(year).slice(2)}) ${h}:${String(m).padStart(2,"0")}`;
+}
+function renderSkillsDate(raw: string | null | undefined, useUtc: boolean) {
+  if (!raw) return "—";
+  const d = new Date(raw.replace(" ", "T") + "Z");
+  if (isNaN(d.getTime())) return raw;
+  const month = useUtc ? d.getUTCMonth() : d.getMonth();
+  const day   = useUtc ? d.getUTCDate()  : d.getDate();
+  const year  = useUtc ? d.getUTCFullYear() : d.getFullYear();
+  const h     = useUtc ? d.getUTCHours()   : d.getHours();
+  const m     = useUtc ? d.getUTCMinutes() : d.getMinutes();
+  return <>{WS_MONTHS[month]} {day} <span className="ws-date-year">({String(year).slice(2)})</span> {h}:{String(m).padStart(2,"0")}</>;
+}
+
+// ---------------------------------------------------------------------------
+// World Skills page
+// ---------------------------------------------------------------------------
+
+function WorldSkillsPage() {
+  const settingsEpoch = useSettingsEpoch();
+  return <WorldSkillsPageInner key={settingsEpoch} />;
+}
+
+function WorldSkillsPageInner() {
+  // ── Init from URL params (takes priority) then localStorage prefs ─────────
+  const [program, setProgram] = useState<"v5rc" | "viqrc">(() => {
+    const u = new URLSearchParams(window.location.search);
+    const p = u.get("program");
+    if (p === "v5rc" || p === "viqrc") return p;
+    const prefs = loadWsPrefs();
+    return prefs.program === "viqrc" ? "viqrc" : "v5rc";
+  });
+  const [gradeByProgram, setGradeByProgram] = useState<Record<string, string>>(() => {
+    const prefs = loadWsPrefs();
+    const base = prefs.gradeByProgram ?? (prefs.grade ? { [prefs.program ?? "v5rc"]: prefs.grade } : {});
+    const u = new URLSearchParams(window.location.search);
+    const prog = u.get("program") === "viqrc" ? "viqrc" : "v5rc";
+    const g = wsGradeFromParam(u.get("grade"));
+    return g ? { ...base, [prog]: g } : base;
+  });
+  const [seasonByProgram, setSeasonByProgram] = useState<Record<string, number>>(() => {
+    const prefs = loadWsPrefs();
+    const base = prefs.seasonByProgram ?? {};
+    const u = new URLSearchParams(window.location.search);
+    const prog = u.get("program") === "viqrc" ? "viqrc" : "v5rc";
+    const s = parseInt(u.get("season") ?? "", 10);
+    return !isNaN(s) ? { ...base, [prog]: s } : base;
+  });
+  const manualSeasonId: number | null = seasonByProgram[program] ?? null;
+  function setManualSeasonId(id: number | null) {
+    setSeasonByProgram((prev) => {
+      const next = { ...prev };
+      if (id === null) delete next[program]; else next[program] = id;
+      return next;
+    });
+  }
+
+  const [useUtc, setUseUtc] = useState(false);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
+  const debouncedSearch = useDebouncedValue(search);
+  const [filterCountries, setFilterCountries] = useState<string[]>(() => new URLSearchParams(window.location.search).getAll("country"));
+  const [filterRegions, setFilterRegions] = useState<string[]>(() => new URLSearchParams(window.location.search).getAll("region"));
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [wherePlaceOpen, setWherePlaceOpen] = useState(false);
+  const [wpAuto, setWpAuto] = useState("");
+  const [wpDriver, setWpDriver] = useState("");
+
+  // ── Seasons ───────────────────────────────────────────────────────────────
+  const seasonsAsync = useAsync(() => api.robotEventsSeasons({ per_page: 250 }), []);
+  const programId = program === "v5rc" ? 1 : 41;
+
+  const seasonOptions = useMemo(
+    () =>
+      (seasonsAsync.data?.data ?? [])
+        .filter((s) => s.program?.id === programId)
+        .sort((a, b) => b.id - a.id)
+        .slice(0, 8)
+        .map((s) => ({ id: s.id, label: shortSeasonName(s.name) })),
+    [seasonsAsync.data, programId],
+  );
+
+  const resolvedSeasonId = manualSeasonId ?? seasonOptions[0]?.id ?? null;
+
+  const gradeOptions = program === "v5rc" ? ["High School", "Middle School"] : ["Middle School", "Elementary"];
+  // Derive grade for the current program; fall back to the first valid option if not set or invalid
+  const grade = gradeOptions.includes(gradeByProgram[program] ?? "") ? gradeByProgram[program]! : gradeOptions[0]!;
+  function setGrade(g: string) { setGradeByProgram((prev) => ({ ...prev, [program]: g })); }
+
+  // ── Persist prefs to localStorage ────────────────────────────────────────
+  useEffect(() => {
+    saveWsPrefs({ program, seasonByProgram, gradeByProgram });
+  }, [program, seasonByProgram, gradeByProgram]);
+
+  // ── Sync state to URL so the page is shareable ───────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set("program", program);
+    params.set("grade", wsGradeToParam(grade));
+    if (resolvedSeasonId) params.set("season", String(resolvedSeasonId));
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    filterCountries.forEach((c) => params.append("country", c));
+    filterRegions.forEach((r) => params.append("region", r));
+    window.history.replaceState(null, "", `/skills?${params.toString()}`);
+  }, [program, grade, resolvedSeasonId, debouncedSearch, filterCountries, filterRegions]);
+
+  // ── World skills data — stale-while-revalidate ────────────────────────────
+  const [wsData, setWsData] = useState<WorldSkillsEntry[] | null>(null);
+  const [wsLoading, setWsLoading] = useState(true);
+  const [wsError, setWsError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (!resolvedSeasonId) return;
+
+    const stale = getCachedSkills(resolvedSeasonId, grade);
+    if (stale) {
+      setWsData(stale);
+      setWsLoading(false);
+      setIsRefreshing(true);
+    } else {
+      setWsLoading(true);
+      setIsRefreshing(false);
+    }
+    setWsError(null);
+
+    let live = true;
+    loadWorldSkills(resolvedSeasonId, grade)
+      .then((fresh) => {
+        if (!live) return;
+        setWsData(fresh);
+        setWsLoading(false);
+        setIsRefreshing(false);
+        setCachedSkills(resolvedSeasonId, grade, fresh);
+      })
+      .catch((err: Error) => {
+        if (!live) return;
+        setIsRefreshing(false);
+        if (!stale) { setWsLoading(false); setWsError(err.message); }
+      });
+
+    return () => { live = false; };
+  }, [resolvedSeasonId, grade]);
+
+  const countryOptions = useMemo(() => {
+    const set = new Set<string>();
+    (wsData ?? []).forEach((r) => { if (r.team.country) set.add(r.team.country); });
+    return Array.from(set).sort();
+  }, [wsData]);
+
+  const regionOptions = useMemo(() => {
+    const set = new Set<string>();
+    (wsData ?? []).forEach((r) => { if (r.team.eventRegion) set.add(r.team.eventRegion); });
+    return Array.from(set).sort();
+  }, [wsData]);
+
+  const { filtered, filterMs } = useMemo(() => {
+    const t0 = performance.now();
+    let rows = wsData ?? [];
+    const q = debouncedSearch.trim().toLowerCase();
+    if (q)
+      rows = rows.filter(
+        (r) =>
+          r.team.team.toLowerCase().includes(q) ||
+          (r.team.teamName ?? "").toLowerCase().includes(q) ||
+          (r.team.organization ?? "").toLowerCase().includes(q) ||
+          (r.team.eventRegion ?? "").toLowerCase().includes(q) ||
+          (r.team.country ?? "").toLowerCase().includes(q),
+      );
+    if (filterCountries.length) rows = rows.filter((r) => filterCountries.includes(r.team.country ?? ""));
+    if (filterRegions.length) rows = rows.filter((r) => filterRegions.includes(r.team.eventRegion ?? ""));
+    return { filtered: rows, filterMs: Math.round(performance.now() - t0) };
+  }, [wsData, debouncedSearch, filterCountries, filterRegions]);
+
+  const PAGE_SIZE = 80;
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const visibleRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => { setPage(1); }, [debouncedSearch, filterCountries, filterRegions, resolvedSeasonId, grade]);
+
+  const wpPlacement = useMemo(() => {
+    if (!wpAuto && !wpDriver) return null;
+    const combined = (Number(wpAuto) || 0) + (Number(wpDriver) || 0);
+    const idx = filtered.findIndex((r) => r.scores.score <= combined);
+    const rank = idx === -1 ? filtered.length + 1 : idx + 1;
+    const percentile = ((filtered.length - rank + 1) / Math.max(filtered.length, 1) * 100).toFixed(1);
+    return { rank, percentile, total: filtered.length, combined };
+  }, [wpAuto, wpDriver, filtered]);
+
+  function downloadCSV() {
+    const headers = [
+      "Row", "Rank", "Score", "Autonomous Coding Skills", "Driver Skills",
+      "Highest Autonomous Coding Skills", "Highest Driver Skills",
+      "Highest Auto Score Timestamp", "Highest Driver Score Timestamp",
+      "Highest Auto Score Stop Time", "Highest Driver Score Stop Time",
+      "Team Number", "Team Name", "Organization", "Event Region", "Country/Region",
+    ];
+    const rows = filtered.map((r, i) => [
+      i + 1, r.rank, r.scores.score, r.scores.programming, r.scores.driver,
+      r.scores.maxProgramming ?? "", r.scores.maxDriver ?? "",
+      r.scores.progScoredAt ?? "", r.scores.driverScoredAt ?? "",
+      r.scores.progStopTime ?? "", r.scores.driverStopTime ?? "",
+      r.team.team, r.team.teamName ?? "", r.team.organization ?? "",
+      r.team.eventRegion ?? "", r.team.country ?? "",
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `world-skills-${resolvedSeasonId ?? "unknown"}-${grade.replace(/ /g, "-")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const programCode = program.toUpperCase();
+
+  return (
+    <section className="page" onClick={() => setOpenMenu(null)}>
+      <PageTitle
+        icon={<Trophy />}
+        title="World Skills"
+        subtitle=""
+      />
+
+      {/* Program, season, and grade controls */}
+      <div className="ws-controls" onClick={(e) => e.stopPropagation()}>
+        <div className="segmented ws-segmented-inline">
+          <button className={program === "v5rc" ? "active" : ""} onClick={() => setProgram("v5rc")}>V5RC</button>
+          <button className={program === "viqrc" ? "active" : ""} onClick={() => setProgram("viqrc")}>VIQRC</button>
+        </div>
+
+        {/* Season dropdown */}
+        <div className={`ws-filter-menu ws-season-picker${openMenu === "season" ? " open" : ""}`}>
+          <button onClick={() => setOpenMenu(openMenu === "season" ? null : "season")}>
+            {seasonOptions.find((s) => s.id === resolvedSeasonId)?.label ?? (seasonsAsync.loading ? "Loading…" : "Season")}
+            <ChevronDown size={12} />
+          </button>
+          {openMenu === "season" && (
+            <div className="ws-filter-dropdown">
+              <div className="ws-filter-list">
+                {seasonOptions.map((s) => (
+                  <button
+                    key={s.id}
+                    className={`ws-season-opt${s.id === resolvedSeasonId ? " active" : ""}`}
+                    onClick={() => { setManualSeasonId(s.id); setPage(1); setOpenMenu(null); }}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+                {!seasonOptions.length && <div className="ws-filter-empty">Loading seasons…</div>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="segmented ws-segmented-inline">
+          {gradeOptions.map((g) => (
+            <button
+              key={g}
+              className={grade === g ? "active" : ""}
+              onClick={() => { setGrade(g); setPage(1); }}
+            >
+              {g === "High School" ? "High School" : g === "Middle School" ? "Middle School" : "Elementary"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="ws-toolbar" onClick={(e) => e.stopPropagation()}>
+        <div className="ws-search-wrap">
+          <Search size={14} className="ws-search-icon" />
+          <input
+            className="ws-search-input"
+            placeholder="Search team #, name, org, region, country…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <button className="ws-search-clear" onClick={() => setSearch("")} aria-label="Clear">
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
+        {/* Country filter */}
+        <div className="ws-filter-menu" onClick={(e) => e.stopPropagation()}>
+          <button
+            className={filterCountries.length ? "active" : ""}
+            onClick={() => setOpenMenu(openMenu === "country" ? null : "country")}
+          >
+            {filterCountries.length
+              ? `${filterCountries.length} countr${filterCountries.length === 1 ? "y" : "ies"}`
+              : "Country"}
+            <ChevronDown size={12} />
+          </button>
+          {openMenu === "country" && (
+            <div className="ws-filter-dropdown">
+              <div className="ws-filter-actions">
+                <button onClick={() => setFilterCountries([])}>Clear</button>
+              </div>
+              <div className="ws-filter-list">
+                {countryOptions.map((c) => (
+                  <label key={c}>
+                    <input
+                      type="checkbox"
+                      checked={filterCountries.includes(c)}
+                      onChange={() =>
+                        setFilterCountries((prev) =>
+                          prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c],
+                        )
+                      }
+                    />
+                    <span>{c}</span>
+                  </label>
+                ))}
+                {!countryOptions.length && <div className="ws-filter-empty">No data yet</div>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Region filter */}
+        <div className="ws-filter-menu" onClick={(e) => e.stopPropagation()}>
+          <button
+            className={filterRegions.length ? "active" : ""}
+            onClick={() => setOpenMenu(openMenu === "region" ? null : "region")}
+          >
+            {filterRegions.length
+              ? `${filterRegions.length} region${filterRegions.length === 1 ? "" : "s"}`
+              : "Region"}
+            <ChevronDown size={12} />
+          </button>
+          {openMenu === "region" && (
+            <div className="ws-filter-dropdown">
+              <div className="ws-filter-actions">
+                <button onClick={() => setFilterRegions([])}>Clear</button>
+              </div>
+              <div className="ws-filter-list">
+                {regionOptions.map((r) => (
+                  <label key={r}>
+                    <input
+                      type="checkbox"
+                      checked={filterRegions.includes(r)}
+                      onChange={() =>
+                        setFilterRegions((prev) =>
+                          prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r],
+                        )
+                      }
+                    />
+                    <span>{r}</span>
+                  </label>
+                ))}
+                {!regionOptions.length && <div className="ws-filter-empty">No data yet</div>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="ws-toolbar-actions">
+          <button
+            className={`ws-utc-btn${useUtc ? " active" : ""}`}
+            onClick={() => setUseUtc((u) => !u)}
+            title={useUtc ? "Showing UTC — click for local time" : "Showing local time — click for UTC"}
+          >
+            {useUtc ? "UTC Time" : "Local Time"}
+          </button>
+          <button
+            className={`ws-where-btn${wherePlaceOpen ? " active" : ""}`}
+            onClick={() => setWherePlaceOpen((o) => !o)}
+          >
+            <ListOrdered size={13} /> Where Would I Place?
+          </button>
+          <button className="ws-csv-btn" onClick={downloadCSV} title="Download filtered CSV">
+            <Download size={13} /> CSV
+          </button>
+        </div>
+      </div>
+
+      {/* Where Would I Place panel */}
+      {wherePlaceOpen && (
+        <div className="ws-where-panel" onClick={(e) => e.stopPropagation()}>
+          <span className="ws-where-label">Enter your scores:</span>
+          <div className="ws-where-inputs">
+            <div className="ws-where-field">
+              <label>Autonomous</label>
+              <input
+                type="number"
+                min="0"
+                placeholder="0"
+                value={wpAuto}
+                onChange={(e) => setWpAuto(e.target.value)}
+              />
+            </div>
+            <span className="ws-where-plus">+</span>
+            <div className="ws-where-field">
+              <label>Driver</label>
+              <input
+                type="number"
+                min="0"
+                placeholder="0"
+                value={wpDriver}
+                onChange={(e) => setWpDriver(e.target.value)}
+              />
+            </div>
+            {(wpAuto || wpDriver) && (
+              <span className="ws-where-combined">
+                = <strong>{(Number(wpAuto) || 0) + (Number(wpDriver) || 0)}</strong> combined
+              </span>
+            )}
+          </div>
+          {wpPlacement && (
+            <div className="ws-placement-result">
+              {wpPlacement.rank <= wpPlacement.total ? (
+                <>
+                  You&apos;d rank <strong>#{wpPlacement.rank.toLocaleString()}</strong> of{" "}
+                  {wpPlacement.total.toLocaleString()} — top <strong>{wpPlacement.percentile}%</strong>
+                  {filtered !== (wsData ?? []) && " (with current filters)"}
+                </>
+              ) : (
+                <>
+                  Score of <strong>{wpPlacement.combined}</strong> would be unranked (below last entry in current view)
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Stats bar */}
+      <div className="ws-stats-bar">
+        {wsLoading ? (
+          <span className="muted">Loading…</span>
+        ) : (
+          <>
+            <span>
+              <strong>{filtered.length.toLocaleString()}</strong> team{filtered.length !== 1 ? "s" : ""}
+              {filtered.length !== (wsData ?? []).length && ` (filtered from ${(wsData ?? []).length.toLocaleString()})`}
+              {(debouncedSearch || filterCountries.length > 0 || filterRegions.length > 0) && <span className="ws-filter-ms"> ({filterMs} ms)</span>}
+            </span>
+            {isRefreshing && <span className="ws-refreshing">Updating…</span>}
+            {filtered.length > 0 && totalPages > 1 && (
+              <span className="muted">Page {page} of {totalPages}</span>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Table */}
+      <Status loading={wsLoading} error={wsError} />
+      {!wsLoading && !wsError && (
+        <div className="ws-table-wrap">
+          <table className="ws-table">
+            <colgroup>
+              <col style={{ width: "24px" }} />   {/* # */}
+              <col style={{ width: "40px" }} />   {/* Rank */}
+              <col style={{ width: "48px" }} />   {/* Score */}
+              <col style={{ width: "52px" }} />   {/* Auto Skills */}
+              <col style={{ width: "52px" }} />   {/* Driver Skills */}
+              <col style={{ width: "54px" }} />   {/* Max Auto */}
+              <col style={{ width: "54px" }} />   {/* Max Driver */}
+              <col style={{ width: "130px" }} />  {/* Auto Date */}
+              <col style={{ width: "130px" }} />  {/* Driver Date */}
+              <col style={{ width: "46px" }} />   {/* Auto Stop */}
+              <col style={{ width: "46px" }} />   {/* Driver Stop */}
+              <col style={{ width: "58px" }} />   {/* Team # */}
+              <col />                             {/* Team Name */}
+              <col />                             {/* Organization */}
+              <col style={{ width: "100px" }} />  {/* Event Region */}
+              <col style={{ width: "100px" }} />  {/* Country */}
+            </colgroup>
+            <thead>
+              <tr>
+                <th className="ws-col-num">#</th>
+                <th>Rank</th>
+                <th>Score</th>
+                <th>Auto Skills</th>
+                <th>Driver Skills</th>
+                <th>Max Auto</th>
+                <th>Max Driver</th>
+                <th>Auto Timestamp</th>
+                <th>Driver Timestamp</th>
+                <th>Auto Stop</th>
+                <th>Driver Stop</th>
+                <th>Team</th>
+                <th>Team Name</th>
+                <th>Organization</th>
+                <th>Region</th>
+                <th>Country</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.length === 0 ? (
+                <tr>
+                  <td colSpan={16}>
+                    <Empty>No results{debouncedSearch || filterCountries.length || filterRegions.length ? " — try adjusting filters" : ""}.</Empty>
+                  </td>
+                </tr>
+              ) : (
+                visibleRows.map((r, i) => (
+                  <tr key={r.team.id}>
+                    <td className="ws-col-num">{(page - 1) * PAGE_SIZE + i + 1}</td>
+                    <td><strong>{r.rank}</strong></td>
+                    <td><strong>{r.scores.score}</strong></td>
+                    <td><strong>{r.scores.programming}</strong></td>
+                    <td><strong>{r.scores.driver}</strong></td>
+                    <td className="ws-max-auto">{r.scores.maxProgramming ?? "—"}</td>
+                    <td className="ws-max-driver">{r.scores.maxDriver ?? "—"}</td>
+                    <td className="ws-muted-cell ws-tip-cell" data-tip={formatSkillsDate(r.scores.progScoredAt, useUtc)}><span className="ws-cell-inner">{renderSkillsDate(r.scores.progScoredAt, useUtc)}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell" data-tip={formatSkillsDate(r.scores.driverScoredAt, useUtc)}><span className="ws-cell-inner">{renderSkillsDate(r.scores.driverScoredAt, useUtc)}</span></td>
+                    <td className="ws-muted-cell">{r.scores.progStopTime ?? "—"}</td>
+                    <td className="ws-muted-cell">{r.scores.driverStopTime ?? "—"}</td>
+                    <td>
+                      <CompareTeamLink
+                        teamId={r.team.id}
+                        teamNumber={r.team.team}
+                        programCode={programCode}
+                        teamName={r.team.teamName ?? undefined}
+                      />
+                    </td>
+                    <td className="ws-text-cell ws-tip-cell" data-tip={r.team.teamName ?? "—"}><span className="ws-cell-inner">{r.team.teamName ?? "—"}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell" data-tip={r.team.organization ?? "—"}><span className="ws-cell-inner">{r.team.organization ?? "—"}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell" data-tip={r.team.eventRegion ?? "—"}><span className="ws-cell-inner">{r.team.eventRegion ?? "—"}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell" data-tip={r.team.country ?? "—"}><span className="ws-cell-inner">{r.team.country ?? "—"}</span></td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
+    </section>
+  );
+}
+
 function InsightsPage() {
   const [program, setProgram] = useState<"v5rc" | "viqrc">("v5rc");
   const { data, loading, error } = useAsync(() => api.superscore(program, { per_page: 50 }), [program]);
@@ -9003,6 +9693,11 @@ const QUICK_VIEW_OPTIONS: Array<{ value: boolean; label: string }> = [
   { value: false, label: "Open full team view" },
 ];
 
+const QUICK_VIEW_SECTION_OPTIONS: Array<{ value: boolean; label: string }> = [
+  { value: false, label: "Collapsed" },
+  { value: true, label: "Expanded" },
+];
+
 // Mini wireframe preview: "quick view first" shows a content area with a side
 // drawer; "full" shows a plain full-page content area.
 function QuickViewWire({ value }: { value: boolean }) {
@@ -9023,6 +9718,7 @@ function AppearanceSettings() {
   const tabLayout = useTabLayout(); // synced via user_settings jsonb (settings.ts)
   const uiStyle = useUiStyle(); // interface skin, synced via user_settings jsonb
   const quickViewFirst = useQuickViewFirst(); // team-click behavior, synced
+  const quickViewExpand = useQuickViewExpandExtras(); // quick-view Events/Awards default, synced
 
   const choose = (value: NonNullable<Profile["theme"]>) => {
     applyTheme(value); // instant local apply + localStorage
@@ -9113,6 +9809,26 @@ function AppearanceSettings() {
                 aria-pressed={quickViewFirst === option.value}
               >
                 <QuickViewWire value={option.value} />
+                <span className="theme-tile-label">{option.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="settings-field">
+          <h3 className="settings-field-title">Quick view sections</h3>
+          <p className="settings-section-copy">
+            In the team quick view, start the Events &amp; Awards sections collapsed, or expanded.
+          </p>
+          <div className="layout-picker" role="group" aria-label="Quick view sections">
+            {QUICK_VIEW_SECTION_OPTIONS.map((option) => (
+              <button
+                key={String(option.value)}
+                type="button"
+                className={`theme-tile ${quickViewExpand === option.value ? "active" : ""}`}
+                onClick={() => setQuickViewExpandExtras(option.value)}
+                aria-pressed={quickViewExpand === option.value}
+              >
                 <span className="theme-tile-label">{option.label}</span>
               </button>
             ))}
@@ -10966,6 +11682,7 @@ function route(path: string) {
   if (path === "/settings") return <SettingsPage />;
   if (path === "/events") return <EventsPage />;
   if (path === "/teams") return <TeamsPage />;
+  if (path === "/skills") return <WorldSkillsPage />;
   if (path === "/insights") return <InsightsPage />;
   if (path === "/terms") return <TermsPage />;
   const joinMatch = path.match(/^\/join\/([0-9a-f-]+)$/i);

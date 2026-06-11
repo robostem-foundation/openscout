@@ -196,6 +196,8 @@ export type WorldSkillsEntry = {
     organization?: string | null;
     city?: string | null;
     region?: string | null;
+    eventRegion?: string | null;
+    eventRegionId?: number | null;
     country?: string | null;
     gradeLevel?: string | null;
   };
@@ -210,6 +212,11 @@ export type WorldSkillsEntry = {
     driver: number;
     maxProgramming?: number;
     maxDriver?: number;
+    combinedStopTime?: number | null;
+    progStopTime?: number | null;
+    driverStopTime?: number | null;
+    progScoredAt?: string | null;
+    driverScoredAt?: string | null;
   };
   eligible?: boolean;
 };
