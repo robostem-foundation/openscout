@@ -4,7 +4,6 @@ import type { Session, User } from "@supabase/supabase-js";
 import { LogIn, LogOut, Settings } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./supabase";
 import { setTheme, useTheme } from "./theme";
-import { setUiStyle, useUiStyle } from "./settings";
 
 export type Profile = {
   id: string;
@@ -315,12 +314,11 @@ export function useOutsideClick<T extends HTMLElement>(onClose: () => void) {
 export function AuthSlot() {
   const { ready, configured, user, profile, signOut, updateProfile } = useAuth();
   const theme = useTheme();
-  const uiStyle = useUiStyle();
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(() => setOpen(false));
 
   // Theme writes go to both the global store (instant) and the cloud profile,
-  // matching the Settings page. UI style syncs itself via the settings store.
+  // matching the Settings page.
   const chooseTheme = (value: "light" | "dark" | "system") => {
     setTheme(value);
     void updateProfile({ theme: value });
@@ -384,24 +382,6 @@ export function AuthSlot() {
                 {option.label}
               </button>
             ))}
-          </div>
-          <div className="auth-menu-seg" role="group" aria-label="Interface style">
-            <button
-              type="button"
-              className={`auth-seg-btn ${uiStyle === "classic" ? "active" : ""}`}
-              onClick={() => setUiStyle("classic")}
-              aria-pressed={uiStyle === "classic"}
-            >
-              Default
-            </button>
-            <button
-              type="button"
-              className={`auth-seg-btn ${uiStyle === "modern" ? "active" : ""}`}
-              onClick={() => setUiStyle("modern")}
-              aria-pressed={uiStyle === "modern"}
-            >
-              Modern
-            </button>
           </div>
           <button
             type="button"

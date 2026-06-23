@@ -1,33 +1,36 @@
 :root {
+  /* === Geist (Vercel) design tokens — LIGHT ===
+     Re-pointed to the official Geist Gray scale + Geist blue (#0070f3). Variable
+     NAMES are unchanged so the whole stylesheet adopts the Geist look for free. */
   /* surfaces */
-  --bg: #fff; /* page background */
-  --surface: #fff; /* panels, cards, dropdowns, inputs, table cells */
-  --surface-2: #f5f5f5; /* panel/section header bars, toolbars, hover rows */
-  --surface-3: #eee; /* subtle insets / dividers fill */
+  --bg: #ffffff; /* page background */
+  --surface: #ffffff; /* panels, cards, dropdowns, inputs, table cells */
+  --surface-2: #fafafa; /* panel/section header bars, toolbars, hover rows */
+  --surface-3: #f2f2f2; /* subtle insets / dividers fill / hover */
   /* text */
-  --text: #333;
-  --text-2: #555;
-  --text-muted: #777;
-  --text-faint: #999;
-  /* borders */
-  --border: #ddd;
-  --border-soft: #eee;
-  --border-strong: #ccc;
-  --border-e3: #e3e3e3;
-  /* accent / links */
-  --link: #337ab7;
-  --link-hover: #23527c;
-  --accent: #337ab7;
-  --accent-hover: #2e6da4;
-  --on-accent: #fff; /* white foreground on dark/colored chrome (topbar, badges) */
-  --accent-ink: #fff; /* foreground specifically on an --accent fill (buttons) */
-  /* topbar (already dark in light mode) */
-  --topbar-bg: #2c3e50;
-  --topbar-text: #fff;
+  --text: #171717;
+  --text-2: #404040;
+  --text-muted: #666666;
+  --text-faint: #8f8f8f;
+  /* borders — Geist hairline */
+  --border: #eaeaea;
+  --border-soft: #f2f2f2;
+  --border-strong: #d4d4d4;
+  --border-e3: #ededed;
+  /* accent / links — Geist blue */
+  --link: #0070f3;
+  --link-hover: #0061d5;
+  --accent: #0070f3;
+  --accent-hover: #0061d5;
+  --on-accent: #ffffff; /* white foreground on dark/colored chrome (badges) */
+  --accent-ink: #ffffff; /* foreground specifically on an --accent fill (buttons) */
+  /* topbar — now a white tinted-glass floating island (see .topbar) */
+  --topbar-bg: rgba(255, 255, 255, 0.72);
+  --topbar-text: #171717;
   /* states */
-  --danger: #d9534f;
-  --danger-strong: #c9302c;
-  --success: #3c763d;
+  --danger: #e5484d;
+  --danger-strong: #cb2b31;
+  --success: #45a557;
   /* award / highlight banner (Excellence, Champions, …) — warm amber */
   --award-bg: #fcf8e3;
   --award-border: #f3d69c;
@@ -35,21 +38,22 @@
   --award-inset: rgba(255, 255, 255, 0.65);
   /* text on light-colored solid badges (cyan/amber meta pills). White in light
      mode keeps the original look; dark mode swaps to dark ink for contrast. */
-  --badge-ink: #fff;
+  --badge-ink: #ffffff;
   /* team-number links inside result/alliance cells */
-  --team-link: #4968c8;
-  /* effects */
-  --shadow-sm: 0 1px 1px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.18);
-  --overlay: rgba(0, 0, 0, 0.55);
-  --focus-ring: rgba(102, 175, 233, 0.3);
-  /* shape — the dominant component corner. The Modern UI skin softens this. */
-  --radius: 4px;
+  --team-link: #0070f3;
+  /* effects — soft, diffuse Geist shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.12);
+  --overlay: rgba(0, 0, 0, 0.45);
+  --focus-ring: rgba(0, 112, 243, 0.35);
+  /* shape — the dominant component corner (Geist 8px). */
+  --radius: 8px;
 
   color-scheme: light;
   color: var(--text);
   background: var(--bg);
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.42857143;
   font-synthesis: none;
@@ -57,30 +61,32 @@
 }
 
 :root[data-theme="dark"] {
+  /* === Geist (Vercel) design tokens — DARK === */
   color-scheme: dark;
-  --bg: #14202b;
-  --surface: #1b2733;
-  --surface-2: #243441;
-  --surface-3: #2b3a47;
-  --text: #e6edf3;
-  --text-2: #c3ccd5;
-  --text-muted: #9aa7b3;
-  --text-faint: #7c8995;
-  --border: #32434f;
-  --border-soft: #283642;
-  --border-strong: #3b4c59;
-  --border-e3: #2e3d49;
-  --link: #6aa9e0;
-  --link-hover: #94c4f0;
-  --accent: #3d86c6;
-  --accent-hover: #4f97d6;
-  --on-accent: #fff;
-  --topbar-bg: #16222e;
-  --topbar-text: #fff;
-  --danger: #e06c68;
-  --danger-strong: #e06c68;
-  --success: #7bc47f;
-  /* award banner — translucent amber reads on both navy and black dark surfaces */
+  --bg: #0a0a0a;
+  --surface: #0a0a0a;
+  --surface-2: #1a1a1a;
+  --surface-3: #1f1f1f;
+  --text: #ededed;
+  --text-2: #c9ccd2;
+  --text-muted: #a1a1a1;
+  --text-faint: #7d7d7d;
+  --border: #2e2e2e;
+  --border-soft: #1f1f1f;
+  --border-strong: #3b3b3b;
+  --border-e3: #292929;
+  --link: #3291ff;
+  --link-hover: #62a8ff;
+  --accent: #3291ff;
+  --accent-hover: #62a8ff;
+  --on-accent: #ffffff;
+  --accent-ink: #ffffff;
+  --topbar-bg: rgba(10, 10, 10, 0.72);
+  --topbar-text: #ededed;
+  --danger: #ff6166;
+  --danger-strong: #ff6166;
+  --success: #62c073;
+  /* award banner — translucent amber reads on the near-black dark surface */
   --award-bg: rgba(234, 179, 8, 0.1);
   --award-border: rgba(234, 179, 8, 0.32);
   --award-text: #e8c971;
@@ -88,117 +94,11 @@
   /* dark ink on the light cyan/amber badges so their text is legible on dark */
   --badge-ink: #06232b;
   /* brighter team links so numbers stay legible over the dark row tints */
-  --team-link: #7fb4e6;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.6);
-  --overlay: rgba(0, 0, 0, 0.65);
-  --focus-ring: rgba(106, 169, 224, 0.4);
-}
-
-/* ===========================================================================
-   Modern UI skin — a second "look" the user can pick in Settings → Appearance.
-   It is ORTHOGONAL to light/dark: it only re-points the existing design tokens
-   (colors, radius, font), so every page inherits it for free without changing
-   any structure, spacing, or font sizes. Inspired by Vercel's Geist system —
-   off-white/black surfaces, hairline borders, a single blue accent, softer
-   corners, and a system-ui typeface.
-
-   The topbar deliberately stays near-black in both modern modes: its nav links,
-   brand, and sign-in button assume a dark bar (white text, translucent-white
-   borders), and a black bar over an off-white page is itself the Geist look.
-   --------------------------------------------------------------------------- */
-:root[data-ui="modern"] {
-  /* surfaces */
-  --bg: #fafafa;
-  --surface: #ffffff;
-  --surface-2: #fafafa;
-  --surface-3: #f2f2f2;
-  /* text */
-  --text: #0a0a0a;
-  --text-2: #404040;
-  --text-muted: #666666;
-  --text-faint: #8f8f8f;
-  /* borders */
-  --border: #eaeaea;
-  --border-soft: #f2f2f2;
-  --border-strong: #d4d4d4;
-  --border-e3: #ededed;
-  /* accent / links — bright cyan (#51CDEA). Cyan fills take dark ink, not white,
-     so accent buttons stay legible; links use a deeper cyan that reads on white. */
-  --link: #0e94b8;
-  --link-hover: #0b7896;
-  --accent: #51cdea;
-  --accent-hover: #2fbede;
-  --on-accent: #ffffff;
-  --accent-ink: #06232b;
-  --team-link: #0e94b8;
-  /* topbar — near-black Geist nav */
-  --topbar-bg: #0a0a0a;
-  --topbar-text: #ffffff;
-  /* states */
-  --danger: #e5484d;
-  --danger-strong: #cb2b31;
-  --success: #45a557;
-  /* effects — softer, more diffuse */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.12);
-  --overlay: rgba(0, 0, 0, 0.45);
-  --focus-ring: rgba(0, 112, 243, 0.35);
-  /* shape — softer corners than the classic 4px */
-  --radius: 8px;
-  /* a cleaner, more modern system typeface (keeps the same metrics/sizes) */
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-}
-
-:root[data-ui="modern"][data-theme="dark"] {
-  /* surfaces — cool slate with a navy lean: softer than pure black and a bit
-     greyer/bluer, but still lighter & less saturated than the Default navy */
-  --bg: #0f131b;
-  --surface: #161b25;
-  --surface-2: #1e242f;
-  --surface-3: #28303c;
-  /* text */
-  --text: #ededed;
-  --text-2: #c9ccd2;
-  --text-muted: #939aa4;
-  --text-faint: #6f7783;
-  /* borders */
-  --border: #2e3744;
-  --border-soft: #20262f;
-  --border-strong: #3b4654;
-  --border-e3: #2a313b;
-  /* accent / links — cyan reads cleanly on black, so links use it directly */
-  --link: #51cdea;
-  --link-hover: #8ee0f2;
-  --accent: #51cdea;
-  --accent-hover: #6ed8f0;
-  --on-accent: #ffffff;
-  --accent-ink: #06232b;
-  --team-link: #51cdea;
-  /* topbar */
-  --topbar-bg: #121722;
-  --topbar-text: #ededed;
-  /* states */
-  --danger: #ff6166;
-  --danger-strong: #ff6166;
-  --success: #62c073;
-  /* effects */
+  --team-link: #3291ff;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
   --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.7);
   --overlay: rgba(0, 0, 0, 0.7);
   --focus-ring: rgba(50, 145, 255, 0.5);
-}
-
-/* A few topbar details hardcode the classic navy bar; retune them for the
-   near-black Geist nav so the divider and link hover read correctly. */
-:root[data-ui="modern"] .topbar {
-  border-bottom: 1px solid #000;
-}
-:root[data-ui="modern"] nav a:hover,
-:root[data-ui="modern"] nav a:focus,
-:root[data-ui="modern"] nav a.active {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 * {
@@ -250,59 +150,75 @@ button {
   cursor: pointer;
 }
 
+/* Floating, sticky, tinted-glass header "island" — Geist style. */
 .topbar {
-  min-height: 50px;
-  margin-bottom: 20px;
+  position: sticky;
+  top: 12px;
+  z-index: 50;
+  width: min(1170px, calc(100% - 24px));
+  margin: 12px auto 24px;
+  min-height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
   background: var(--topbar-bg);
-  border: 0;
-  border-bottom: 1px solid #080808;
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: var(--shadow-sm), 0 8px 24px rgba(0, 0, 0, 0.06);
   color: var(--topbar-text);
+}
+
+:root[data-theme="dark"] .topbar {
+  box-shadow: var(--shadow-sm), 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .topbar-inner {
   display: flex;
   align-items: center;
-  width: min(1170px, calc(100% - 30px));
-  min-height: 50px;
-  margin: 0 auto;
+  gap: 8px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 16px;
+  margin: 0;
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  min-height: 50px;
-  margin-right: 18px;
-  color: var(--topbar-text);
+  min-height: 56px;
+  margin-right: 12px;
+  color: var(--text);
   white-space: nowrap;
 }
 
 .brand:hover,
 .brand:focus {
-  color: var(--topbar-text);
+  color: var(--text);
   text-decoration: none;
 }
 
 .brand-logo {
   display: block;
   box-sizing: border-box;
-  height: 34px;
-  width: 34px;
-  padding: 3px;
-  background: #fff;
+  height: 30px;
+  width: 30px;
+  padding: 0;
+  background: transparent;
   border-radius: 8px;
 }
 
 .brand-word {
-  font-family: "Geist", system-ui, sans-serif;
-  font-size: 20px;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 nav {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 2px;
   min-width: 0;
   overflow-x: auto;
 }
@@ -310,31 +226,56 @@ nav {
 nav a {
   display: inline-flex;
   align-items: center;
-  min-height: 50px;
-  padding: 15px;
-  color: var(--text-faint);
-  font-weight: 400;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-weight: 500;
   white-space: nowrap;
 }
 
 nav a:hover,
 nav a:focus,
 nav a.active {
-  background: #080808;
-  color: var(--on-accent);
+  background: var(--surface-3);
+  color: var(--text);
   text-decoration: none;
 }
 
 .topbar-search {
-  width: min(360px, 34vw);
-  max-width: 360px;
+  width: min(320px, 32vw);
+  max-width: 320px;
   margin: 0 0 0 auto;
 }
 
+/* Header light/dark switch — sits between the search box and the auth slot. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.theme-toggle:hover,
+.theme-toggle:focus-visible {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
 .topbar-search .global-search-input {
-  height: 30px;
+  height: 34px;
   padding-left: 32px;
-  border-color: rgba(0, 0, 0, 0.28);
+  border-color: var(--border);
   font-size: 13px;
   box-shadow: none;
 }
@@ -5912,95 +5853,6 @@ td.quick-look-col {
   border-radius: 3px;
   background: var(--accent);
   opacity: 0.55;
-}
-
-/* Interface-style picker — wireframe tiles mirroring the theme picker. Each tile
-   is a tiny mock app (top bar + a card) whose corner radius, accent, and surfaces
-   are the defining traits of that skin. Colors are intentionally hardcoded — like
-   the light/dark theme tiles, these are fixed previews, not themed chrome. */
-.ui-wire {
-  display: flex;
-  flex-direction: column;
-  height: 96px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.ui-wire .uw-bar {
-  flex: 0 0 auto;
-  height: 20px;
-}
-
-.ui-wire .uw-body {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  justify-content: center;
-  gap: 6px;
-  padding: 11px;
-}
-
-.ui-wire .uw-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 9px;
-  border: 1px solid var(--border);
-}
-
-.ui-wire .uw-line {
-  height: 6px;
-  background: var(--surface-3);
-}
-
-.ui-wire .uw-line.short {
-  width: 52%;
-}
-
-.ui-wire .uw-pill {
-  width: 38%;
-  height: 9px;
-}
-
-/* Classic: navy bar, square-ish corners, the classic blue accent. */
-.ui-wire-classic {
-  border-radius: 6px;
-}
-.ui-wire-classic .uw-bar {
-  background: #2c3e50;
-}
-.ui-wire-classic .uw-card {
-  border-radius: 3px;
-  background: #fff;
-  border-color: #e3e3e3;
-}
-.ui-wire-classic .uw-line {
-  background: #eee;
-}
-.ui-wire-classic .uw-pill {
-  border-radius: 3px;
-  background: #337ab7;
-}
-
-/* Modern: near-black Geist bar, soft corners, blue accent, off-white field. */
-.ui-wire-modern {
-  border-radius: 10px;
-}
-.ui-wire-modern .uw-bar {
-  background: #0a0a0a;
-}
-.ui-wire-modern .uw-card {
-  border-radius: 8px;
-  background: #fafafa;
-  border-color: #eaeaea;
-}
-.ui-wire-modern .uw-line {
-  background: #ededed;
-}
-.ui-wire-modern .uw-pill {
-  border-radius: 7px;
-  background: #51cdea;
 }
 
 .settings-actions {
