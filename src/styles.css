@@ -1,6 +1,6 @@
 :root {
   /* === Geist (Vercel) design tokens — LIGHT ===
-     Re-pointed to the official Geist Gray scale + Geist blue (#0070f3). Variable
+     Re-pointed to the official Geist Gray scale + a royal-blue accent (#2563eb). Variable
      NAMES are unchanged so the whole stylesheet adopts the Geist look for free. */
   /* surfaces */
   --bg: #ffffff; /* page background */
@@ -17,11 +17,11 @@
   --border-soft: #f2f2f2;
   --border-strong: #d4d4d4;
   --border-e3: #ededed;
-  /* accent / links — Geist blue */
-  --link: #0070f3;
-  --link-hover: #0061d5;
-  --accent: #0070f3;
-  --accent-hover: #0061d5;
+  /* accent / links — royal blue */
+  --link: #2563eb;
+  --link-hover: #1d4ed8;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
   --on-accent: #ffffff; /* white foreground on dark/colored chrome (badges) */
   --accent-ink: #ffffff; /* foreground specifically on an --accent fill (buttons) */
   /* topbar — now a white tinted-glass floating island (see .topbar) */
@@ -40,12 +40,12 @@
      mode keeps the original look; dark mode swaps to dark ink for contrast. */
   --badge-ink: #ffffff;
   /* team-number links inside result/alliance cells */
-  --team-link: #0070f3;
+  --team-link: #2563eb;
   /* effects — soft, diffuse Geist shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.12);
   --overlay: rgba(0, 0, 0, 0.45);
-  --focus-ring: rgba(0, 112, 243, 0.35);
+  --focus-ring: rgba(37, 99, 235, 0.35);
   /* shape — the dominant component corner (Geist 8px). */
   --radius: 8px;
 
@@ -75,10 +75,10 @@
   --border-soft: #1f1f1f;
   --border-strong: #3b3b3b;
   --border-e3: #292929;
-  --link: #3291ff;
-  --link-hover: #62a8ff;
-  --accent: #3291ff;
-  --accent-hover: #62a8ff;
+  --link: #60a5fa;
+  --link-hover: #93c5fd;
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
   --on-accent: #ffffff;
   --accent-ink: #ffffff;
   --topbar-bg: rgba(10, 10, 10, 0.72);
@@ -94,11 +94,11 @@
   /* dark ink on the light cyan/amber badges so their text is legible on dark */
   --badge-ink: #06232b;
   /* brighter team links so numbers stay legible over the dark row tints */
-  --team-link: #3291ff;
+  --team-link: #60a5fa;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
   --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.7);
   --overlay: rgba(0, 0, 0, 0.7);
-  --focus-ring: rgba(50, 145, 255, 0.5);
+  --focus-ring: rgba(96, 165, 250, 0.5);
 }
 
 * {
@@ -158,8 +158,8 @@ button {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--topbar-bg);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  backdrop-filter: saturate(140%) blur(14px);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   color: var(--topbar-text);
 }
@@ -370,7 +370,7 @@ main {
   border-color: var(--accent);
   box-shadow:
     inset 0 1px 1px rgba(0, 0, 0, 0.075),
-    0 0 8px rgba(102, 175, 233, 0.6);
+    0 0 0 3px var(--focus-ring);
 }
 
 .global-search button,
@@ -509,9 +509,9 @@ main {
   width: 100%;
   margin: 0;
   font-size: 40px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.12;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   color: var(--link);
   white-space: nowrap;
 }
@@ -561,7 +561,7 @@ main {
 
 .home-name-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(102, 175, 233, 0.3);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .home-name-save {
@@ -596,15 +596,16 @@ main {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 54px;
+  height: 50px;
   padding: 0 18px;
-  border: 1px solid var(--border);
-  border-radius: 27px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
   background: var(--surface);
   color: var(--text-2);
   font-size: 15px;
   font-weight: 500;
   white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .home-hero-btn:hover {
@@ -615,7 +616,7 @@ main {
 }
 
 .home-hero-btn-icon {
-  width: 54px;
+  width: 50px;
   padding: 0;
   justify-content: center;
 }
@@ -626,11 +627,12 @@ main {
 }
 
 .home-hero-global-search .global-search-input {
-  height: 54px;
-  padding: 6px 20px 6px 46px;
-  font-size: 17px;
-  border-radius: 28px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.09);
+  height: 50px;
+  padding: 6px 20px 6px 44px;
+  font-size: 16px;
+  border-radius: 12px;
+  border-color: var(--border-strong);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .home-hero-global-search .global-search-icon {
@@ -642,8 +644,8 @@ main {
 .home-hero-global-search .global-search-input:focus {
   border-color: var(--accent);
   box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.09),
-    0 0 0 3px rgba(102, 175, 233, 0.32);
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 0 0 3px var(--focus-ring);
 }
 
 .home-hero-global-search .global-search-dropdown {
@@ -780,7 +782,7 @@ main {
 
 .global-search-input:focus {
   border-color: var(--accent);
-  box-shadow: inset 0 1px 1px rgba(0,0,0,0.075), 0 0 8px rgba(102,175,233,0.6);
+  box-shadow: inset 0 1px 1px rgba(0,0,0,0.075), 0 0 0 3px var(--focus-ring);
 }
 
 .global-search-dropdown {
@@ -3418,6 +3420,63 @@ tbody tr:hover {
 .date-direction-toggle span {
   color: var(--text-2);
   font-weight: 700;
+}
+
+/* Season strip: takes remaining width, hides its scrollbar, and reveals a
+   right-edge fade + chevron affordance only when it overflows. */
+.season-scroll {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.season-scroll-view {
+  overflow-x: auto;
+}
+
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
+}
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none; /* Chrome / Safari */
+}
+
+.season-fade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 68px;
+  padding-right: 2px;
+  pointer-events: none; /* let scroll pass through; the button re-enables itself */
+  background: linear-gradient(to right, transparent, var(--muted) 60%);
+}
+
+.season-more {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.season-more:hover {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
 }
 
 .date-direction-toggle button {
@@ -6324,13 +6383,13 @@ td.quick-look-col {
 /* Extra right padding so typed text doesn't overlap the hint */
 .global-search-input { padding-right: 58px; }
 
-/* Pill-shaped ⌘K hint for the large home-hero search bar */
+/* ⌘K hint for the large home-hero search bar */
 .home-hero-global-search .gs-kbd-hint {
   right: 12px;
-  border-radius: 999px;
-  padding: 2px 9px;
+  border-radius: 5px;
+  padding: 2px 8px;
   font-size: 12px;
-  border-color: var(--border-soft);
+  border-color: var(--border);
 }
 
 /* ── Panel action link (used by RecentlyViewedPanel clear button) ────────── */
