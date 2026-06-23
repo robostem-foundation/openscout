@@ -3299,34 +3299,44 @@ tbody tr:hover {
 .segmented {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
-  margin: 0 0 15px;
+  gap: 4px;
+  margin: 0 0 16px;
   padding-left: 0;
   border-bottom: 1px solid var(--border);
 }
 
+/* Geist/Vercel tab bar — underline-on-active, no boxes. */
 .tabs button,
 .segmented button {
   position: relative;
   align-items: center;
-  gap: 5px;
-  min-height: 42px;
+  gap: 6px;
+  min-height: 40px;
   margin-bottom: -1px;
-  padding: 10px 15px;
-  border: 1px solid transparent;
-  border-radius: 4px 4px 0 0;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
-  color: var(--link);
-  font-weight: 400;
-  line-height: 1.42857143;
+  color: var(--text-muted);
+  font-weight: 500;
+  line-height: 1.4;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.tabs button:hover,
+.segmented button:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
 }
 
 .tabs button.active,
 .segmented button.active {
-  border: 1px solid var(--border);
-  border-bottom-color: var(--surface);
-  background: var(--surface);
-  color: var(--text-2);
+  border: 0;
+  border-bottom: 2px solid var(--text);
+  background: transparent;
+  color: var(--text);
 }
 
 .division-tabs {
