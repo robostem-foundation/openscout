@@ -55,6 +55,9 @@ import type { Dispatch, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerE
 import { api } from "./api";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
@@ -1601,7 +1604,7 @@ function LoadingTable({ columns = 4 }: { columns?: number }) {
         <tr key={row}>
           {Array.from({ length: columns }).map((__, col) => (
             <td key={col}>
-              <span className="skeleton" />
+              <Skeleton className="h-3.5 w-[min(100%,180px)]" />
             </td>
           ))}
         </tr>
@@ -1611,8 +1614,18 @@ function LoadingTable({ columns = 4 }: { columns?: number }) {
 }
 
 function Status({ loading, error }: { loading: boolean; error: string | null }) {
-  if (loading) return <div className="notice">Loading competition data...</div>;
-  if (error) return <div className="notice error">API error: {error}</div>;
+  if (loading)
+    return (
+      <Alert className="m-4 w-auto">
+        <AlertDescription>Loading competition data…</AlertDescription>
+      </Alert>
+    );
+  if (error)
+    return (
+      <Alert variant="destructive" className="m-4 w-auto">
+        <AlertDescription>API error: {error}</AlertDescription>
+      </Alert>
+    );
   return null;
 }
 
@@ -1635,11 +1648,11 @@ function LocalPager({ page, totalPages, onPage }: { page: number; totalPages: nu
 }
 
 function ProgramBadge({ program }: { program?: { code?: string | null; name?: string } }) {
-  return <span className="badge">{program?.code ?? program?.name ?? "VEX"}</span>;
+  return <Badge variant="secondary">{program?.code ?? program?.name ?? "VEX"}</Badge>;
 }
 
 function GradeBadge({ grade }: { grade?: string | null }) {
-  return <span className="badge">{gradeCode(grade)}</span>;
+  return <Badge variant="secondary">{gradeCode(grade)}</Badge>;
 }
 
 function CompareModeButton() {
