@@ -5535,15 +5535,17 @@ td.quick-look-col {
   border: 0;
   border-bottom: 1px solid var(--border-soft);
   background: var(--surface);
-  color: var(--link);
+  color: var(--text-2);
   font-size: 14px;
-  font-weight: 400;
+  font-weight: 500;
   text-align: left;
   transition: background 0.12s, color 0.12s;
 }
 
 .settings-tab svg {
   flex: 0 0 auto;
+  color: var(--text-faint);
+  transition: color 0.12s;
 }
 
 .settings-tab:last-child {
@@ -5552,12 +5554,18 @@ td.quick-look-col {
 
 .settings-tab:hover {
   background: var(--surface-2);
-  color: var(--link-hover);
+  color: var(--text);
+}
+
+.settings-tab:hover svg,
+.settings-tab.active svg {
+  color: var(--text);
 }
 
 .settings-tab.active {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--surface-3);
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* Content cards — mirror .panel */
