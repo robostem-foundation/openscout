@@ -5345,21 +5345,18 @@ function StatCard({
   label,
   value,
   sub,
-  accent = "gray",
-  icon,
 }: {
   label: string;
   value: ReactNode;
   sub?: ReactNode;
+  // accent/icon kept in the type for existing call sites but no longer rendered —
+  // the minimalist treatment relies on typographic hierarchy, not icons/color.
   accent?: "blue" | "green" | "amber" | "red" | "gray";
   icon?: ReactNode;
 }) {
   return (
-    <div className="about-stat" data-accent={accent}>
-      <div className="about-stat-label">
-        {icon}
-        <span>{label}</span>
-      </div>
+    <div className="about-stat">
+      <span className="about-stat-label">{label}</span>
       <strong className="about-stat-value">{value}</strong>
       {sub != null && <small className="about-stat-sub">{sub}</small>}
     </div>
@@ -5618,21 +5615,19 @@ function TeamAboutTab({
 
   return (
     <div className="about-wrap">
-      <Panel title="Team Profile" icon={<Info size={18} />}>
-        <dl className="about-profile">
-          <AboutProfileRow label="Location">{locationLine(team) || "—"}</AboutProfileRow>
-          <AboutProfileRow label="Grade">{team.grade || "Unknown"}</AboutProfileRow>
-          <AboutProfileRow label="Program">
-            <ProgramBadge program={team.program} />
-          </AboutProfileRow>
-          <AboutProfileRow label="Status">
-            <span className={`about-status ${team.registered ? "active" : "inactive"}`}>{team.registered ? "Active" : "Inactive"}</span>
-          </AboutProfileRow>
-          <AboutProfileRow label="Years Active">
-            {years ? (years.first === years.last ? `${years.first}` : `${years.first} – ${team.registered ? "present" : years.last}`) : "—"}
-          </AboutProfileRow>
-        </dl>
-      </Panel>
+      <dl className="about-profile">
+        <AboutProfileRow label="Location">{locationLine(team) || "—"}</AboutProfileRow>
+        <AboutProfileRow label="Grade">{team.grade || "Unknown"}</AboutProfileRow>
+        <AboutProfileRow label="Program">
+          <ProgramBadge program={team.program} />
+        </AboutProfileRow>
+        <AboutProfileRow label="Status">
+          <span className={`about-status ${team.registered ? "active" : "inactive"}`}>{team.registered ? "Active" : "Inactive"}</span>
+        </AboutProfileRow>
+        <AboutProfileRow label="Years Active">
+          {years ? (years.first === years.last ? `${years.first}` : `${years.first} – ${team.registered ? "present" : years.last}`) : "—"}
+        </AboutProfileRow>
+      </dl>
 
       <div className="about-stats">
         <StatCard label="World Skills" accent="blue" icon={<Medal size={14} />} value={wsValue} sub={wsSub} />
