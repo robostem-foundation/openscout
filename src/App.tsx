@@ -61,8 +61,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
@@ -9868,44 +9868,58 @@ function ProfileSettings() {
             {provider && <span className="badge">{provider}</span>}
           </div>
         </div>
-        <button type="button" className="settings-signout" onClick={() => void signOut()}>
-          <LogOut size={15} />
+        <Button variant="outline" size="sm" onClick={() => void signOut()}>
+          <LogOut data-icon="inline-start" />
           Sign out
-        </button>
+        </Button>
       </div>
 
       <div className="settings-card-body">
-        <div className="settings-fields">
-          <label className="onboard-field settings-field-name">
-            <span>Name</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} maxLength={24} placeholder="Your name" />
-          </label>
-          <label className="onboard-field">
-            <span>Team Number</span>
-            <input
-              value={teamNumber}
-              onChange={(event) => setTeamNumber(event.target.value.toUpperCase())}
-              maxLength={10}
-              placeholder="169W"
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="settings-name">Name</FieldLabel>
+            <Input
+              id="settings-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={24}
+              placeholder="Your name"
             />
-          </label>
-          <label className="onboard-field">
-            <span>Program</span>
-            <select value={program} onChange={(event) => setProgram(event.target.value)}>
-              <option value="">—</option>
-              {AUTH_PROGRAMS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <FieldLabel htmlFor="settings-team">Team Number</FieldLabel>
+              <Input
+                id="settings-team"
+                value={teamNumber}
+                onChange={(event) => setTeamNumber(event.target.value.toUpperCase())}
+                maxLength={10}
+                placeholder="169W"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="settings-program">Program</FieldLabel>
+              <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
+                <SelectTrigger id="settings-program" className="w-full">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {AUTH_PROGRAMS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+        </FieldGroup>
 
         <div className="settings-actions">
-          <button type="button" className="settings-save" onClick={() => void save()} disabled={saving || !dirty}>
+          <Button onClick={() => void save()} disabled={saving || !dirty}>
             {saving ? "Saving…" : "Save changes"}
-          </button>
+          </Button>
           {saved && (
             <span className="settings-saved">
               <Check size={15} />
@@ -10242,9 +10256,9 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
         <DialogHeader>
           <DialogTitle>Create an org</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="org-name-input">Org name</Label>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="org-name-input">Org name</FieldLabel>
             <Input
               id="org-name-input"
               value={name}
@@ -10253,10 +10267,10 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
               autoFocus
               onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }}
             />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="org-program-select">Program</Label>
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <FieldLabel htmlFor="org-program-select">Program</FieldLabel>
               <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
                 <SelectTrigger id="org-program-select" className="w-full">
                   <SelectValue placeholder="Any / none" />
@@ -10268,18 +10282,18 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="org-team-input">Team #</Label>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="org-team-input">Team #</FieldLabel>
               <Input
                 id="org-team-input"
                 value={teamNumber}
                 onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
                 placeholder="e.g. 169W"
               />
-            </div>
+            </Field>
           </div>
-        </div>
+        </FieldGroup>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={() => void handleCreate()} disabled={!name.trim() || saving}>
@@ -10313,9 +10327,9 @@ function OrgPanel() {
         <Panel title="Org / Team" icon={<Users size={15} />}>
           <div className="org-panel-empty">
             <p>Collaborate with your scouting team.</p>
-            <button type="button" className="button-link" onClick={() => setCreateOpen(true)}>
+            <Button variant="outline" size="sm" className="self-start" onClick={() => setCreateOpen(true)}>
               Create an org
-            </button>
+            </Button>
             <p className="org-panel-hint">Or ask your coach for an invite link.</p>
           </div>
         </Panel>
@@ -10423,15 +10437,13 @@ function JoinOrgPage({ token }: { token: string }) {
               </>
             )}
             {!result?.ok && user && (
-              <button
-                type="button"
-                className="button-link"
-                style={{ marginTop: 8 }}
+              <Button
+                className="mt-2"
                 onClick={() => void handleJoin()}
                 disabled={joining}
               >
                 {joining ? "Joining…" : `Join ${info.org_name}`}
-              </button>
+              </Button>
             )}
           </>
         )}
@@ -10501,46 +10513,51 @@ function OrgOverviewTab({ orgId, org }: { orgId: string; org: OrgMembership | un
 
   return (
     <div className="org-settings-form">
-      <div className="org-settings-field">
-        <label htmlFor="os-name">Org name</label>
-        <input
-          id="os-name"
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value.slice(0, 40))}
-          maxLength={40}
-        />
-      </div>
-      <div className="org-settings-row">
-        <div className="org-settings-field">
-          <label htmlFor="os-program">Program</label>
-          <select id="os-program" value={program} onChange={(e) => setProgram(e.target.value)}>
-            <option value="">Any / none</option>
-            {AUTH_PROGRAMS.map((p) => (
-              <option key={p.value} value={p.value}>{p.label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="org-settings-field">
-          <label htmlFor="os-team">Team #</label>
-          <input
-            id="os-team"
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="os-name">Org name</FieldLabel>
+          <Input
+            id="os-name"
             type="text"
-            value={teamNumber}
-            onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
-            placeholder="e.g. 169W"
+            value={name}
+            onChange={(e) => setName(e.target.value.slice(0, 40))}
+            maxLength={40}
           />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field>
+            <FieldLabel htmlFor="os-program">Program</FieldLabel>
+            <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
+              <SelectTrigger id="os-program" className="w-full">
+                <SelectValue placeholder="Any / none" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Any / none</SelectItem>
+                {AUTH_PROGRAMS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="os-team">Team #</FieldLabel>
+            <Input
+              id="os-team"
+              type="text"
+              value={teamNumber}
+              onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
+              placeholder="e.g. 169W"
+            />
+          </Field>
         </div>
-      </div>
-      <button
-        type="button"
-        className="button-link"
-        style={{ alignSelf: "flex-start" }}
+      </FieldGroup>
+      <Button
+        className="self-start"
         onClick={() => void handleSave()}
         disabled={saving || !name.trim()}
       >
         {saved ? "Saved!" : saving ? "Saving…" : "Save changes"}
-      </button>
+      </Button>
 
       <div className="danger-zone">
         <h3>{org.role === "owner" ? "Delete org" : "Leave org"}</h3>
@@ -10549,26 +10566,18 @@ function OrgOverviewTab({ orgId, org }: { orgId: string; org: OrgMembership | un
             ? "Permanently deletes the org and all shared data. This cannot be undone."
             : "You will lose access to this org's shared favorites and notes."}
         </p>
-        <button
-          type="button"
-          className="button-link"
-          style={{ background: "var(--danger)", borderColor: "var(--danger-strong)", color: "#fff" }}
-          onClick={() => void handleLeaveOrDelete()}
-        >
-          {confirming
-            ? (org.role === "owner" ? "Confirm delete" : "Confirm leave")
-            : (org.role === "owner" ? "Delete org" : "Leave org")}
-        </button>
-        {confirming && (
-          <button
-            type="button"
-            className="button-link secondary"
-            style={{ marginLeft: 8 }}
-            onClick={() => setConfirming(false)}
-          >
-            Cancel
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <Button variant="destructive" onClick={() => void handleLeaveOrDelete()}>
+            {confirming
+              ? (org.role === "owner" ? "Confirm delete" : "Confirm leave")
+              : (org.role === "owner" ? "Delete org" : "Leave org")}
+          </Button>
+          {confirming && (
+            <Button variant="outline" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -10611,26 +10620,25 @@ function OrgMembersTab({ orgId, org }: { orgId: string; org: OrgMembership | und
           {canManage && m.userId !== user?.id && (
             <>
               {org?.role === "owner" && (
-                <select
-                  value={m.role}
-                  onChange={(e) => void handleRoleChange(m.userId, e.target.value as OrgRole)}
-                  style={{ fontSize: 12, padding: "2px 6px", borderRadius: "var(--radius)", border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-2)" }}
-                  aria-label={`Change role for ${m.displayName}`}
-                >
-                  <option value="admin">admin</option>
-                  <option value="member">member</option>
-                </select>
+                <Select value={m.role} onValueChange={(v) => void handleRoleChange(m.userId, v as OrgRole)}>
+                  <SelectTrigger size="sm" className="w-[108px]" aria-label={`Change role for ${m.displayName}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">admin</SelectItem>
+                    <SelectItem value="member">member</SelectItem>
+                  </SelectContent>
+                </Select>
               )}
-              <button
-                type="button"
-                className="icon-button"
-                style={{ width: 26, height: 26 }}
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => void handleRemove(m.userId)}
                 title={`Remove ${m.displayName}`}
                 aria-label={`Remove ${m.displayName}`}
               >
                 <UserMinus size={13} />
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -10689,16 +10697,16 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
 
   return (
     <div>
-      <button
-        type="button"
-        className="button-link"
-        style={{ marginBottom: 16 }}
+      <Button
+        variant="outline"
+        size="sm"
+        className="mb-4"
         onClick={() => void handleGenerate()}
         disabled={generating}
       >
-        <Link2 size={14} />
+        <Link2 data-icon="inline-start" />
         {generating ? "Generating…" : "Generate invite link"}
-      </button>
+      </Button>
       {invites.length === 0 && (
         <p style={{ fontSize: 13, color: "var(--text-muted)" }}>No active invite links.</p>
       )}
@@ -10707,34 +10715,34 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
           const url = `${window.location.origin}/join/${invite.id}`;
           return (
             <div key={invite.id} className="org-invite-item">
-              <input
+              <Input
                 type="text"
-                className="org-invite-link-input"
+                className="org-invite-link-input flex-1"
                 value={url}
                 readOnly
                 title={url}
               />
-              <button
-                type="button"
-                className="icon-button"
-                style={{ width: 32, height: 32, flexShrink: 0 }}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
                 onClick={() => void handleCopy(invite.id)}
                 title="Copy link"
                 aria-label="Copy invite link"
               >
                 {copied === invite.id ? <Check size={13} /> : <LinkIcon size={13} />}
-              </button>
+              </Button>
               <span className="org-invite-expiry">{formatExpiry(invite.expiresAt)}</span>
-              <button
-                type="button"
-                className="icon-button"
-                style={{ width: 32, height: 32, flexShrink: 0, color: "var(--danger)" }}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0 text-destructive hover:text-destructive"
                 onClick={() => void handleRevoke(invite.id)}
                 title="Revoke"
                 aria-label="Revoke invite"
               >
                 <Unlink size={13} />
-              </button>
+              </Button>
             </div>
           );
         })}
