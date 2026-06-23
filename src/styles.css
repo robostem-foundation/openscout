@@ -5060,16 +5060,41 @@ td.quick-look-col {
   line-height: 0;
 }
 
+/* Compact account circle shown when signed out — mirrors the theme toggle, but
+   round, so it reads as an "account" affordance next to the avatar's circle. */
+.auth-circle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.auth-circle-btn:hover,
+.auth-circle-btn:focus-visible {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
 .auth-avatar-img,
 .auth-avatar-fallback {
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--border);
 }
 
 .auth-avatar-btn:hover .auth-avatar-img,
 .auth-avatar-btn:hover .auth-avatar-fallback {
-  border-color: var(--on-accent);
+  border-color: var(--border-strong);
 }
 
 .auth-avatar-fallback {
