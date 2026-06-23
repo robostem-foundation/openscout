@@ -4850,8 +4850,17 @@ td.quick-look-col {
   letter-spacing: 0.06em;
 }
 
+/* Value + sub sit on one baseline row so each cell is two lines tall, not three
+   — the sub fills the horizontal whitespace beside the big figure. */
+.about-stat-figure {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 9px;
+}
+
 .about-stat-value {
-  margin-top: 10px;
   font-size: 26px;
   font-weight: 600;
   line-height: 1;
@@ -4861,7 +4870,6 @@ td.quick-look-col {
 }
 
 .about-stat-sub {
-  margin-top: 7px;
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.3;
@@ -6611,8 +6619,10 @@ td.quick-look-col {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.quick-view-panel .about-stat-figure {
+  margin-top: 4px;
+}
 .quick-view-panel .about-stat-value {
-  margin-top: 2px;
   font-size: 17px;
 }
 /* Drop the sub-text so each card is a tidy label + value, much shorter. */
