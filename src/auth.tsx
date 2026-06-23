@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { LogIn, LogOut, Settings } from "lucide-react";
+import { LogOut, Settings, User as UserIcon } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./supabase";
 import { setTheme, useTheme } from "./theme";
 
@@ -331,12 +331,12 @@ export function AuthSlot() {
       <div className="auth-slot" ref={ref}>
         <button
           type="button"
-          className="auth-signin-btn"
+          className="auth-circle-btn"
           onClick={() => setOpen((value) => !value)}
           aria-label="Sign up / Log in"
+          title="Sign up / Log in"
         >
-          <LogIn size={15} />
-          <span className="auth-signin-label">Sign up / Log in</span>
+          <UserIcon size={18} />
         </button>
         {open && (
           <div className="auth-dropdown">
