@@ -2207,9 +2207,11 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
               </Link>
             ))}
           </nav>
-          <GlobalSearch className="topbar-search" />
-          <ThemeToggle />
-          <AuthSlot />
+          <div className="topbar-actions">
+            <GlobalSearch className="topbar-search" />
+            <ThemeToggle />
+            <AuthSlot />
+          </div>
         </div>
       </header>
       <main>{children}</main>

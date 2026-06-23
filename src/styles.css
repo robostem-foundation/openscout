@@ -217,10 +217,18 @@ nav {
   align-items: center;
   gap: 2px;
   min-width: 0;
-  /* Single flex spacer: pushes the search + theme toggle + auth cluster to the
-     far right as one group (the right-side items use margin: 0, not auto). */
-  margin-right: auto;
   overflow-x: auto;
+}
+
+/* Right-side cluster: search + theme toggle + auth, pinned to the right edge as
+   one group. margin-left:auto here is the ONLY flex spacer, so it stays right-
+   aligned regardless of whether nav is present (nav is hidden on mobile). */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto;
 }
 
 nav a {
@@ -4066,8 +4074,13 @@ footer {
     gap: 0;
   }
 
+  .topbar-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .global-search-wrap.topbar-search {
-    flex-basis: auto;
+    flex: 1 1 auto;
     width: 100%;
     max-width: none;
     margin: 6px 0 10px;
@@ -8302,6 +8315,12 @@ td.quick-look-col {
   .brand {
     margin-right: 0;
     min-height: 54px;
+  }
+  .topbar-actions {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    margin-left: auto;
   }
   .global-search-wrap.topbar-search {
     flex: 1 1 auto;
