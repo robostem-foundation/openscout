@@ -11104,8 +11104,13 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   const actionOffset = cmpOffset + visibleRecentCount;
 
   return (
-    <div className="spotlight-overlay" onClick={onClose}>
-      <div className="spotlight-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Command palette">
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="top-[14vh] translate-y-0 w-[min(580px,100%)] max-w-[580px] gap-0 border-0 bg-transparent p-0 shadow-none"
+      >
+        <DialogTitle className="sr-only">Command palette</DialogTitle>
+        <div className="spotlight-modal">
 
         {/* Input */}
         <div className="spotlight-input-row">
@@ -11222,8 +11227,9 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
           <span><kbd>↵</kbd> open</span>
           <span><kbd>Esc</kbd> close</span>
         </div>
-      </div>
-    </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
