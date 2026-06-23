@@ -62,6 +62,7 @@ import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogD
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { Profile } from "./auth";
@@ -6455,18 +6456,57 @@ function SeasonSelector({
   onChange: (seasonId: number) => void;
   loading: boolean;
 }) {
+  // Sliding highlight pill: track the active segment's position/size and move a
+  // single absolutely-positioned pill to it, so selection slides instead of the
+  // per-item background fading in/out.
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const track = trackRef.current;
+      if (!track) return;
+      const active = track.querySelector<HTMLElement>('[data-state="on"]');
+      setPill(active ? { left: active.offsetLeft, width: active.offsetWidth } : null);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [selectedSeasonId, seasons]);
+
   if (loading || !seasons.length) return null;
 
   return (
     <div className="season-toolbar">
       <span>Season</span>
-      <select value={selectedSeasonId ?? ""} onChange={(event) => onChange(Number(event.target.value))}>
-        {seasons.map((season) => (
-          <option key={season.id} value={season.id}>
-            {season.label} ({season.count})
-          </option>
-        ))}
-      </select>
+      <div className="min-w-0 overflow-x-auto">
+        <div ref={trackRef} className="relative w-max rounded-lg bg-muted p-1">
+          {pill && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-y-1 z-0 rounded-md bg-background shadow-sm ring-1 ring-black/5 transition-[transform,width] duration-200 ease-out"
+              style={{ width: pill.width, transform: `translateX(${pill.left}px)` }}
+            />
+          )}
+          <ToggleGroup
+            type="single"
+            variant="default"
+            value={selectedSeasonId != null ? String(selectedSeasonId) : ""}
+            onValueChange={(value) => { if (value) onChange(Number(value)); }}
+            className="relative z-10 gap-1"
+          >
+            {seasons.map((season) => (
+              <ToggleGroupItem
+                key={season.id}
+                value={String(season.id)}
+                className="gap-1.5 rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground data-[state=on]:bg-transparent data-[state=on]:text-foreground"
+              >
+                {season.label}
+                <span className="opacity-60 tabular-nums">{season.count}</span>
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
+      </div>
     </div>
   );
 }
