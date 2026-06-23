@@ -38,6 +38,8 @@ import {
   Star,
   StickyNote,
   Clock,
+  Moon,
+  Sun,
   Trophy,
   Tv2,
   Unlink,
@@ -76,8 +78,8 @@ import {
 } from "./orgs";
 import type { OrgInvite, OrgMember, OrgMembership, OrgRole } from "./orgs";
 import { supabase } from "./supabase";
-import { setEventsSettings, setQuickViewExpandExtras, setQuickViewFirst, setTabLayout, setUiStyle, useQuickViewExpandExtras, useQuickViewFirst, useSettingsEpoch, useTabLayout, useUiStyle } from "./settings";
-import type { TabLayout, UiStyle } from "./settings";
+import { setEventsSettings, setQuickViewExpandExtras, setQuickViewFirst, setTabLayout, useQuickViewExpandExtras, useQuickViewFirst, useSettingsEpoch, useTabLayout } from "./settings";
+import type { TabLayout } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
 import { addToTray, canAddToTray, clearTray, closeCompareModal, getContextEventId, getContextSeasonId, getTrayEntries, isInTray, openCompareModal, removeFromTray, useCompareTray, useCompareModalOpen, useIsInTray } from "./compare";
@@ -2150,6 +2152,25 @@ function MobileTabBar({ path }: { path: string }) {
   );
 }
 
+// Compact light/dark switch for the header island. Reads the live theme pref and
+// flips to the opposite of whatever is currently showing (resolving "system").
+function ThemeToggle() {
+  const pref = useTheme();
+  const prefersDark = typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches;
+  const isDark = pref === "dark" || (pref === "system" && prefersDark);
+  return (
+    <button
+      type="button"
+      className="theme-toggle"
+      onClick={() => applyTheme(isDark ? "light" : "dark")}
+      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+      title={isDark ? "Light theme" : "Dark theme"}
+    >
+      {isDark ? <Sun size={16} /> : <Moon size={16} />}
+    </button>
+  );
+}
+
 function Layout({ children, path }: { children: ReactNode; path: string }) {
   const nav = [
     ["/", "OpenScout"],
@@ -2174,6 +2195,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
             ))}
           </nav>
           <GlobalSearch className="topbar-search" />
+          <ThemeToggle />
           <AuthSlot />
         </div>
       </header>
@@ -9919,29 +9941,6 @@ function TabLayoutWire({ value }: { value: TabLayout }) {
   );
 }
 
-const UI_STYLE_OPTIONS: Array<{ value: UiStyle; label: string }> = [
-  { value: "classic", label: "Classic" },
-  { value: "modern", label: "Modern" },
-];
-
-// Mini wireframe preview of each interface skin: a top bar + a card, with the
-// corner radius / accent / surfaces that define the look. CSS keys off the
-// `ui-wire-${value}` class (see styles.css).
-function UiStyleWire({ value }: { value: UiStyle }) {
-  return (
-    <span className={`ui-wire ui-wire-${value}`} aria-hidden="true">
-      <span className="uw-bar" />
-      <span className="uw-body">
-        <span className="uw-card">
-          <span className="uw-pill" />
-          <span className="uw-line" />
-          <span className="uw-line short" />
-        </span>
-      </span>
-    </span>
-  );
-}
-
 const QUICK_VIEW_OPTIONS: Array<{ value: boolean; label: string }> = [
   { value: true, label: "Quick view first" },
   { value: false, label: "Open full team view" },
@@ -9970,7 +9969,6 @@ function AppearanceSettings() {
   const { updateProfile } = useAuth();
   const theme = useTheme(); // global theme store — already reflects the synced cloud value
   const tabLayout = useTabLayout(); // synced via user_settings jsonb (settings.ts)
-  const uiStyle = useUiStyle(); // interface skin, synced via user_settings jsonb
   const quickViewFirst = useQuickViewFirst(); // team-click behavior, synced
   const quickViewExpand = useQuickViewExpandExtras(); // quick-view Events/Awards default, synced
 
@@ -10005,27 +10003,6 @@ function AppearanceSettings() {
           ))}
         </div>
         <p className="onboard-hint">Applies instantly and syncs across your devices.</p>
-
-        <div className="settings-field">
-          <h3 className="settings-field-title">Interface style</h3>
-          <p className="settings-section-copy">
-            Keep the classic look, or switch to a cleaner, modern skin. Both work in light and dark.
-          </p>
-          <div className="layout-picker" role="group" aria-label="Interface style">
-            {UI_STYLE_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`theme-tile ${uiStyle === option.value ? "active" : ""}`}
-                onClick={() => setUiStyle(option.value)}
-                aria-pressed={uiStyle === option.value}
-              >
-                <UiStyleWire value={option.value} />
-                <span className="theme-tile-label">{option.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
 
         <div className="settings-field">
           <h3 className="settings-field-title">Detail page tabs</h3>

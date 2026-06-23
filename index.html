@@ -3,9 +3,6 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@600&display=swap" />
     <link rel="icon" type="image/png" href="/openscout-mark.png" />
     <link rel="apple-touch-icon" href="/openscout-mark.png" />
     <meta name="theme-color" content="#0a0a0a" />
@@ -19,15 +16,11 @@
     <meta name="twitter:description" content="Scouting and analytics for VEX Robotics events." />
     <title>OpenScout</title>
     <script>
-      // Apply the saved theme + UI skin before first paint to avoid a flash.
+      // Apply the saved theme before first paint to avoid a flash.
       try {
         var t = localStorage.getItem('vex-theme') || 'system';
         if (t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches))
           document.documentElement.setAttribute('data-theme', 'dark');
-        // vex-ui-style is JSON-stringified ("modern" / "classic"); substring test
-        // tolerates the surrounding quotes.
-        var u = localStorage.getItem('vex-ui-style');
-        if (u && u.indexOf('modern') !== -1) document.documentElement.setAttribute('data-ui', 'modern');
       } catch (e) {}
     </script>
   </head>
