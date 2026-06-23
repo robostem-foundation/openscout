@@ -50,7 +50,7 @@ import {
   Youtube,
   Zap,
 } from "lucide-react";
-import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Dispatch, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
@@ -63,6 +63,8 @@ import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogD
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
@@ -5130,21 +5132,6 @@ function shortMonthYear(ts: number) {
   return new Date(ts).toLocaleDateString(undefined, { month: "short", year: "2-digit" });
 }
 
-function useMeasuredWidth() {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const update = () => setWidth(el.clientWidth);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return { ref, width };
-}
-
 type ChartSeries = { name: string; color: string; values: Array<number | null> };
 
 function starPoints(cx: number, cy: number, outer: number, inner: number) {
@@ -5162,8 +5149,7 @@ function TrendChart({
   tips,
   series,
   markers,
-  height = 140,
-  area = false,
+  height = 160,
   yFormat = (n: number) => String(Math.round(n)),
   yFloor,
   yCeil,
@@ -5180,134 +5166,107 @@ function TrendChart({
   yCeil?: number;
   yMaxPad?: number;
 }) {
-  const { ref, width } = useMeasuredWidth();
-  const [hover, setHover] = useState<number | null>(null);
-  const n = labels.length;
+  const uid = useId().replace(/:/g, "");
 
   const allValues = series.flatMap((s) => s.values.filter((v): v is number => v != null));
 
-  const padL = 44;
-  const padR = 10;
-  const padT = 20;
-  const padB = 10;
-  const W = Math.max(width, 1);
-  const innerW = Math.max(W - padL - padR, 1);
-  const innerH = Math.max(height - padT - padB, 1);
-
-  const lo = yFloor ?? (allValues.length ? Math.min(...allValues) : 0);
-  let hi = yCeil ?? (allValues.length ? Math.max(...allValues) : 1);
-  if (hi === lo) {
-    hi = lo + 1;
-  } else if (yCeil == null) {
-    hi = hi + (hi - lo) * yMaxPad;
+  if (!labels.length || !allValues.length) {
+    return <div className="about-chart-empty">No data for this season.</div>;
   }
 
-  const xAt = (i: number) => (n <= 1 ? padL + innerW / 2 : padL + (i / (n - 1)) * innerW);
-  const yAt = (v: number) => padT + innerH - ((v - lo) / (hi - lo)) * innerH;
+  const lo = yFloor ?? Math.min(...allValues);
+  let hi = yCeil ?? Math.max(...allValues);
+  if (hi === lo) hi = lo + 1;
+  else if (yCeil == null) hi = hi + (hi - lo) * yMaxPad;
 
-  if (!n || !allValues.length) {
-    return (
-      <div ref={ref} className="about-chart-empty">
-        No data for this season.
-      </div>
-    );
-  }
+  // recharts wants flat row objects; use index-safe series keys (s0, s1, …) so
+  // the generated --color-* CSS vars stay valid, with the display label, event
+  // tip, and marquee flag stashed alongside each row.
+  const config: ChartConfig = {};
+  series.forEach((s, i) => {
+    config[`s${i}`] = { label: s.name, color: s.color };
+  });
 
-  const hoverYs =
-    hover != null
-      ? series
-          .map((s) => s.values[hover])
-          .filter((v): v is number => v != null)
-          .map((v) => yAt(v))
-      : [];
-  const hoverY = hoverYs.length ? Math.min(...hoverYs) : padT;
+  const data = labels.map((label, i) => {
+    const row: Record<string, number | string | boolean | null> = {
+      _label: label,
+      _tip: tips?.[i] ?? label,
+      _marquee: !!markers?.[i],
+    };
+    series.forEach((s, si) => {
+      row[`s${si}`] = s.values[i];
+    });
+    return row;
+  });
 
   return (
-    <div ref={ref} className="about-chart" onMouseLeave={() => setHover(null)}>
-      {width > 0 && (
-        <svg width={W} height={height} role="img" aria-hidden="true">
-          {[0, 0.25, 0.5, 0.75, 1].map((t) => {
-            const y = padT + innerH * t;
-            const val = hi - t * (hi - lo);
-            return (
-              <g key={t}>
-                <line x1={padL} y1={y} x2={W - padR} y2={y} className="about-chart-grid" />
-                <text x={padL - 16} y={y + 3} textAnchor="end" className="about-chart-ylabel">
-                  {yFormat(val)}
-                </text>
-              </g>
-            );
-          })}
-          {series.map((s, si) => {
-            const pts = s.values.map((v, i) => (v == null ? null : { x: xAt(i), y: yAt(v) }));
-            const segments: string[] = [];
-            let cur: string[] = [];
-            pts.forEach((p) => {
-              if (p) {
-                cur.push(`${cur.length ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`);
-              } else if (cur.length) {
-                segments.push(cur.join(" "));
-                cur = [];
-              }
-            });
-            if (cur.length) segments.push(cur.join(" "));
-            const linePath = segments.join(" ");
-            const firstPt = pts.find((p) => p);
-            const lastPt = [...pts].reverse().find((p) => p);
-            const baseline = (padT + innerH).toFixed(1);
-            const areaPath =
-              area && firstPt && lastPt
-                ? `${linePath} L${lastPt.x.toFixed(1)} ${baseline} L${firstPt.x.toFixed(1)} ${baseline} Z`
-                : "";
-            return (
-              <g key={si}>
-                {area && areaPath && <path d={areaPath} fill={s.color} className="about-chart-area" />}
-                <path d={linePath} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-                {pts.map((p, i) => {
-                  if (!p) return null;
-                  const big = hover === i;
-                  if (markers?.[i]) {
-                    const outer = big ? 7 : 5.5;
-                    return (
-                      <polygon
-                        key={i}
-                        points={starPoints(p.x, p.y, outer, outer * 0.42)}
-                        fill="#fff"
-                        stroke={s.color}
-                        strokeWidth={2}
-                        strokeLinejoin="round"
-                      />
-                    );
-                  }
-                  return <circle key={i} cx={p.x} cy={p.y} r={big ? 4.5 : 3} fill="#fff" stroke={s.color} strokeWidth={2} />;
-                })}
-              </g>
-            );
-          })}
-          {hover != null && <line x1={xAt(hover)} y1={padT} x2={xAt(hover)} y2={padT + innerH} className="about-chart-guide" />}
-          {labels.map((_, i) => {
-            const bandW = n <= 1 ? innerW : innerW / (n - 1);
-            return (
-              <rect key={i} x={xAt(i) - bandW / 2} y={0} width={bandW} height={height} fill="transparent" onMouseEnter={() => setHover(i)} />
-            );
-          })}
-        </svg>
-      )}
-      <div className="about-chart-xaxis" style={{ paddingLeft: padL, paddingRight: padR }}>
-        <span>{labels[0]}</span>
-        {n > 1 && <span>{labels[n - 1]}</span>}
-      </div>
-      {hover != null && (
-        <div className={`about-chart-tip${hoverY < 70 ? " below" : ""}`} style={{ left: `${(xAt(hover) / W) * 100}%`, top: hoverY }}>
-          <strong>{tips?.[hover] ?? labels[hover]}</strong>
-          {series.map((s) => (
-            <span key={s.name}>
-              <i style={{ background: s.color }} /> {s.name}: <b>{s.values[hover] == null ? "—" : yFormat(s.values[hover] as number)}</b>
-            </span>
+    <ChartContainer config={config} className="w-full" style={{ height, aspectRatio: "auto" }}>
+      <AreaChart accessibilityLayer data={data} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
+        <defs>
+          {series.map((_, i) => (
+            <linearGradient key={i} id={`fill-${uid}-${i}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={`var(--color-s${i})`} stopOpacity={0.4} />
+              <stop offset="95%" stopColor={`var(--color-s${i})`} stopOpacity={0.04} />
+            </linearGradient>
           ))}
-        </div>
-      )}
-    </div>
+        </defs>
+        <CartesianGrid vertical={false} />
+        <XAxis dataKey="_label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={24} interval="preserveStartEnd" />
+        <YAxis width={44} tickLine={false} axisLine={false} tickMargin={4} domain={[lo, hi]} tickFormatter={(v) => yFormat(Number(v))} />
+        <ChartTooltip
+          cursor={{ strokeDasharray: "3 3" }}
+          content={
+            <ChartTooltipContent
+              labelFormatter={(_, payload) => (payload?.[0]?.payload as { _tip?: string } | undefined)?._tip ?? ""}
+              formatter={(value, name, item) => (
+                <div className="flex w-full items-center justify-between gap-3">
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-2 shrink-0 rounded-[2px]" style={{ background: item?.color as string }} />
+                    <span className="text-muted-foreground">{config[name as string]?.label ?? name}</span>
+                  </span>
+                  <span className="font-mono font-medium tabular-nums text-foreground">
+                    {value == null ? "—" : yFormat(Number(value))}
+                  </span>
+                </div>
+              )}
+            />
+          }
+        />
+        {series.map((_, i) => (
+          <Area
+            key={i}
+            dataKey={`s${i}`}
+            type="monotone"
+            stroke={`var(--color-s${i})`}
+            strokeWidth={2}
+            fill={`url(#fill-${uid}-${i})`}
+            connectNulls={false}
+            isAnimationActive={false}
+            activeDot={{ r: 4 }}
+            dot={(props) => {
+              const { cx, cy, stroke, payload, index } = props as {
+                cx?: number;
+                cy?: number;
+                stroke?: string;
+                payload?: { _marquee?: boolean };
+                index?: number;
+              };
+              if (cx == null || cy == null || !payload?._marquee) return <g key={index} />;
+              return (
+                <polygon
+                  key={index}
+                  points={starPoints(cx, cy, 6, 6 * 0.42)}
+                  fill="var(--surface)"
+                  stroke={stroke}
+                  strokeWidth={2}
+                  strokeLinejoin="round"
+                />
+              );
+            }}
+          />
+        ))}
+      </AreaChart>
+    </ChartContainer>
   );
 }
 
