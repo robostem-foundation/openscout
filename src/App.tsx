@@ -59,7 +59,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
@@ -8084,14 +8087,6 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
   }, [playback.timestamp.videoId, startSeconds]);
 
   useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  useEffect(() => {
     if (!playback.timestamp.videoId || !iframeRef.current) return;
     let destroyed = false;
 
@@ -8147,8 +8142,10 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
   };
 
   return (
-    <div className="video-overlay" onClick={onClose}>
-      <div className="video-modal" onClick={(e) => e.stopPropagation()}>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent showCloseButton={false} className="w-fit max-w-none border-0 bg-transparent p-0 shadow-none">
+        <DialogTitle className="sr-only">Match video</DialogTitle>
+        <div className="video-modal">
         <div className="video-modal-header">
           <div className="video-match-info">
             <strong>{playback.match.name}</strong>
@@ -8216,8 +8213,9 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
             onSeek={seekTo}
           />
         </div>
-      </div>
-    </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -8525,26 +8523,21 @@ function EliminationBracket({ matches }: { matches: Match[] }) {
 }
 
 function EliminationBracketOverlay({ matches, onClose }: { matches: Match[]; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div className="video-overlay bracket-overlay" onClick={onClose}>
-      <div className="bracket-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="bracket-modal-header">
-          <strong>Elimination Bracket</strong>
-          <button className="video-close-btn" onClick={onClose} aria-label="Close">&times;</button>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent showCloseButton={false} className="w-fit max-w-none border-0 bg-transparent p-0 shadow-none">
+        <DialogTitle className="sr-only">Elimination bracket</DialogTitle>
+        <div className="bracket-modal">
+          <div className="bracket-modal-header">
+            <strong>Elimination Bracket</strong>
+            <CloseButton onClose={onClose} />
+          </div>
+          <div className="bracket-modal-body">
+            <EliminationBracket matches={matches} />
+          </div>
         </div>
-        <div className="bracket-modal-body">
-          <EliminationBracket matches={matches} />
-        </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -10243,60 +10236,58 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const handleKey = (e: KeyboardEvent<HTMLElement>) => {
-    if (e.key === "Escape") onClose();
-  };
-
   return (
-    <div className="video-overlay" onClick={onClose} onKeyDown={handleKey} role="dialog" aria-modal="true" aria-label="Create org">
-      <div className="org-create-modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Create an org</h2>
-        <div className="org-create-field">
-          <label htmlFor="org-name-input">Org name</label>
-          <input
-            id="org-name-input"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value.slice(0, 40))}
-            placeholder="e.g. 169W Scouting Alliance"
-            autoFocus
-            onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }}
-          />
-        </div>
-        <div className="org-create-row">
-          <div className="org-create-field">
-            <label htmlFor="org-program-select">Program</label>
-            <select id="org-program-select" value={program} onChange={(e) => setProgram(e.target.value)}>
-              <option value="">Any / none</option>
-              {AUTH_PROGRAMS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
-          </div>
-          <div className="org-create-field">
-            <label htmlFor="org-team-input">Team #</label>
-            <input
-              id="org-team-input"
-              type="text"
-              value={teamNumber}
-              onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
-              placeholder="e.g. 169W"
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create an org</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="org-name-input">Org name</Label>
+            <Input
+              id="org-name-input"
+              value={name}
+              onChange={(e) => setName(e.target.value.slice(0, 40))}
+              placeholder="e.g. 169W Scouting Alliance"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }}
             />
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="org-program-select">Program</Label>
+              <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
+                <SelectTrigger id="org-program-select" className="w-full">
+                  <SelectValue placeholder="Any / none" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Any / none</SelectItem>
+                  {AUTH_PROGRAMS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="org-team-input">Team #</Label>
+              <Input
+                id="org-team-input"
+                value={teamNumber}
+                onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
+                placeholder="e.g. 169W"
+              />
+            </div>
+          </div>
         </div>
-        <div className="org-create-footer">
-          <button type="button" className="button-link secondary" onClick={onClose}>Cancel</button>
-          <button
-            type="button"
-            className="button-link"
-            onClick={() => void handleCreate()}
-            disabled={!name.trim() || saving}
-          >
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => void handleCreate()} disabled={!name.trim() || saving}>
             {saving ? "Creating…" : "Create org"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -11690,13 +11681,6 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
     return () => { live.value = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally runs once on mount
 
-  // Close on Escape
-  useEffect(() => {
-    const handler = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
   const loadedProfiles = slots.map((s) => s.profile).filter((p): p is Team => !!p);
   const isIqCompare = loadedProfiles.length > 0 && loadedProfiles.every((p) => isIqProgramInfo(p.program));
   const compareRows = useMemo(() => buildCompareRows(!!contextEventId, isIqCompare), [contextEventId, isIqCompare]);
@@ -11737,14 +11721,12 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
   }
 
   return (
-    <div className="compare-overlay" onClick={onClose}>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent showCloseButton={false} className="w-fit max-w-none border-0 bg-transparent p-0 shadow-none">
+        <DialogTitle className="sr-only">Compare teams</DialogTitle>
       <div
         className="compare-modal"
         style={{ "--col-count": colCount } as React.CSSProperties}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Compare teams"
       >
         {/* Header */}
         <div className="compare-modal-header">
@@ -11834,7 +11816,8 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
           })}
         </div>
       </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
