@@ -5170,6 +5170,21 @@ function TrendChart({
   yMaxPad?: number;
 }) {
   const uid = useId().replace(/:/g, "");
+  // Index of the point currently under the cursor, plus a live ref to the row
+  // data, so a keyboard Enter while hovering can open that event (mirrors click).
+  const activeIndexRef = useRef<number | null>(null);
+  const dataRef = useRef<Array<Record<string, number | string | boolean | null>>>([]);
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      const idx = activeIndexRef.current;
+      if (idx == null) return;
+      const link = dataRef.current[idx]?._link;
+      if (typeof link === "string" && link) navigate(link);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const allValues = series.flatMap((s) => s.values.filter((v): v is number => v != null));
 
@@ -5206,6 +5221,7 @@ function TrendChart({
     });
     return row;
   });
+  dataRef.current = data;
 
   const goToEvent = (index: number | string | undefined) => {
     if (index == null) return;
@@ -5222,6 +5238,13 @@ function TrendChart({
         data={data}
         margin={{ left: 4, right: 8, top: 8, bottom: 0 }}
         onClick={(state) => goToEvent(state?.activeTooltipIndex ?? undefined)}
+        onMouseMove={(state) => {
+          const i = state?.activeTooltipIndex;
+          activeIndexRef.current = typeof i === "number" ? i : i != null ? Number(i) : null;
+        }}
+        onMouseLeave={() => {
+          activeIndexRef.current = null;
+        }}
         className="[&_.recharts-surface]:cursor-pointer"
       >
         <defs>
