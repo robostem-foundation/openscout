@@ -35,7 +35,7 @@
   --card-foreground: #171717;
   --popover: #ffffff;
   --popover-foreground: #171717;
-  --primary: #2563eb; /* royal blue */
+  --primary: #0891b2; /* cyan-600 */
   --primary-foreground: #ffffff;
   --secondary: #f2f2f2;
   --secondary-foreground: #171717;
@@ -47,9 +47,9 @@
   --destructive-foreground: #ffffff;
   --border: #eaeaea;
   --input: #eaeaea;
-  --ring: #2563eb;
+  --ring: #0891b2;
 
-  --chart-1: #2563eb;
+  --chart-1: #0891b2;
   --chart-2: #7928ca;
   --chart-3: #f5a623;
   --chart-4: #50e3c2;
@@ -57,12 +57,12 @@
 
   --sidebar: #fafafa;
   --sidebar-foreground: #171717;
-  --sidebar-primary: #2563eb;
+  --sidebar-primary: #0891b2;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f2f2f2;
   --sidebar-accent-foreground: #171717;
   --sidebar-border: #eaeaea;
-  --sidebar-ring: #2563eb;
+  --sidebar-ring: #0891b2;
 }
 
 /* ── Geist design tokens — DARK ─────────────────────────────────────────── */
@@ -73,7 +73,7 @@
   --card-foreground: #ededed;
   --popover: #1a1a1a;
   --popover-foreground: #ededed;
-  --primary: #2563eb;
+  --primary: #0e7490;
   --primary-foreground: #ffffff;
   --secondary: #1a1a1a;
   --secondary-foreground: #ededed;
@@ -85,9 +85,9 @@
   --destructive-foreground: #ffffff;
   --border: #2e2e2e;
   --input: #2e2e2e;
-  --ring: #60a5fa;
+  --ring: #22d3ee;
 
-  --chart-1: #60a5fa;
+  --chart-1: #22d3ee;
   --chart-2: #8a63d2;
   --chart-3: #f7b955;
   --chart-4: #79ffe1;
@@ -95,12 +95,12 @@
 
   --sidebar: #0a0a0a;
   --sidebar-foreground: #ededed;
-  --sidebar-primary: #3b82f6;
+  --sidebar-primary: #0e7490;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #1f1f1f;
   --sidebar-accent-foreground: #ededed;
   --sidebar-border: #2e2e2e;
-  --sidebar-ring: #60a5fa;
+  --sidebar-ring: #22d3ee;
 }
 
 /* ── Tailwind theme mapping ─────────────────────────────────────────────── */

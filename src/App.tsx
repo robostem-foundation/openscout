@@ -59,7 +59,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -9619,55 +9619,6 @@ function NotFound() {
 }
 
 // ---------------------------------------------------------------------------
-// Beta disclaimer (first-visit modal)
-// ---------------------------------------------------------------------------
-
-function BetaDisclaimer() {
-  const [visible, setVisible] = useState(() => !localStorage.getItem("beta-disclaimer-seen"));
-
-  function dismiss() {
-    localStorage.setItem("beta-disclaimer-seen", "1");
-    setVisible(false);
-  }
-
-  if (!visible) return null;
-
-  return (
-    <Dialog open>
-      <DialogContent
-        showCloseButton={false}
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
-        className="sm:max-w-md text-center"
-      >
-        <div className="beta-modal-icon">🔒</div>
-        <DialogHeader>
-          <DialogTitle className="text-center text-xl">Internal Preview</DialogTitle>
-          <DialogDescription className="text-center">
-            This is an internal, unreleased version of OpenScout. Everything is subject to change — features, data, and
-            design may be incomplete or inaccurate.
-          </DialogDescription>
-        </DialogHeader>
-        <p className="beta-modal-legal">
-          By continuing to use this website you agree to our{" "}
-          <Link href="/terms" onClick={dismiss}>
-            Terms of Service
-          </Link>{" "}
-          and{" "}
-          <Link href="/privacy" onClick={dismiss}>
-            Privacy Policy
-          </Link>
-          .
-        </p>
-        <Button onClick={dismiss} className="w-full">
-          I Understand
-        </Button>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Terms of Service page
 // ---------------------------------------------------------------------------
 
@@ -12082,7 +12033,6 @@ export default function App() {
 
   return (
     <>
-      <BetaDisclaimer />
       <Layout path={path}>{route(path)}</Layout>
       <OnboardingModal />
       {spotlightOpen && <CommandPalette onClose={closeSpotlight} />}
