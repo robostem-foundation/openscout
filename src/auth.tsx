@@ -4,6 +4,11 @@ import type { Session, User } from "@supabase/supabase-js";
 import { LogOut, Settings, User as UserIcon } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./supabase";
 import { setTheme, useTheme } from "./theme";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export type Profile = {
   id: string;
@@ -445,8 +450,6 @@ export function OnboardingModal() {
     setProgram(profile?.team_program ?? "");
   }, [visible, user, profile, profileEditorOpen]);
 
-  if (!visible) return null;
-
   const close = () => {
     seededFor.current = null;
     closeProfileEditor();
@@ -473,80 +476,90 @@ export function OnboardingModal() {
   const editing = profileEditorOpen && !auto;
 
   return (
-    <div className="auth-overlay" role="dialog" aria-modal="true" aria-label="Set up your profile">
-      <div className="auth-modal onboard-modal">
-        <h2 className="onboard-title">{editing ? "Profile settings" : "Welcome to OpenScout"}</h2>
-        <p className="onboard-sub">
-          {editing
-            ? "Update your details anytime. Everything here is optional."
-            : "Tell us a little about you. All optional, but your name and team help personalize OpenScout."}
-        </p>
+    <Dialog open={visible} onOpenChange={(o) => { if (!o) void skip(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{editing ? "Profile settings" : "Welcome to OpenScout"}</DialogTitle>
+          <DialogDescription>
+            {editing
+              ? "Update your details anytime. Everything here is optional."
+              : "Tell us a little about you. All optional, but your name and team help personalize OpenScout."}
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="onboard-grid">
-          <label className="onboard-field">
-            <span>Name</span>
-            <input
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="onboard-name">Name</FieldLabel>
+            <Input
+              id="onboard-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
               maxLength={24}
               placeholder="Your name"
               autoFocus
             />
-          </label>
-          <label className="onboard-field onboard-field-team">
-            <span>Team Number</span>
-            <input
-              value={teamNumber}
-              onChange={(event) => setTeamNumber(event.target.value.toUpperCase())}
-              maxLength={10}
-              placeholder="169W"
-            />
-          </label>
-          <label className="onboard-field onboard-field-program">
-            <span>Program</span>
-            <select value={program} onChange={(event) => setProgram(event.target.value)}>
-              <option value="">—</option>
-              {AUTH_PROGRAMS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="onboard-prefs">
-          <span className="onboard-prefs-label">Appearance</span>
-          <div className="theme-picker">
-            {THEME_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`theme-tile ${theme === option.value ? "active" : ""} theme-tile-${option.value}`}
-                onClick={() => setTheme(option.value)}
-                aria-pressed={theme === option.value}
-              >
-                <span className="theme-wire" aria-hidden="true">
-                  <span className="theme-wire-bar" />
-                  <span className="theme-wire-line" />
-                  <span className="theme-wire-line short" />
-                </span>
-                <span className="theme-tile-label">{option.label}</span>
-              </button>
-            ))}
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <FieldLabel htmlFor="onboard-team">Team Number</FieldLabel>
+              <Input
+                id="onboard-team"
+                value={teamNumber}
+                onChange={(event) => setTeamNumber(event.target.value.toUpperCase())}
+                maxLength={10}
+                placeholder="169W"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="onboard-program">Program</FieldLabel>
+              <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
+                <SelectTrigger id="onboard-program" className="w-full">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {AUTH_PROGRAMS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
-          <p className="onboard-hint">Applies instantly and syncs to your account.</p>
-        </div>
 
-        <div className="onboard-actions">
-          <button type="button" className="onboard-skip" onClick={() => void skip()} disabled={saving}>
+          <Field>
+            <FieldLabel>Appearance</FieldLabel>
+            <div className="theme-picker">
+              {THEME_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`theme-tile ${theme === option.value ? "active" : ""} theme-tile-${option.value}`}
+                  onClick={() => setTheme(option.value)}
+                  aria-pressed={theme === option.value}
+                >
+                  <span className="theme-wire" aria-hidden="true">
+                    <span className="theme-wire-bar" />
+                    <span className="theme-wire-line" />
+                    <span className="theme-wire-line short" />
+                  </span>
+                  <span className="theme-tile-label">{option.label}</span>
+                </button>
+              ))}
+            </div>
+          </Field>
+        </FieldGroup>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => void skip()} disabled={saving}>
             {editing ? "Cancel" : "Skip for now"}
-          </button>
-          <button type="button" className="onboard-finish" onClick={() => void finish()} disabled={saving}>
+          </Button>
+          <Button type="button" onClick={() => void finish()} disabled={saving}>
             {saving ? "Saving…" : editing ? "Save changes" : "Finish setup"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
