@@ -1717,6 +1717,11 @@ main {
   font-size: 12px;
 }
 
+/* Tables follow the shadcn/Geist Table aesthetic: no zebra striping, a single
+   1px row separator (border-bottom), medium-weight headers, and a subtle muted
+   row hover. This shared block gives every table in the app the shadcn look
+   without per-table markup changes; specialized tables layer column widths,
+   sticky columns, and alliance colors on top. */
 table {
   width: 100%;
   max-width: 100%;
@@ -1729,22 +1734,31 @@ table {
 th,
 td {
   padding: 8px;
-  border-top: 1px solid var(--border);
-  line-height: 1.42857143;
+  line-height: 1.43;
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 thead th {
-  border-bottom: 2px solid var(--border);
+  height: 40px;
   color: var(--text);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 500;
   text-transform: none;
+  white-space: nowrap;
 }
 
-tbody tr:nth-of-type(odd) {
-  background: var(--surface-2);
+thead tr,
+tbody tr {
+  border-bottom: 1px solid var(--border);
+}
+
+tbody tr:last-child {
+  border-bottom: 0;
+}
+
+tbody tr {
+  transition: background-color 0.15s ease;
 }
 
 tbody tr:hover {
