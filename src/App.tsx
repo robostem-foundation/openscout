@@ -25,11 +25,9 @@ import {
   LogOut,
   Medal,
   Palette,
-  PanelLeft,
   PanelRight,
   Pause,
   Plus,
-  Rows3,
   Play,
   RotateCw,
   Scale,
@@ -89,7 +87,7 @@ import {
 } from "./orgs";
 import type { OrgInvite, OrgMember, OrgMembership, OrgRole } from "./orgs";
 import { supabase } from "./supabase";
-import { setEventsSettings, setQuickViewExpandExtras, setQuickViewFirst, setTabLayout, useQuickViewExpandExtras, useQuickViewFirst, useSettingsEpoch, useTabLayout } from "./settings";
+import { setEventsSettings, setQuickViewExpandExtras, setQuickViewFirst, useQuickViewExpandExtras, useQuickViewFirst, useSettingsEpoch } from "./settings";
 import type { TabLayout } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
@@ -4371,7 +4369,6 @@ function EventDetail({ param }: { param: string }) {
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
   const [teamSearch, setTeamSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const tabLayout = useTabLayout();
   const orgs = useOrgs();
   const primaryOrg = orgs[0] ?? null;
   const lookup = useAsync(async () => {
@@ -4644,12 +4641,11 @@ function EventDetail({ param }: { param: string }) {
         </div>
       </div>
 
-      <div className={`view-tabs view-tabs-${tabLayout}`}>
+      <div className="view-tabs view-tabs-horizontal">
       <Tabs
         active={tab}
         onChange={(next) => setTab(next as EventDetailTab)}
-        orientation={tabLayout}
-        showLayoutToggle
+        orientation="horizontal"
         action={<CompareModeButton />}
         tabs={[
           ...(focusTeam
@@ -5803,7 +5799,6 @@ function TeamAboutTab({
 
 function TeamDetail({ param }: { param: string }) {
   const [tab, setTab] = useState<TeamDetailTab>(() => hashTab(TEAM_DETAIL_TABS, "about"));
-  const tabLayout = useTabLayout();
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const [dateDirection, setDateDirection] = useState<DateDirection>("asc");
   const [matchesBySeason, setMatchesBySeason] = useState<Record<number, AsyncBucket<Match>>>({});
@@ -6029,12 +6024,11 @@ function TeamDetail({ param }: { param: string }) {
         </div>
       </div>
 
-      <div className={`view-tabs view-tabs-${tabLayout}`}>
+      <div className="view-tabs view-tabs-vertical">
       <Tabs
         active={tab}
         onChange={(next) => setTab(next as TeamDetailTab)}
-        orientation={tabLayout}
-        showLayoutToggle
+        orientation="vertical"
         tabs={[
           ["about", "About", <Info size={15} />],
           ["events", `Events ${seasonEvents.length || ""}`, <CalendarDays size={15} />],
@@ -7401,34 +7395,17 @@ function EventHighlights({ awards }: { awards: HighlightAward[] }) {
   );
 }
 
-function TabLayoutToggle({ layout }: { layout: TabLayout }) {
-  const next: TabLayout = layout === "vertical" ? "horizontal" : "vertical";
-  return (
-    <button
-      type="button"
-      className="icon-button"
-      onClick={() => setTabLayout(next)}
-      aria-label={`Switch to ${next} tabs`}
-      title={`Switch to ${next} tabs`}
-    >
-      {layout === "vertical" ? <Rows3 size={16} /> : <PanelLeft size={16} />}
-    </button>
-  );
-}
-
 function Tabs({
   tabs,
   active,
   onChange,
   orientation = "horizontal",
-  showLayoutToggle = false,
   action,
 }: {
   tabs: Array<[string, string, ReactNode, (() => void)?]>;
   active: string;
   onChange: (tab: string) => void;
   orientation?: TabLayout;
-  showLayoutToggle?: boolean;
   action?: ReactNode;
 }) {
   if (orientation === "vertical") {
@@ -7457,17 +7434,6 @@ function Tabs({
             )}
           </button>
         ))}
-        {showLayoutToggle && (
-          <button
-            type="button"
-            className="settings-tab view-tabs-rail-toggle"
-            onClick={() => setTabLayout("horizontal")}
-            title="Switch to horizontal tabs"
-          >
-            <Rows3 size={15} />
-            Horizontal view
-          </button>
-        )}
         {action && <div className="view-tabs-rail-action">{action}</div>}
       </nav>
     );
@@ -7495,14 +7461,13 @@ function Tabs({
       ))}
     </div>
   );
-  if (!showLayoutToggle) return bar;
-  // Wrap so the toggle sits at the right end of the bar without being caught by
+  if (!action) return bar;
+  // Wrap so the action sits at the right end of the bar without being caught by
   // the `.tabs button` styles (which would render it transparent/invisible).
   return (
     <div className="view-tabs-bar">
       {bar}
-      {action && <span className="view-tabs-bar-action">{action}</span>}
-      <TabLayoutToggle layout={orientation} />
+      <span className="view-tabs-bar-action">{action}</span>
     </div>
   );
 }
@@ -9978,43 +9943,6 @@ function ProfileSettings() {
 
 // Theme picker. Saves immediately on selection (optimistic local state + profile
 // upsert) — no separate Save button needed.
-const TAB_LAYOUT_OPTIONS: Array<{ value: TabLayout; label: string }> = [
-  { value: "horizontal", label: "Horizontal" },
-  { value: "vertical", label: "Vertical" },
-];
-
-// Mini wireframe preview of each tab orientation, mirroring the theme tiles: a
-// bar of tabs across the top (horizontal) vs. a side rail (vertical).
-function TabLayoutWire({ value }: { value: TabLayout }) {
-  const tabs = (
-    <>
-      <span className="lw-tab active" />
-      <span className="lw-tab" />
-      <span className="lw-tab" />
-    </>
-  );
-  const body = (
-    <span className="lw-body">
-      <span className="lw-line" />
-      <span className="lw-line short" />
-    </span>
-  );
-  return (
-    <span className={`layout-wire layout-wire-${value}`} aria-hidden="true">
-      {value === "horizontal" ? (
-        <>
-          <span className="lw-tabs">{tabs}</span>
-          {body}
-        </>
-      ) : (
-        <>
-          <span className="lw-rail">{tabs}</span>
-          {body}
-        </>
-      )}
-    </span>
-  );
-}
 
 const QUICK_VIEW_OPTIONS: Array<{ value: boolean; label: string }> = [
   { value: true, label: "Quick view first" },
@@ -10043,7 +9971,6 @@ function QuickViewWire({ value }: { value: boolean }) {
 function AppearanceSettings() {
   const { updateProfile } = useAuth();
   const theme = useTheme(); // global theme store — already reflects the synced cloud value
-  const tabLayout = useTabLayout(); // synced via user_settings jsonb (settings.ts)
   const quickViewFirst = useQuickViewFirst(); // team-click behavior, synced
   const quickViewExpand = useQuickViewExpandExtras(); // quick-view Events/Awards default, synced
 
@@ -10078,27 +10005,6 @@ function AppearanceSettings() {
           ))}
         </div>
         <p className="onboard-hint">Applies instantly and syncs across your devices.</p>
-
-        <div className="settings-field">
-          <h3 className="settings-field-title">Detail page tabs</h3>
-          <p className="settings-section-copy">
-            Pick how tabs appear on event and team pages — a bar across the top, or a side rail like this page.
-          </p>
-          <div className="layout-picker" role="group" aria-label="Tab orientation">
-            {TAB_LAYOUT_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`theme-tile ${tabLayout === option.value ? "active" : ""}`}
-                onClick={() => setTabLayout(option.value)}
-                aria-pressed={tabLayout === option.value}
-              >
-                <TabLayoutWire value={option.value} />
-                <span className="theme-tile-label">{option.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
 
         <div className="settings-field">
           <h3 className="settings-field-title">Team click behavior</h3>
