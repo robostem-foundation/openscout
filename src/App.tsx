@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  ChevronsRight,
   CornerDownLeft,
   ExternalLink,
   FilePlus2,
@@ -6457,7 +6458,12 @@ function SeasonSelector({
   // single absolutely-positioned pill to it, so selection slides instead of the
   // per-item background fading in/out.
   const trackRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const autoRef = useRef<number | null>(null);
   const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
+  // Whether the strip overflows past the right edge (drives the fade + chevron).
+  const [moreRight, setMoreRight] = useState(false);
+
   useLayoutEffect(() => {
     const measure = () => {
       const track = trackRef.current;
@@ -6470,39 +6476,111 @@ function SeasonSelector({
     return () => window.removeEventListener("resize", measure);
   }, [selectedSeasonId, seasons]);
 
+  // Track right-edge overflow as the strip scrolls / resizes.
+  const updateEdges = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setMoreRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+  }, []);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    updateEdges();
+    el.addEventListener("scroll", updateEdges, { passive: true });
+    window.addEventListener("resize", updateEdges);
+    const ro = new ResizeObserver(updateEdges);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", updateEdges);
+      window.removeEventListener("resize", updateEdges);
+      ro.disconnect();
+    };
+  }, [updateEdges, seasons]);
+
+  // Vertical wheel over the strip scrolls it horizontally instead of the page.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth) return;
+      const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (!delta) return;
+      e.preventDefault();
+      el.scrollLeft += delta;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [seasons]);
+
+  const stopAuto = useCallback(() => {
+    if (autoRef.current != null) {
+      cancelAnimationFrame(autoRef.current);
+      autoRef.current = null;
+    }
+  }, []);
+  const startAuto = useCallback(() => {
+    stopAuto();
+    const step = () => {
+      const el = scrollRef.current;
+      if (!el) { autoRef.current = null; return; }
+      const max = el.scrollWidth - el.clientWidth;
+      if (el.scrollLeft >= max - 0.5) { autoRef.current = null; return; }
+      el.scrollLeft = Math.min(max, el.scrollLeft + 7);
+      autoRef.current = requestAnimationFrame(step);
+    };
+    autoRef.current = requestAnimationFrame(step);
+  }, [stopAuto]);
+  useEffect(() => stopAuto, [stopAuto]);
+
   if (loading || !seasons.length) return null;
 
   return (
     <div className="season-toolbar">
       <span>Season</span>
-      <div className="min-w-0 overflow-x-auto">
-        <div ref={trackRef} className="relative w-max rounded-lg bg-muted p-1">
-          {pill && (
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-y-1 z-0 rounded-md bg-background shadow-sm ring-1 ring-black/5 transition-[transform,width] duration-200 ease-out"
-              style={{ width: pill.width, transform: `translateX(${pill.left}px)` }}
-            />
-          )}
-          <ToggleGroup
-            type="single"
-            variant="default"
-            value={selectedSeasonId != null ? String(selectedSeasonId) : ""}
-            onValueChange={(value) => { if (value) onChange(Number(value)); }}
-            className="relative z-10 gap-1"
-          >
-            {seasons.map((season) => (
-              <ToggleGroupItem
-                key={season.id}
-                value={String(season.id)}
-                className="gap-1.5 rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground data-[state=on]:bg-transparent data-[state=on]:text-foreground"
-              >
-                {season.label}
-                <span className="opacity-60 tabular-nums">{season.count}</span>
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+      <div className="season-scroll">
+        <div ref={scrollRef} className="season-scroll-view no-scrollbar">
+          <div ref={trackRef} className="relative w-max rounded-lg bg-muted p-1">
+            {pill && (
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-y-1 z-0 rounded-md bg-background shadow-sm ring-1 ring-black/5 transition-[transform,width] duration-200 ease-out"
+                style={{ width: pill.width, transform: `translateX(${pill.left}px)` }}
+              />
+            )}
+            <ToggleGroup
+              type="single"
+              variant="default"
+              value={selectedSeasonId != null ? String(selectedSeasonId) : ""}
+              onValueChange={(value) => { if (value) onChange(Number(value)); }}
+              className="relative z-10 gap-1"
+            >
+              {seasons.map((season) => (
+                <ToggleGroupItem
+                  key={season.id}
+                  value={String(season.id)}
+                  className="gap-1.5 rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground data-[state=on]:bg-transparent data-[state=on]:text-foreground"
+                >
+                  {season.label}
+                  <span className="opacity-60 tabular-nums">{season.count}</span>
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
         </div>
+        {moreRight && (
+          <div className="season-fade" aria-hidden="true">
+            <button
+              type="button"
+              className="season-more"
+              aria-label="Scroll to more seasons"
+              onMouseEnter={startAuto}
+              onMouseLeave={stopAuto}
+              onClick={() => scrollRef.current?.scrollBy({ left: scrollRef.current.clientWidth * 0.8, behavior: "smooth" })}
+            >
+              <ChevronsRight size={16} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
