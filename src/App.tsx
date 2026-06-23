@@ -56,8 +56,10 @@ import { api } from "./api";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
@@ -9514,14 +9516,21 @@ function BetaDisclaimer() {
   if (!visible) return null;
 
   return (
-    <div className="beta-overlay" role="dialog" aria-modal="true" aria-label="Beta disclaimer">
-      <div className="beta-modal">
+    <Dialog open>
+      <DialogContent
+        showCloseButton={false}
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="sm:max-w-md text-center"
+      >
         <div className="beta-modal-icon">🔒</div>
-        <h2 className="beta-modal-title">Internal Preview</h2>
-        <p className="beta-modal-body">
-          This is an internal, unreleased version of OpenScout. Everything is subject to change — features, data, and
-          design may be incomplete or inaccurate.
-        </p>
+        <DialogHeader>
+          <DialogTitle className="text-center text-xl">Internal Preview</DialogTitle>
+          <DialogDescription className="text-center">
+            This is an internal, unreleased version of OpenScout. Everything is subject to change — features, data, and
+            design may be incomplete or inaccurate.
+          </DialogDescription>
+        </DialogHeader>
         <p className="beta-modal-legal">
           By continuing to use this website you agree to our{" "}
           <Link href="/terms" onClick={dismiss}>
@@ -9533,11 +9542,11 @@ function BetaDisclaimer() {
           </Link>
           .
         </p>
-        <button className="beta-modal-btn" onClick={dismiss}>
+        <Button onClick={dismiss} className="w-full">
           I Understand
-        </button>
-      </div>
-    </div>
+        </Button>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -11889,37 +11898,28 @@ function CompareFromUrl({ param }: { param: string }) {
 }
 
 function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const handler = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
   return (
-    <div className="spotlight-overlay" onClick={onClose}>
-      <div className="shortcuts-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-        <div className="shortcuts-header">
-          <strong>Keyboard Shortcuts</strong>
-          <button type="button" className="video-close-btn" onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <div className="shortcuts-body">
-          <table className="shortcuts-table">
-            <tbody>
-              <tr><td><kbd>{isMac ? "⌘K" : "Ctrl+K"}</kbd></td><td>Open command palette</td></tr>
-              <tr><td><kbd>/</kbd></td><td>Open command palette</td></tr>
-              <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
-              <tr><td><kbd>Esc</kbd></td><td>Close any overlay</td></tr>
-              <tr><td><kbd>G</kbd> then <kbd>H</kbd></td><td>Go to Home</td></tr>
-              <tr><td><kbd>G</kbd> then <kbd>E</kbd></td><td>Go to Events</td></tr>
-              <tr><td><kbd>G</kbd> then <kbd>T</kbd></td><td>Go to Teams</td></tr>
-              <tr><td><kbd>C</kbd> (on team page)</td><td>Toggle team in comparison tray</td></tr>
-              <tr><td><kbd>F</kbd> (on event page)</td><td>Search teams within the event</td></tr>
-              <tr><td><kbd>G</kbd> then <kbd>C</kbd></td><td>Open comparison modal</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Keyboard Shortcuts</DialogTitle>
+        </DialogHeader>
+        <table className="shortcuts-table">
+          <tbody>
+            <tr><td><kbd>{isMac ? "⌘K" : "Ctrl+K"}</kbd></td><td>Open command palette</td></tr>
+            <tr><td><kbd>/</kbd></td><td>Open command palette</td></tr>
+            <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Close any overlay</td></tr>
+            <tr><td><kbd>G</kbd> then <kbd>H</kbd></td><td>Go to Home</td></tr>
+            <tr><td><kbd>G</kbd> then <kbd>E</kbd></td><td>Go to Events</td></tr>
+            <tr><td><kbd>G</kbd> then <kbd>T</kbd></td><td>Go to Teams</td></tr>
+            <tr><td><kbd>C</kbd> (on team page)</td><td>Toggle team in comparison tray</td></tr>
+            <tr><td><kbd>F</kbd> (on event page)</td><td>Search teams within the event</td></tr>
+            <tr><td><kbd>G</kbd> then <kbd>C</kbd></td><td>Open comparison modal</td></tr>
+          </tbody>
+        </table>
+      </DialogContent>
+    </Dialog>
   );
 }
 
