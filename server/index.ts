@@ -77,5 +77,5 @@ if (process.env.NODE_ENV === "production") {
 }
 
 app.listen(port, () => {
-  console.log(`VEX Alliance running at http://localhost:${port}`);
+  console.log(`OpenScout running at http://localhost:${port}`);
 });

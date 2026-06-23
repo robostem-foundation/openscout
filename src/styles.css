@@ -270,35 +270,34 @@ button {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   min-height: 50px;
   margin-right: 18px;
-  color: var(--on-accent);
-  font-size: 18px;
-  font-weight: 500;
+  color: var(--topbar-text);
   white-space: nowrap;
 }
 
 .brand:hover,
 .brand:focus {
-  color: var(--on-accent);
+  color: var(--topbar-text);
   text-decoration: none;
 }
 
-.brand-mark {
-  display: inline-grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  background: var(--accent);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 3px;
-  color: var(--accent-ink);
+.brand-logo {
+  display: block;
+  box-sizing: border-box;
+  height: 34px;
+  width: 34px;
+  padding: 3px;
+  background: #fff;
+  border-radius: 8px;
 }
 
-.brand-mark svg {
-  width: 19px;
-  height: 19px;
+.brand-word {
+  font-family: "Geist", system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
 nav {
@@ -4091,10 +4090,22 @@ footer {
   text-align: center;
 }
 
+.footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.footer-copy {
+  white-space: nowrap;
+}
+
 .footer-links {
   display: inline-flex;
-  gap: 8px;
-  margin-top: 8px;
+  flex-wrap: wrap;
+  gap: 8px 14px;
 }
 
 @media (max-width: 900px) {
@@ -5118,6 +5129,9 @@ td.quick-look-col {
   border-radius: 8px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
   color: var(--text);
+  /* Reset the nowrap inherited from .auth-slot so the legal text wraps
+     instead of overflowing the panel. */
+  white-space: normal;
 }
 
 .auth-dropdown-title {
@@ -5146,6 +5160,19 @@ td.quick-look-col {
   color: var(--text-muted);
   font-size: 12px;
   text-align: center;
+}
+
+.auth-legal {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.auth-legal a {
+  color: inherit;
+  text-decoration: underline;
 }
 
 .auth-btn {
@@ -8267,6 +8294,11 @@ td.quick-look-col {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   margin-bottom: 0;
+  /* Contain the wide skills table here instead of letting it overflow the
+     page — page-level horizontal overflow shifts the fixed mobile tab bar
+     off-screen on iOS Safari. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .ws-table {
   width: 100%;
@@ -8367,5 +8399,440 @@ td.quick-look-col {
 @media (max-width: 768px) {
   .ws-toolbar-actions { margin-left: 0; }
   .ws-where-panel { gap: 8px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE — app-like bottom navigation + slim header + polish
+   Placed last so the single-row topbar overrides the ≤900px stacked layout.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Bottom tab bar is mobile-only; hidden on desktop. */
+.mobile-tabbar {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  /* ── Slim, sticky top header: brand + search + account (no inline nav) ── */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 80;
+    margin-bottom: 14px;
+  }
+  .topbar-inner {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    min-height: 54px;
+  }
+  /* Primary nav moves to the bottom tab bar on mobile. */
+  .topbar-inner > nav {
+    display: none;
+  }
+  .brand {
+    margin-right: 0;
+    min-height: 54px;
+  }
+  .global-search-wrap.topbar-search {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    margin: 0 0 0 auto;
+  }
+  /* Bigger primary search: comfortable tap target, prevents iOS focus-zoom.
+     min-width:0 lets the input shrink in the flex row instead of shoving the
+     account control off-screen. */
+  .topbar-search .global-search-input-row,
+  .topbar-search .global-search-input {
+    min-width: 0;
+  }
+  .topbar-search .global-search-input {
+    height: 38px;
+    font-size: 16px;
+  }
+
+  /* ── Bottom tab bar ── */
+  .mobile-tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 90;
+    display: flex;
+    align-items: stretch;
+    height: calc(58px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--topbar-bg);
+    border-top: 1px solid rgba(0, 0, 0, 0.45);
+    box-shadow: 0 -3px 14px rgba(0, 0, 0, 0.3);
+  }
+  .mobile-tab {
+    position: relative;
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding-top: 6px;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 11px;
+    font-weight: 500;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.15s ease;
+  }
+  .mobile-tab:hover,
+  .mobile-tab:focus {
+    color: rgba(255, 255, 255, 0.82);
+    text-decoration: none;
+  }
+  .mobile-tab.active {
+    color: #fff;
+  }
+  .mobile-tab-icon {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 26px;
+    border-radius: 999px;
+    transition: background 0.15s ease;
+  }
+  .mobile-tab.active .mobile-tab-icon {
+    background: rgba(255, 255, 255, 0.14);
+  }
+  .mobile-tab-label {
+    line-height: 1;
+  }
+  /* Branded accent on the active tab. */
+  .mobile-tab.active::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 26px;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+    background: linear-gradient(90deg, #a22fd6, #f0395b, #ff9d2e);
+  }
+
+  /* Reserve space so the fixed bar never hides the footer / last content. */
+  body {
+    padding-bottom: calc(58px + env(safe-area-inset-bottom));
+  }
+
+  /* Float the compare tray above the tab bar instead of behind it. */
+  .compare-tray {
+    bottom: calc(58px + env(safe-area-inset-bottom));
+  }
+
+  /* Smooth momentum scrolling for horizontally-scrollable table panels. */
+  .panel {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Larger touch targets for cramped inline controls. */
+  .picklist-row-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* Sign-in button collapses to an icon-only pill to save header width. */
+  .auth-signin-label {
+    display: none;
+  }
+  .auth-signin-btn {
+    gap: 0;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 50%;
+  }
+
+  /* Keep the account dropdown fully on-screen (it anchors to the far-right
+     button; cap width to the viewport so it never clips past the edge). */
+  .auth-dropdown {
+    width: min(300px, calc(100vw - 20px));
+    right: 0;
+  }
+
+  /* Keyboard shortcut hints are pointless on touch devices. */
+  .gs-kbd-hint,
+  .esc-hint {
+    display: none;
+  }
+
+  /* The home sign-in card is desktop-only; mobile users use the header
+     account button. */
+  .home-signin-card {
+    display: none;
+  }
+
+  /* Drop the events sidebar/inline filter-layout toggle on mobile. */
+  .event-filter-layout-toggle {
+    display: none;
+  }
+}
+
+/* ═══ Mobile: event tables become stacked cards (no horizontal scroll) ═══
+   Event name on its own line (2-line clamp), tags wrap below it, date sits at
+   the end of the tag row and wraps instead of truncating. */
+@media (max-width: 760px) {
+  .event-table {
+    min-width: 0;
+  }
+  .event-table thead {
+    display: none;
+  }
+  .event-table,
+  .event-table tbody,
+  .event-table tr,
+  .event-table td {
+    display: block;
+  }
+  .event-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 5px;
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .event-table td {
+    padding: 0;
+    border: none;
+  }
+  .event-table .event-name-cell {
+    flex-basis: 100%;
+  }
+  /* Keep all tag chips grouped on one line; date trails at the far right
+     (order:99 places it after the level/category chip in source order). */
+  .event-table .event-date-cell {
+    order: 99;
+  }
+  .event-table .event-name-link {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .event-table .event-sku-line {
+    font-size: 11px;
+    margin-top: 2px;
+  }
+  /* Date trails the tag row, right-aligned, wraps cleanly. */
+  .event-table .event-date-cell {
+    margin-left: auto;
+  }
+  .event-table .date-range {
+    max-width: none;
+    white-space: nowrap;
+    text-align: right;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+}
+
+/* ═══ Mobile: World Skills leaderboard becomes a compact dense list ═══
+   One row per team: rank · centered team# (linked) · score (accent) ·
+   auto/driver stacked small. Max scores, timestamps, name, region, country
+   hidden. Rows divided inside the bordered container. */
+@media (max-width: 760px) {
+  .ws-table-wrap {
+    overflow-x: visible;
+  }
+  .ws-table {
+    min-width: 0;
+  }
+  .ws-table thead {
+    display: none;
+  }
+  .ws-table,
+  .ws-table tbody,
+  .ws-table tr {
+    display: block;
+  }
+  .ws-table .ws-hide-mobile,
+  .ws-table .ws-m-name {
+    display: none;
+  }
+  .ws-table tr {
+    display: grid;
+    grid-template-columns: 36px 1fr auto 34px;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 0;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .ws-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .ws-table td {
+    padding: 0;
+    border: 0;
+  }
+  .ws-m-rank {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  .ws-m-rank::before {
+    content: "#";
+    opacity: 0.55;
+  }
+  .ws-m-rank strong {
+    font-weight: 500;
+  }
+  .ws-m-team {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    text-align: center;
+    font-size: 16px;
+  }
+  .ws-m-team a {
+    color: var(--text);
+    font-weight: 600;
+  }
+  /* Score: prominent, accent-coloured, spans both rows. */
+  .ws-m-stat[data-label="Score"] {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    justify-self: end;
+    min-width: 40px;
+    text-align: right;
+  }
+  .ws-m-stat[data-label="Score"] strong {
+    color: var(--link);
+    font-size: 18px;
+    font-weight: 700;
+  }
+  /* Auto over Driver, small and muted, stacked in the last column. */
+  .ws-m-stat[data-label="Auto"],
+  .ws-m-stat[data-label="Driver"] {
+    grid-column: 4;
+    justify-self: end;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  .ws-m-stat[data-label="Auto"] {
+    grid-row: 1;
+    align-self: end;
+  }
+  .ws-m-stat[data-label="Driver"] {
+    grid-row: 2;
+    align-self: start;
+  }
+  .ws-m-stat[data-label="Auto"] strong,
+  .ws-m-stat[data-label="Driver"] strong {
+    font-weight: 500;
+  }
+}
+
+/* ═══ Mobile: selection menus open straight down under their trigger ═══
+   The base picker menu already opens downward; only the event-filter sidebar
+   variant opens up-and-to-the-side (to fit the desktop rail), so flip just that
+   one down. Keep a comfortable width so option labels aren't truncated. */
+@media (max-width: 760px) {
+  .event-filter-sidebar .picker-menu {
+    display: block;
+  }
+  .event-filter-sidebar .picker-menu-list {
+    top: calc(100% + 4px);
+    bottom: auto;
+    left: 0;
+    right: 0;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    margin-top: 0;
+  }
+  .ws-filter-dropdown {
+    max-width: calc(100vw - 24px);
+  }
+}
+
+/* Very small screens: drop the wordmark (logo chip carries the brand) and
+   tighten oversized headings so they don't dominate the viewport. */
+@media (max-width: 430px) {
+  .brand-word {
+    display: none;
+  }
+  .hero h2,
+  .page-title h1,
+  .profile-header h1 {
+    font-size: 22px;
+  }
+  .home-greeting {
+    font-size: 23px;
+  }
+}
+
+/* Onboarding / profile modal: stack the name·team·program grid and trim
+   padding so inputs aren't crushed on phones. */
+@media (max-width: 480px) {
+  .onboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .auth-modal {
+    padding: 22px 18px 18px;
+  }
+  .beta-modal {
+    padding: 28px 20px 22px;
+  }
+}
+
+/* Events filters: on desktop the toggle is hidden and filters always show.
+   On mobile the sidebar (which sits above the list) collapses to a tappable
+   "Filters" bar so results are visible immediately. */
+.event-filter-mobile-toggle {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .event-filter-sidebar-title {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 0;
+  }
+  .event-filter-title-text {
+    display: none;
+  }
+  .event-filter-mobile-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .event-filter-mobile-toggle .event-filter-chevron {
+    margin-left: auto;
+    transition: transform 0.18s ease;
+  }
+  .event-filter-sidebar.mobile-open .event-filter-chevron {
+    transform: rotate(180deg);
+  }
+  /* Collapsed: hide the filter controls and the reset link until opened. */
+  .event-filter-sidebar:not(.mobile-open) .event-filter-body,
+  .event-filter-sidebar:not(.mobile-open) .reset-filters-btn {
+    display: none;
+  }
+  .event-filter-sidebar.mobile-open .event-filter-body {
+    margin-top: 12px;
+  }
 }
 

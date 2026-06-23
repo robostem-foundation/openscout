@@ -3,6 +3,7 @@ import {
   Award as AwardIcon,
   BarChart3,
   CalendarDays,
+  House,
   Check,
   ChevronDown,
   Download,
@@ -96,6 +97,9 @@ const today = new Date();
 const oneDay = 24 * 60 * 60 * 1000;
 const vexProgramIds = [1, 4, 41, 57];
 const teamCacheRefreshMs = 24 * 60 * 60 * 1000;
+// How often to re-poll match/ranking/skills data while an event is live.
+// Matches the proxy's ~60s upstream cache, so faster would just return cached bytes.
+const liveEventRefreshMs = 30 * 1000;
 const globalEventSearchCacheMs = 5 * 60 * 1000;
 type EventCategory = "Worlds" | "Signature" | "Championship" | "Other";
 type EventSort = "smart" | "date" | "type" | "name" | "program" | "location" | "past-season";
@@ -391,10 +395,19 @@ function CloseButton({ onClose, label = "Close" }: { onClose: () => void; label?
 // `delayMs` defers the loader so lower-priority requests don't all fire at once
 // on mount — keeps `loading` true while waiting so callers don't flash an empty
 // state. Used to stagger an event page's many parallel fetches.
-function useAsync<T>(loader: () => Promise<T>, deps: unknown[], delayMs = 0) {
+// `refetchMs > 0` enables silent background polling: data is re-fetched on an
+// interval without toggling `loading` or clearing the current data, so live
+// events update in place. Polling pauses while the tab is hidden.
+function useAsync<T>(loader: () => Promise<T>, deps: unknown[], delayMs = 0, refetchMs = 0) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Keep the latest closure (captures current id/division) so the polling effect
+  // can call it without restarting on every render.
+  const loaderRef = useRef(loader);
+  useEffect(() => {
+    loaderRef.current = loader;
+  });
 
   useEffect(() => {
     let live = true;
@@ -423,6 +436,26 @@ function useAsync<T>(loader: () => Promise<T>, deps: unknown[], delayMs = 0) {
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, deps);
+
+  // Silent background polling — never flips `loading`, keeps the last good data
+  // on error, and skips ticks while the tab is hidden to save requests/battery.
+  useEffect(() => {
+    if (refetchMs <= 0) return;
+    let active = true;
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      loaderRef.current()
+        .then((value) => {
+          if (active) setData(value);
+        })
+        .catch(() => {});
+    };
+    const interval = window.setInterval(tick, refetchMs);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [refetchMs, ...deps]);
 
   return { data, error, loading };
 }
@@ -803,6 +836,24 @@ function formatEventDateRange(start?: string | null, end?: string | null) {
   return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
 }
 
+// Compact range that collapses the shared month/year, e.g. "Apr 20-23, 2026",
+// "Aug 30 - Sep 2, 2026", or "Dec 30, 2026 - Jan 2, 2027".
+function formatEventDateRangeShort(start?: string | null, end?: string | null) {
+  if (!start) return formatEventDateRange(start, end);
+  const fmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const parts = (d: Date) => {
+    const p = fmt.formatToParts(d);
+    const get = (t: string) => p.find((x) => x.type === t)?.value ?? "";
+    return { mo: get("month"), day: get("day"), yr: get("year") };
+  };
+  const s = parts(new Date(start));
+  const e = parts(new Date(end ?? start));
+  if (s.mo === e.mo && s.yr === e.yr && s.day === e.day) return `${s.mo} ${s.day}, ${s.yr}`;
+  if (s.mo === e.mo && s.yr === e.yr) return `${s.mo} ${s.day}-${e.day}, ${s.yr}`;
+  if (s.yr === e.yr) return `${s.mo} ${s.day} - ${e.mo} ${e.day}, ${s.yr}`;
+  return `${s.mo} ${s.day}, ${s.yr} - ${e.mo} ${e.day}, ${e.yr}`;
+}
+
 function formatNumber(value?: number | null, digits = 1) {
   if (value === undefined || value === null || Number.isNaN(value)) return "-";
   return value.toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -865,6 +916,12 @@ function eventDistance(event: Event) {
   const now = today.getTime();
   if (start <= now && now <= end + oneDay) return 0;
   return Math.min(Math.abs(start - now), Math.abs(end - now));
+}
+
+// True while an event is running today (within its date window). Used to gate
+// live background polling so finished/future events never poll.
+function eventIsLive(event: Event) {
+  return eventDistance(event) === 0;
 }
 
 function compareEvents(a: Event, b: Event, sort: EventSort) {
@@ -2064,13 +2121,41 @@ function PicklistTab({ event, orgId }: { event: { id: number; name: string }; or
   );
 }
 
+// App-like bottom navigation, shown only on mobile (see .mobile-tabbar in CSS).
+// Mirrors the primary desktop nav so phone users always have one-tap access to
+// the core sections without the topbar links.
+function MobileTabBar({ path }: { path: string }) {
+  const tabs: Array<{ href: string; label: string; Icon: typeof House; active: boolean }> = [
+    { href: "/", label: "Home", Icon: House, active: path === "/" },
+    { href: "/events", label: "Events", Icon: CalendarDays, active: path === "/events" || path.startsWith("/event") },
+    { href: "/teams", label: "Teams", Icon: Users, active: path === "/teams" || path.startsWith("/team") },
+    { href: "/skills", label: "Skills", Icon: Trophy, active: path === "/skills" },
+  ];
+  return (
+    <nav className="mobile-tabbar" aria-label="Primary">
+      {tabs.map(({ href, label, Icon, active }) => (
+        <Link
+          key={href}
+          href={href}
+          className={`mobile-tab ${active ? "active" : ""}`}
+          aria-current={active ? "page" : undefined}
+        >
+          <span className="mobile-tab-icon">
+            <Icon size={22} strokeWidth={active ? 2.4 : 2} />
+          </span>
+          <span className="mobile-tab-label">{label}</span>
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
 function Layout({ children, path }: { children: ReactNode; path: string }) {
   const nav = [
-    ["/", "stemScout"],
+    ["/", "OpenScout"],
     ["/events", "Events"],
     ["/teams", "Teams"],
     ["/skills", "Skills"],
-    ["/insights", "Insights"],
   ];
 
   return (
@@ -2078,10 +2163,8 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
       <header className="topbar">
         <div className="topbar-inner">
           <Link href="/" className="brand">
-            <span className="brand-mark">
-              <Shield size={25} />
-            </span>
-            <span>stemScout</span>
+            <img className="brand-logo" src="/openscout-mark-tight.png" alt="" />
+            <span className="brand-word">OpenScout</span>
           </Link>
           <nav>
             {nav.slice(1).map(([href, label]) => (
@@ -2096,15 +2179,18 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
       </header>
       <main>{children}</main>
       <footer>
-        <div>Event data from RobotEvents. Team stats and SuperScore from RoboStem DB.</div>
-        <div className="footer-links">
-          <Link href="/events">Events</Link>
-          <Link href="/teams">Teams</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/insights">Insights</Link>
-          <Link href="/terms">Terms</Link>
+        <div className="footer-row">
+          <span className="footer-copy">© 2026 RoboSTEM Foundation, All Rights Reserved.</span>
+          <div className="footer-links">
+            <Link href="/events">Events</Link>
+            <Link href="/teams">Teams</Link>
+            <Link href="/skills">Skills</Link>
+            <Link href="/terms">Terms</Link>
+            <Link href="/privacy">Privacy</Link>
+          </div>
         </div>
       </footer>
+      <MobileTabBar path={path} />
     </>
   );
 }
@@ -2439,23 +2525,24 @@ function Home() {
               <Users size={16} />
               Teams
             </Link>
-            <Link href="/insights" className="home-hero-btn home-hero-btn-icon" aria-label="Insights" title="Insights">
-              <BarChart3 size={16} />
-            </Link>
           </nav>
         </div>
       </section>
 
       <div className="home-dashboard">
         <aside className="home-sidebar">
-          <SignedOut>
-            <Panel title="Sign up / Log in" icon={<Star />}>
-              <div className="auth-card-body">
-                <p className="auth-card-copy">Sign in to sync your favorites and settings across devices.</p>
-                <SignInButtons />
-              </div>
-            </Panel>
-          </SignedOut>
+          {/* Hidden on mobile (see .home-signin-card) — phone users sign in via
+              the header account button instead of a full-width card. */}
+          <div className="home-signin-card">
+            <SignedOut>
+              <Panel title="Sign up / Log in" icon={<Star />}>
+                <div className="auth-card-body">
+                  <p className="auth-card-copy">Sign in to sync your favorites and settings across devices.</p>
+                  <SignInButtons />
+                </div>
+              </Panel>
+            </SignedOut>
+          </div>
           <RecentlyViewedPanel />
           <FavoritesPanel />
           <OrgPanel />
@@ -2644,6 +2731,9 @@ function EventsPageInner() {
   const [sort, setSort] = useState<EventSort>(() => readEventFilters().sort ?? "smart");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [filterLayout, setFilterLayout] = useState<EventFilterLayout>(() => readEventFilters().filterLayout ?? "sidebar");
+  // Mobile-only: the filter sidebar collapses to a "Filters" toggle so results
+  // show first. Has no effect on desktop (the toggle is hidden via CSS).
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [selectedSeasonIds, setSelectedSeasonIds] = useState<number[]>(() => readEventFilters().selectedSeasonIds ?? []);
   const [seasonSelectionTouched, setSeasonSelectionTouched] = useState<boolean>(() => readEventFilters().seasonSelectionTouched ?? false);
   const [seasonMenuOpen, setSeasonMenuOpen] = useState(false);
@@ -3189,7 +3279,7 @@ function EventsPageInner() {
       <div className="events-title-row">
         <PageTitle icon={<CalendarDays />} title="Events" />
         <button
-          className="icon-button"
+          className="icon-button event-filter-layout-toggle"
           onClick={() => setFilterLayout((layout) => (layout === "sidebar" ? "inline" : "sidebar"))}
           aria-label={filterLayout === "sidebar" ? "Use compact filters" : "Use sidebar filters"}
           title={filterLayout === "sidebar" ? "Compact filters" : "Sidebar filters"}
@@ -3263,12 +3353,22 @@ function EventsPageInner() {
           )}
         </Panel>
         {filterLayout === "sidebar" && (
-          <aside className="event-filter-sidebar">
+          <aside className={`event-filter-sidebar ${mobileFiltersOpen ? "mobile-open" : ""}`}>
             <div className="event-filter-sidebar-title">
-              Filters
+              <button
+                type="button"
+                className="event-filter-mobile-toggle"
+                onClick={() => setMobileFiltersOpen((open) => !open)}
+                aria-expanded={mobileFiltersOpen}
+              >
+                <ListFilter size={15} />
+                <span>Filters</span>
+                <ChevronDown size={15} className="event-filter-chevron" />
+              </button>
+              <span className="event-filter-title-text">Filters</span>
               <button type="button" className="reset-filters-btn" onClick={resetFilters}>Reset to defaults</button>
             </div>
-            {filterControls}
+            <div className="event-filter-body">{filterControls}</div>
           </aside>
         )}
       </div>
@@ -3422,10 +3522,10 @@ function EventTable({
 }) {
   const showProgram = showProgramProp ?? !compact;
   const showLevel = !compact && !showPriority;
-  const columnCount = 3 + (showPriority ? 1 : 0) + (showProgram ? 1 : 0) + (showSeason ? 1 : 0) + (showLevel ? 1 : 0) + (showGrade ? 1 : 0);
+  const columnCount = 2 + (showPriority ? 1 : 0) + (showProgram ? 1 : 0) + (showSeason ? 1 : 0) + (showLevel ? 1 : 0) + (showGrade ? 1 : 0);
 
   return (
-    <table>
+    <table className="event-table">
       <thead>
         <tr>
           <th>Event</th>
@@ -3433,7 +3533,6 @@ function EventTable({
           {showProgram && <th>Program</th>}
           {showGrade && <th className="grade-col">Grade</th>}
           {showSeason && <th>Season</th>}
-          <th>Location</th>
           <th>
             {onDateSortToggle ? (
               <button type="button" className="sort-col-btn" onClick={onDateSortToggle}>
@@ -3472,9 +3571,8 @@ function EventTable({
                 </td>
               )}
               {showSeason && <td>{shortSeasonName(event.season.name)}</td>}
-              <td>{locationLine(event)}</td>
-              <td>
-                <span className="date-range">{formatEventDateRange(event.start, event.end)}</span>
+              <td className="event-date-cell">
+                <span className="date-range">{formatEventDateRangeShort(event.start, event.end)}</span>
               </td>
               {showLevel && (
                 <td>
@@ -4242,6 +4340,9 @@ function EventDetail({ param }: { param: string }) {
   const id = event ? String(event.id) : "";
   const divisions = useMemo(() => [...(event?.divisions ?? [])].sort((a, b) => (a.order ?? a.id) - (b.order ?? b.id)), [event]);
   const division = selectedDivision ?? divisions[0]?.id ?? 1;
+  // While the event is live, silently re-poll the data that changes during
+  // competition (matches, rankings, skills, awards) so it updates without a reload.
+  const liveRefresh = event && eventIsLive(event) ? liveEventRefreshMs : 0;
   // Staggered fetch priority to avoid a thundering herd (and 429s) on mount.
   // matches/teams (and the focus-team view below) load immediately; everything
   // else is deferred in ~0.5s tiers so the API isn't hit with ~8 parallel
@@ -4252,6 +4353,8 @@ function EventDetail({ param }: { param: string }) {
       return collectAllPages<Match>((page) => api.eventMatches(id, division, { per_page: 250, page }));
     },
     [id, division, event?.id],
+    0,
+    liveRefresh,
   );
   const teams = useAsync(
     async () => {
@@ -4267,6 +4370,7 @@ function EventDetail({ param }: { param: string }) {
     },
     [id, division, event?.id],
     500,
+    liveRefresh,
   );
   const awards = useAsync(
     async () => {
@@ -4275,6 +4379,7 @@ function EventDetail({ param }: { param: string }) {
     },
     [id, event?.id],
     500,
+    liveRefresh,
   );
   const skills = useAsync(
     async () => {
@@ -4283,6 +4388,7 @@ function EventDetail({ param }: { param: string }) {
     },
     [id, event?.id],
     1000,
+    liveRefresh,
   );
   // For multi-division events: load rankings for every division in parallel so we
   // can map each team to its division on the Teams tab.
@@ -4323,6 +4429,8 @@ function EventDetail({ param }: { param: string }) {
       return collectAllPages<Match>((page) => api.teamMatches(focusTeam.id, { "event[]": [Number(id)], per_page: 250, page }));
     },
     [focusTeam?.id, id, event?.id],
+    0,
+    liveRefresh,
   );
 
   const eventInfo = useAsync(
@@ -9244,18 +9352,18 @@ function WorldSkillsPageInner() {
               ) : (
                 visibleRows.map((r, i) => (
                   <tr key={r.team.id}>
-                    <td className="ws-col-num">{(page - 1) * PAGE_SIZE + i + 1}</td>
-                    <td><strong>{r.rank}</strong></td>
-                    <td><strong>{r.scores.score}</strong></td>
-                    <td><strong>{r.scores.programming}</strong></td>
-                    <td><strong>{r.scores.driver}</strong></td>
-                    <td className="ws-max-auto">{r.scores.maxProgramming ?? "—"}</td>
-                    <td className="ws-max-driver">{r.scores.maxDriver ?? "—"}</td>
-                    <td className="ws-muted-cell ws-tip-cell" data-tip={formatSkillsDate(r.scores.progScoredAt, useUtc)}><span className="ws-cell-inner">{renderSkillsDate(r.scores.progScoredAt, useUtc)}</span></td>
-                    <td className="ws-muted-cell ws-tip-cell" data-tip={formatSkillsDate(r.scores.driverScoredAt, useUtc)}><span className="ws-cell-inner">{renderSkillsDate(r.scores.driverScoredAt, useUtc)}</span></td>
-                    <td className="ws-muted-cell">{r.scores.progStopTime ?? "—"}</td>
-                    <td className="ws-muted-cell">{r.scores.driverStopTime ?? "—"}</td>
-                    <td>
+                    <td className="ws-col-num ws-hide-mobile">{(page - 1) * PAGE_SIZE + i + 1}</td>
+                    <td className="ws-m-rank"><strong>{r.rank}</strong></td>
+                    <td className="ws-m-stat" data-label="Score"><strong>{r.scores.score}</strong></td>
+                    <td className="ws-m-stat" data-label="Auto"><strong>{r.scores.programming}</strong></td>
+                    <td className="ws-m-stat" data-label="Driver"><strong>{r.scores.driver}</strong></td>
+                    <td className="ws-max-auto ws-hide-mobile">{r.scores.maxProgramming ?? "—"}</td>
+                    <td className="ws-max-driver ws-hide-mobile">{r.scores.maxDriver ?? "—"}</td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={formatSkillsDate(r.scores.progScoredAt, useUtc)}><span className="ws-cell-inner">{renderSkillsDate(r.scores.progScoredAt, useUtc)}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={formatSkillsDate(r.scores.driverScoredAt, useUtc)}><span className="ws-cell-inner">{renderSkillsDate(r.scores.driverScoredAt, useUtc)}</span></td>
+                    <td className="ws-muted-cell ws-hide-mobile">{r.scores.progStopTime ?? "—"}</td>
+                    <td className="ws-muted-cell ws-hide-mobile">{r.scores.driverStopTime ?? "—"}</td>
+                    <td className="ws-m-team">
                       <CompareTeamLink
                         teamId={r.team.id}
                         teamNumber={r.team.team}
@@ -9263,10 +9371,10 @@ function WorldSkillsPageInner() {
                         teamName={r.team.teamName ?? undefined}
                       />
                     </td>
-                    <td className="ws-text-cell ws-tip-cell" data-tip={r.team.teamName ?? "—"}><span className="ws-cell-inner">{r.team.teamName ?? "—"}</span></td>
-                    <td className="ws-muted-cell ws-tip-cell" data-tip={r.team.organization ?? "—"}><span className="ws-cell-inner">{r.team.organization ?? "—"}</span></td>
-                    <td className="ws-muted-cell ws-tip-cell" data-tip={r.team.eventRegion ?? "—"}><span className="ws-cell-inner">{r.team.eventRegion ?? "—"}</span></td>
-                    <td className="ws-muted-cell ws-tip-cell" data-tip={r.team.country ?? "—"}><span className="ws-cell-inner">{r.team.country ?? "—"}</span></td>
+                    <td className="ws-text-cell ws-tip-cell ws-m-name" data-tip={r.team.teamName ?? "—"}><span className="ws-cell-inner">{r.team.teamName ?? "—"}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.organization ?? "—"}><span className="ws-cell-inner">{r.team.organization ?? "—"}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.eventRegion ?? "—"}><span className="ws-cell-inner">{r.team.eventRegion ?? "—"}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.country ?? "—"}><span className="ws-cell-inner">{r.team.country ?? "—"}</span></td>
                   </tr>
                 ))
               )}
@@ -9346,7 +9454,7 @@ function InsightsPage() {
 function NotFound() {
   return (
     <section className="page">
-      <PageTitle icon={<ExternalLink />} title="Page Not Found" subtitle="That stemScout route does not exist yet." />
+      <PageTitle icon={<ExternalLink />} title="Page Not Found" subtitle="That OpenScout route does not exist yet." />
       <Link href="/" className="button-link">
         Go home
       </Link>
@@ -9374,15 +9482,19 @@ function BetaDisclaimer() {
         <div className="beta-modal-icon">🔒</div>
         <h2 className="beta-modal-title">Internal Preview</h2>
         <p className="beta-modal-body">
-          This is an internal, unreleased version of stemScout. Everything is subject to change — features, data, and
+          This is an internal, unreleased version of OpenScout. Everything is subject to change — features, data, and
           design may be incomplete or inaccurate.
         </p>
         <p className="beta-modal-legal">
           By continuing to use this website you agree to our{" "}
           <Link href="/terms" onClick={dismiss}>
-            Terms &amp; Conditions
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link href="/privacy" onClick={dismiss}>
+            Privacy Policy
           </Link>
-          , including the confidentiality provisions that apply to this preview.
+          .
         </p>
         <button className="beta-modal-btn" onClick={dismiss}>
           I Understand
@@ -9393,89 +9505,231 @@ function BetaDisclaimer() {
 }
 
 // ---------------------------------------------------------------------------
-// Terms & Conditions page
+// Terms of Service page
 // ---------------------------------------------------------------------------
 
 function TermsPage() {
   return (
     <section className="page terms-page">
-      <PageTitle icon={<Shield />} title="Terms & Conditions" subtitle="Last updated: May 2026" />
+      <PageTitle icon={<Shield />} title="Terms of Service" subtitle="Last updated: June 2026" />
       <div className="terms-body">
-        <h3>1. About stemScout</h3>
+        <h3>1. Acceptance of these terms</h3>
         <p>
-          stemScout is a web-based scouting and analytics tool for VEX Robotics events, operated by Alexander Deng
-          ("we", "us"). It is currently an internal preview and has not been publicly released.
+          OpenScout ("OpenScout", the "Service") is a web-based scouting and analytics tool for VEX Robotics events,
+          provided by RoboSTEM Foundation, Inc. (legal name ROBOSTEM FOUNDATION INC), a 501(c)(3) nonprofit organization
+          registered in California ("RoboSTEM Foundation", "we", "us", or "our"). By accessing or using the Service, you
+          agree to be bound by these Terms of Service. If you do not agree, do not use the Service.
         </p>
 
-        <h3>2. Eligibility</h3>
+        <h3>2. Eligibility &amp; age requirement</h3>
         <p>
-          You must be at least 13 years old to use stemScout. By accessing this site you confirm that you meet this
-          requirement. Users under 18 should have parental or guardian consent.
+          The Service is not directed to children and you must be at least 13 years old to use it or to create an
+          account. By using OpenScout you represent that you are 13 or older. If you are under 18, you may use the
+          Service only with the involvement and consent of a parent or legal guardian. We do not knowingly collect
+          personal information from anyone under 13; see our{" "}
+          <Link href="/privacy">Privacy Policy</Link> for details.
         </p>
 
-        <h3>3. Confidentiality (Preview Users)</h3>
+        <h3>3. Accounts</h3>
         <p>
-          <strong>
-            Access to this unreleased preview version of stemScout is by explicit invitation only. If you have been
-            granted access, you agree to the following:
-          </strong>
+          You may sign in using a third-party provider (such as Google or Discord). You are responsible for activity
+          that occurs under your account and for keeping your login credentials with those providers secure. Provide
+          accurate information and keep it up to date. You may delete your account at any time by contacting us.
         </p>
-        <ul>
-          <li>
-            You will <strong>not</strong> share, demonstrate, screenshot, screen-record, or otherwise disclose any
-            features, functionality, data, or existence of stemScout to any person who has not been explicitly
-            authorized to access it by Alexander Deng.
-          </li>
-          <li>
-            You will <strong>not</strong> post about stemScout on social media, Discord servers, forums, or any other
-            public or semi-public channel without prior written permission from Alexander Deng.
-          </li>
-          <li>
-            You understand that features shown in this preview are experimental and may change significantly or be
-            removed before any public release.
-          </li>
-          <li>
-            Violation of these confidentiality terms may result in immediate revocation of your access.
-          </li>
-        </ul>
 
-        <h3>4. Acceptable Use</h3>
+        <h3>4. Acceptable use</h3>
         <p>You agree not to:</p>
         <ul>
-          <li>Attempt to reverse-engineer, scrape, or overload the service or its upstream APIs.</li>
-          <li>Use stemScout for any unlawful purpose.</li>
-          <li>Attempt to gain unauthorized access to any systems connected to stemScout.</li>
+          <li>Reverse-engineer, scrape, overload, or disrupt the Service or its upstream data sources or APIs.</li>
+          <li>Use OpenScout for any unlawful, harmful, or abusive purpose, or to harass other users.</li>
+          <li>Attempt to gain unauthorized access to any account, system, or data connected to the Service.</li>
+          <li>Misrepresent your identity or another team's identity, or upload unlawful or infringing content.</li>
         </ul>
 
-        <h3>5. Data &amp; Privacy</h3>
+        <h3>5. Intellectual property</h3>
         <p>
-          stemScout displays publicly available VEX Robotics event and team data sourced from RobotEvents and the
-          RoboStem database. We store minimal data in your browser (localStorage / IndexedDB) to cache event listings
-          and your preferences. No personal data is sent to our servers at this time.
+          The Service, including its software, design, and branding, is owned by RoboSTEM Foundation and protected by
+          applicable intellectual-property laws. We grant you a limited, non-exclusive, non-transferable, revocable
+          license to use the Service for its intended purpose. You retain ownership of any notes or content you create;
+          by submitting it you grant us the rights needed to operate and provide the Service to you.
         </p>
 
-        <h3>6. No Warranty</h3>
+        <h3>6. Third-party data &amp; no affiliation</h3>
         <p>
-          stemScout is provided "as is" without warranties of any kind. Data may be incomplete or inaccurate. We are
-          not affiliated with the Robotics Education &amp; Competition (REC) Foundation or VEX Robotics.
+          OpenScout displays publicly available VEX Robotics event and team data sourced from Events.vex.com and other
+          third-party databases. We do not control and are not responsible for that data, which may be incomplete or
+          inaccurate. OpenScout and RoboSTEM Foundation are independent and are not affiliated with, endorsed by, or
+          sponsored by VEX Robotics.
         </p>
 
-        <h3>7. Limitation of Liability</h3>
+        <h3>7. Privacy</h3>
         <p>
-          To the maximum extent permitted by applicable law, Alexander Deng shall not be liable for any indirect,
-          incidental, or consequential damages arising from your use of stemScout.
+          Your use of the Service is also governed by our <Link href="/privacy">Privacy Policy</Link>, which explains
+          what information we collect and how we handle it. By using OpenScout you acknowledge that you have read it.
         </p>
 
-        <h3>8. Changes to These Terms</h3>
+        <h3>8. Disclaimer of warranties</h3>
         <p>
-          These terms may be updated at any time. Continued use of stemScout after any change constitutes acceptance of
-          the updated terms.
+          The Service is provided "as is" and "as available" without warranties of any kind, whether express or
+          implied, including fitness for a particular purpose, accuracy, or non-infringement. We do not warrant that
+          the Service will be uninterrupted, error-free, or that any data shown is accurate or current.
         </p>
 
-        <h3>9. Contact</h3>
+        <h3>9. Limitation of liability</h3>
         <p>
-          Questions or concerns? Reach out to Alexander Deng directly via the channels through which you were granted
-          access.
+          To the maximum extent permitted by applicable law, RoboSTEM Foundation and its officers, directors,
+          volunteers, and agents shall not be liable for any indirect, incidental, special, consequential, or punitive
+          damages, or any loss of data, arising from or related to your use of the Service.
+        </p>
+
+        <h3>10. Termination</h3>
+        <p>
+          We may suspend or terminate your access to the Service at any time if you violate these Terms or to protect
+          the Service or its users. You may stop using the Service at any time.
+        </p>
+
+        <h3>11. Governing law</h3>
+        <p>
+          These Terms are governed by the laws of the State of California, United States, without regard to its
+          conflict-of-laws rules, except where superseded by mandatory consumer-protection laws of your country of
+          residence.
+        </p>
+
+        <h3>12. Changes to these terms</h3>
+        <p>
+          We may update these Terms from time to time. When we do, we will revise the "Last updated" date above.
+          Continued use of the Service after changes take effect constitutes acceptance of the updated Terms.
+        </p>
+
+        <h3>13. Contact</h3>
+        <p>
+          Questions about these Terms? Contact RoboSTEM Foundation, Inc. at{" "}
+          <a href="mailto:contact@robostem.org">contact@robostem.org</a>.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Privacy Policy page
+// ---------------------------------------------------------------------------
+
+function PrivacyPage() {
+  return (
+    <section className="page terms-page">
+      <PageTitle icon={<Shield />} title="Privacy Policy" subtitle="Last updated: June 2026" />
+      <div className="terms-body">
+        <h3>1. Who we are</h3>
+        <p>
+          OpenScout is operated by RoboSTEM Foundation, Inc. (legal name ROBOSTEM FOUNDATION INC), a 501(c)(3) nonprofit
+          organization registered in California ("RoboSTEM Foundation", "we", "us", or "our"), which is the data
+          controller for personal information processed through the Service. This policy explains what we collect, why,
+          and the rights you have. You can reach us about privacy at{" "}
+          <a href="mailto:contact@robostem.org">contact@robostem.org</a>.
+        </p>
+
+        <h3>2. Information we collect</h3>
+        <ul>
+          <li>
+            <strong>Account information.</strong> When you sign in with Google or Discord, we receive your name, email
+            address, profile picture, and a provider account identifier from that provider.
+          </li>
+          <li>
+            <strong>Profile information you provide.</strong> An optional display name, team number, competition
+            program, and appearance/theme preferences.
+          </li>
+          <li>
+            <strong>Content you create.</strong> Notes, favorites, and pick lists you save within the Service.
+          </li>
+          <li>
+            <strong>Usage &amp; device data.</strong> Aggregate, privacy-friendly analytics (for example via Vercel
+            Analytics) such as pages viewed and approximate, non-identifying device information.
+          </li>
+          <li>
+            <strong>Local storage.</strong> We cache event listings and your preferences in your browser
+            (localStorage / IndexedDB) so the app loads faster. This stays on your device.
+          </li>
+        </ul>
+
+        <h3>3. How we use your information</h3>
+        <ul>
+          <li>To provide, maintain, and personalize the Service and your account.</li>
+          <li>To save your preferences, notes, and team data across devices.</li>
+          <li>To understand usage in aggregate so we can improve and secure the Service.</li>
+          <li>To communicate with you about your account or important changes.</li>
+        </ul>
+
+        <h3>4. Legal bases for processing (GDPR)</h3>
+        <p>
+          If you are in the European Economic Area or the United Kingdom, we process your personal data under the
+          following legal bases: <strong>performance of a contract</strong> (to provide the Service you request),{" "}
+          <strong>your consent</strong> (which you may withdraw at any time), and our{" "}
+          <strong>legitimate interests</strong> (to keep the Service secure and to improve it), balanced against your
+          rights.
+        </p>
+
+        <h3>5. Children's privacy (COPPA)</h3>
+        <p>
+          The Service is not intended for and is not directed to children under 13, and we do not knowingly collect
+          personal information from anyone under 13. If you believe a child under 13 has provided us with personal
+          information, please contact us at <a href="mailto:contact@robostem.org">contact@robostem.org</a> and we will delete
+          it promptly.
+        </p>
+
+        <h3>6. How we share information</h3>
+        <p>
+          We do not sell your personal information. We share it only with service providers who process data on our
+          behalf to operate the Service, including our hosting and database provider (Supabase), our hosting and
+          analytics platform (Vercel), and the authentication providers you choose to sign in with (Google, Discord).
+          We may also disclose information if required by law or to protect the rights and safety of our users.
+        </p>
+
+        <h3>7. International data transfers</h3>
+        <p>
+          We are based in the United States and our service providers may process data in the United States and other
+          countries. Where we transfer personal data out of the EEA or UK, we rely on appropriate safeguards such as
+          Standard Contractual Clauses.
+        </p>
+
+        <h3>8. Data retention</h3>
+        <p>
+          We keep your account and profile information for as long as your account is active. If you delete your account
+          or ask us to delete your data, we will remove it within a reasonable period, except where we must retain it to
+          comply with legal obligations.
+        </p>
+
+        <h3>9. Your rights</h3>
+        <p>
+          Depending on where you live, you may have the right to access, correct, delete, or export your personal data,
+          to object to or restrict certain processing, and to withdraw consent. Residents of the EEA/UK may also lodge a
+          complaint with their local data-protection authority; California residents have rights under the CCPA/CPRA,
+          including the right to know and to delete. To exercise any of these rights, email us at{" "}
+          <a href="mailto:contact@robostem.org">contact@robostem.org</a>.
+        </p>
+
+        <h3>10. Security</h3>
+        <p>
+          We use reasonable technical and organizational measures to protect your information. No method of transmission
+          or storage is completely secure, so we cannot guarantee absolute security.
+        </p>
+
+        <h3>11. Cookies &amp; local storage</h3>
+        <p>
+          We use essential browser storage to keep you signed in and to remember your preferences, and privacy-friendly
+          analytics to measure usage. We do not use advertising cookies.
+        </p>
+
+        <h3>12. Changes to this policy</h3>
+        <p>
+          We may update this Privacy Policy from time to time. When we do, we will revise the "Last updated" date above
+          and, where appropriate, notify you within the Service.
+        </p>
+
+        <h3>13. Contact</h3>
+        <p>
+          Questions or requests about your privacy? Contact RoboSTEM Foundation, Inc. at{" "}
+          <a href="mailto:contact@robostem.org">contact@robostem.org</a>.
         </p>
       </div>
     </section>
@@ -9731,7 +9985,7 @@ function AppearanceSettings() {
         <h2 className="settings-card-title">Appearance</h2>
       </div>
       <div className="settings-card-body">
-        <p className="settings-section-copy">Choose how stemScout looks. Your pick syncs to your account.</p>
+        <p className="settings-section-copy">Choose how OpenScout looks. Your pick syncs to your account.</p>
         <div className="theme-picker">
           {SETTINGS_THEME_OPTIONS.map((option) => (
             <button
@@ -11685,6 +11939,7 @@ function route(path: string) {
   if (path === "/skills") return <WorldSkillsPage />;
   if (path === "/insights") return <InsightsPage />;
   if (path === "/terms") return <TermsPage />;
+  if (path === "/privacy") return <PrivacyPage />;
   const joinMatch = path.match(/^\/join\/([0-9a-f-]+)$/i);
   if (joinMatch) return <JoinOrgPage token={joinMatch[1]} />;
   const orgMatch = path.match(/^\/org\/([0-9a-f-]+)\/settings$/i);

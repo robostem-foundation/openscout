@@ -235,6 +235,13 @@ function GoogleLogo() {
 
 // The one reusable sign-in surface — used in the header dropdown and on the
 // home page. Drop it anywhere a sign-in prompt is needed.
+// SPA navigation that matches App's history-based router.
+function navTo(href: string) {
+  window.history.pushState(null, "", href);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 export function SignInButtons() {
   const { signInWithDiscord, signInWithGoogle, configured } = useAuth();
   if (!configured) return null;
@@ -250,6 +257,17 @@ export function SignInButtons() {
         Sign in with Google
       </button>
       <p className="auth-appearance-hint">Log in to change appearance!</p>
+      <p className="auth-legal">
+        By signing up you agree to our{" "}
+        <a href="/terms" onClick={(e) => { e.preventDefault(); navTo("/terms"); }}>
+          Terms of Service
+        </a>{" "}
+        and{" "}
+        <a href="/privacy" onClick={(e) => { e.preventDefault(); navTo("/privacy"); }}>
+          Privacy Policy
+        </a>
+        .
+      </p>
     </div>
   );
 }
@@ -313,9 +331,14 @@ export function AuthSlot() {
   if (!user) {
     return (
       <div className="auth-slot" ref={ref}>
-        <button type="button" className="auth-signin-btn" onClick={() => setOpen((value) => !value)}>
+        <button
+          type="button"
+          className="auth-signin-btn"
+          onClick={() => setOpen((value) => !value)}
+          aria-label="Sign up / Log in"
+        >
           <LogIn size={15} />
-          Sign up / Log in
+          <span className="auth-signin-label">Sign up / Log in</span>
         </button>
         {open && (
           <div className="auth-dropdown">
@@ -472,11 +495,11 @@ export function OnboardingModal() {
   return (
     <div className="auth-overlay" role="dialog" aria-modal="true" aria-label="Set up your profile">
       <div className="auth-modal onboard-modal">
-        <h2 className="onboard-title">{editing ? "Profile settings" : "Welcome to stemScout"}</h2>
+        <h2 className="onboard-title">{editing ? "Profile settings" : "Welcome to OpenScout"}</h2>
         <p className="onboard-sub">
           {editing
             ? "Update your details anytime. Everything here is optional."
-            : "Tell us a little about you. All optional, but your name and team help personalize stemScout."}
+            : "Tell us a little about you. All optional, but your name and team help personalize OpenScout."}
         </p>
 
         <div className="onboard-grid">

@@ -44,11 +44,15 @@ function upstreamHeaders(source: ProxySource, accept: string): Record<string, st
   return { Accept: "application/json" };
 }
 
+// Keep in sync with server/proxy.ts. `public` + `s-maxage` lets the Vercel edge
+// CDN serve every concurrent viewer of a live event from one cached upstream
+// response, so polling load on the shared API key does not scale with audience.
+// All proxied data is public; `max-age` keeps the browser fresh for 30s polls.
 const CACHE_CONTROL: Record<ProxySource, string> = {
-  rse: "private, max-age=45",
-  re: "private, max-age=60",
-  "re-root": "private, max-age=300",
-  jumper: "private, max-age=60",
+  rse: "public, max-age=15, s-maxage=30, stale-while-revalidate=120",
+  re: "public, max-age=15, s-maxage=30, stale-while-revalidate=120",
+  "re-root": "public, max-age=300, stale-while-revalidate=600",
+  jumper: "public, max-age=30, s-maxage=30, stale-while-revalidate=120",
 };
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
