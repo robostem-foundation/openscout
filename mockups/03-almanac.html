@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenScout · Almanac</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#f7f3ea; --surface:#fdfbf6; --surface-2:#f1ece0;
+    --text:#221d17; --text-2:#5c554a; --text-3:#928a7a;
+    --line:#e6dfcf; --line-2:#dbd3c1;
+    --ink:#9a3324; --ink-soft:#f2e6e1; --gold:#8a6a2f; --gold-soft:#f3ebd6;
+    --good:#3f6b3a; --bad:#a23b2b;
+    --rail:252px;
+    font-family:"Public Sans","SF Pro Display",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .num{font-variant-numeric:tabular-nums}
+  .serif{font-family:"Fraunces",serif}
+  a{color:inherit;text-decoration:none}
+  .app{display:grid;grid-template-columns:var(--rail) 1fr;min-height:100vh}
+
+  .rail{border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+  .brand{display:flex;align-items:center;gap:11px;padding:24px 22px 20px}
+  .brand .mark{width:30px;height:30px;border-radius:8px;background:var(--ink);color:#fdfbf6;display:grid;place-items:center;font-weight:600;font-size:16px;font-family:"Fraunces",serif}
+  .brand b{font-weight:600;font-size:18px;letter-spacing:-.02em;font-family:"Fraunces",serif}
+  .nav{padding:6px 14px;display:flex;flex-direction:column;gap:1px;flex:1}
+  .nav .lbl{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);padding:18px 12px 7px;font-weight:600}
+  .nav a{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;color:var(--text-2);font-weight:500;transition:background .12s,color .12s}
+  .nav a svg{width:18px;height:18px;stroke-width:1.8}
+  .nav a:hover{background:var(--surface-2);color:var(--text)}
+  .nav a.on{background:var(--ink-soft);color:var(--ink)}
+  .nav a .pill{margin-left:auto;font-size:11px;color:var(--text-3);font-weight:600}
+  .nav a.on .pill{color:var(--ink)}
+  .railfoot{padding:14px;border-top:1px solid var(--line)}
+  .acct{display:flex;align-items:center;gap:11px;padding:6px}
+  .av{width:32px;height:32px;border-radius:50%;background:var(--gold-soft);color:var(--gold);display:grid;place-items:center;font-weight:600;font-size:13px}
+  .acct small{display:block;color:var(--text-3);font-size:12px}
+
+  .main{display:flex;flex-direction:column;min-width:0}
+  .topbar{display:flex;align-items:center;gap:16px;padding:16px 36px;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(247,243,234,.88);backdrop-filter:blur(8px);z-index:5}
+  .crumb{font-size:13px;color:var(--text-3)} .crumb b{color:var(--text-2);font-weight:500}
+  .search{margin-left:auto;display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line-2);border-radius:7px;padding:8px 13px;color:var(--text-3);width:300px}
+  .search svg{width:15px;height:15px;stroke-width:1.9}
+  .search kbd{margin-left:auto;font-family:"Public Sans";font-size:11px;border:1px solid var(--line-2);border-radius:4px;padding:1px 6px;background:var(--surface-2)}
+  .iconbtn{width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--line-2);border-radius:7px;background:var(--surface);color:var(--text-2)}
+  .iconbtn svg{width:17px;height:17px;stroke-width:1.8}
+
+  .content{padding:30px 36px 48px;display:flex;flex-direction:column;gap:28px;max-width:1320px}
+  .ev{padding-bottom:24px;border-bottom:1px solid var(--line)}
+  .ev .kicker{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);font-weight:600;margin-bottom:8px}
+  .ev h1{font-family:"Fraunces",serif;font-size:38px;font-weight:500;letter-spacing:-.02em;line-height:1.08}
+  .ev .meta{display:flex;align-items:center;gap:18px;color:var(--text-2);font-size:13px;margin-top:14px;flex-wrap:wrap}
+  .ev .meta span{display:flex;align-items:center;gap:6px}
+  .ev .meta svg{width:14px;height:14px;stroke-width:1.8;color:var(--text-3)}
+  .ev .row{display:flex;align-items:flex-end;gap:20px}
+  .ev .right{margin-left:auto;display:flex;gap:10px;align-items:center}
+  .live{display:flex;align-items:center;gap:7px;color:var(--bad);font-weight:600;font-size:12px;letter-spacing:.04em;text-transform:uppercase}
+  .live .dot{width:7px;height:7px;border-radius:50%;background:var(--bad);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .sel{display:flex;align-items:center;gap:9px;border:1px solid var(--line-2);border-radius:7px;padding:9px 14px;background:var(--surface);font-weight:500;color:var(--text)}
+  .sel svg{width:15px;height:15px;stroke-width:1.9;color:var(--text-3)}
+
+  .stats{display:flex;gap:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden}
+  .stat{flex:1;padding:18px 22px;border-right:1px solid var(--line)}
+  .stat:last-child{border-right:0}
+  .stat .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);font-weight:600}
+  .stat .v{font-family:"Fraunces",serif;font-size:30px;font-weight:500;letter-spacing:-.01em;margin-top:6px}
+  .stat .v small{font-size:15px;color:var(--text-3)}
+
+  .grid{display:grid;grid-template-columns:1fr 354px;gap:36px;align-items:start}
+  .col{display:flex;flex-direction:column;gap:30px;min-width:0}
+  .sec .shead{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+  .sec h2{font-family:"Fraunces",serif;font-size:21px;font-weight:500;letter-spacing:-.01em}
+  .sec .sub{font-size:13px;color:var(--text-3)}
+  .sec .act{margin-left:auto;font-size:12px;color:var(--ink);font-weight:600}
+
+  table{width:100%;border-collapse:collapse}
+  thead th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);font-weight:600;text-align:right;padding:12px 12px;border-bottom:1.5px solid var(--text);white-space:nowrap}
+  thead th:first-child,thead th.l{text-align:left}
+  tbody td{padding:14px 12px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  tbody td.l{text-align:left}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:var(--surface-2)}
+  tbody tr.sel{background:var(--ink-soft)}
+  .rk{font-family:"Fraunces",serif;font-size:19px;font-weight:500;color:var(--text-2)}
+  .sel .rk,.rk.t1{color:var(--ink)}
+  .tm b{font-weight:600;font-size:14px} .tm small{color:var(--text-3);display:block;font-size:12px}
+  .rec b{color:var(--good)} .rec .s{color:var(--text-3)}
+  .trend{display:inline-flex;align-items:center;gap:3px;font-weight:500}
+  .trend.up{color:var(--good)} .trend.dn{color:var(--bad)}
+  .trend svg{width:13px;height:13px;stroke-width:2.4}
+  .addbtn{opacity:0;font-size:12px;color:var(--ink);font-weight:600;border:0;background:none;cursor:pointer}
+  tbody tr:hover .addbtn{opacity:1}
+
+  .card{border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden}
+  .card .ch{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:10px}
+  .card .ch h3{font-family:"Fraunces",serif;font-size:17px;font-weight:500}
+  .card .ch .sub{font-size:12px;color:var(--text-3)}
+  .card .ch .live{margin-left:auto}
+
+  .match{padding:18px}
+  .ally{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--line)}
+  .ally:last-of-type{border-bottom:0}
+  .ally .nm{font-family:"Fraunces",serif;font-size:15px;font-weight:600}
+  .ally.red .nm{color:var(--bad)} .ally.blue .nm{color:#1f5b8f}
+  .ally small{display:block;color:var(--text-2);font-size:12px;font-family:"Public Sans"}
+  .ally .sc{font-family:"Fraunces",serif;font-size:26px;font-weight:500}
+  .nextrow{padding-top:14px;font-size:12px;color:var(--text-2)} .nextrow .q{font-weight:600;color:var(--text)}
+
+  .skill{display:flex;align-items:center;gap:14px;padding:13px 18px;border-bottom:1px solid var(--line)}
+  .skill:last-child{border-bottom:0}
+  .skill .n{font-family:"Fraunces",serif;font-size:16px;color:var(--text-3);width:16px}
+  .skill .who{flex:1} .skill .who b{font-weight:600} .skill .who small{display:block;color:var(--text-3);font-size:11px}
+  .skill .sc{font-family:"Fraunces",serif;font-size:18px;font-weight:500}
+
+  .scout .top{padding:18px}
+  .scout .nm{display:flex;align-items:center;gap:13px}
+  .scout .badge{width:46px;height:46px;border-radius:10px;background:var(--ink);color:#fdfbf6;display:grid;place-items:center;font-weight:500;font-size:14px;font-family:"Fraunces",serif}
+  .scout .nm b{font-family:"Fraunces",serif;font-size:18px;font-weight:500} .scout .nm small{display:block;color:var(--text-3)}
+  .kpis{display:flex;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .kpi{flex:1;padding:14px 18px;border-right:1px solid var(--line)} .kpi:last-child{border-right:0}
+  .kpi .k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);font-weight:600} .kpi .v{font-family:"Fraunces",serif;font-size:22px;font-weight:500;margin-top:3px}
+  .srow{padding:15px 18px;border-bottom:1px solid var(--line)}
+  .srow .h{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);font-weight:600;margin-bottom:9px}
+  .form{display:flex;gap:6px}
+  .form .g{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;font-weight:600;font-size:11px;background:#eef3ec;color:var(--good)}
+  .awd{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text-2);margin-bottom:7px}
+  .awd svg{width:14px;height:14px;stroke-width:1.8;color:var(--gold)}
+  .actions{display:flex;gap:10px;padding:16px 18px}
+  .btn{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:10px;border-radius:7px;font-weight:600;font-size:13px;border:1px solid var(--line-2);background:var(--surface);color:var(--text)}
+  .btn svg{width:15px;height:15px;stroke-width:2}
+  .btn.pri{background:var(--ink);color:#fdfbf6;border-color:var(--ink)}
+
+  .fade{opacity:0;transform:translateY(10px);animation:rise .55s cubic-bezier(.16,1,.3,1) forwards}
+  @keyframes rise{to{opacity:1;transform:none}}
+  @media(max-width:1100px){.grid{grid-template-columns:1fr}.stats{flex-wrap:wrap}.stat{flex:1 1 40%}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><div class="mark">O</div><b>OpenScout</b></div>
+    <nav class="nav">
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Home</a>
+      <a href="#" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Events<span class="pill">live</span></a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0112 0M16 5.5a3 3 0 010 5M21 20a6 6 0 00-4-5.6"/></svg>Teams</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 4h10v4a5 5 0 01-10 0V4zM4 5h3M17 5h3M9 18h6M8 21h8"/></svg>Skills</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19V5M4 19h16M8 16v-5M13 16V8M18 16v-7"/></svg>Insights</a>
+      <div class="lbl">My team</div>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 5h9M9 12h9M9 19h9M4 5h.01M4 12h.01M4 19h.01"/></svg>Picklist<span class="pill">12</span></a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h7v12H4zM13 6h7v12h-7z"/></svg>Compare<span class="pill">2</span></a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 17.3l-5.4 3 1-6L3 10.1l6-.9L12 4l3 5.2 6 .9-4.6 4.2 1 6z"/></svg>Watchlist</a>
+    </nav>
+    <div class="railfoot"><div class="acct"><div class="av">AR</div><div><b style="font-weight:600">Alex · 2616J</b><small>Discobots</small></div></div></div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="crumb">Events <span>/</span> <b>NorCal Regional Championship</b></div>
+      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>Search teams, events, matches…<kbd>⌘K</kbd></div>
+      <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 8a6 6 0 10-12 0c0 7-3 8-3 8h18s-3-1-3-8M13.7 21a2 2 0 01-3.4 0"/></svg></div>
+    </div>
+
+    <div class="content">
+      <div class="ev fade">
+        <div class="kicker">V5RC · High School · Regional Championship</div>
+        <div class="row">
+          <h1>NorCal Regional Championship</h1>
+          <div class="right">
+            <div class="sel">Division: Science<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+        </div>
+        <div class="meta">
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>San Jose Convention Center, CA</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Jun 22–23, 2026</span>
+          <span class="live"><span class="dot"></span>Live · Qualifications</span>
+        </div>
+      </div>
+
+      <div class="stats fade" style="animation-delay:.05s">
+        <div class="stat"><div class="k">Teams</div><div class="v num">64</div></div>
+        <div class="stat"><div class="k">Qual matches</div><div class="v num">54<small> / 88</small></div></div>
+        <div class="stat"><div class="k">Divisions</div><div class="v num">2</div></div>
+        <div class="stat"><div class="k">Top seed</div><div class="v">2616J</div></div>
+        <div class="stat"><div class="k">High skills</div><div class="v num">187</div></div>
+      </div>
+
+      <div class="grid">
+        <div class="col">
+          <div class="sec fade" style="animation-delay:.1s">
+            <div class="shead"><h2>Rankings</h2><span class="sub">Science division</span><a class="act" href="#">Open full table</a></div>
+            <table>
+              <thead><tr><th class="l">Rank</th><th class="l">Team</th><th>W-L-T</th><th>WP</th><th>AP</th><th>OPR</th><th>AWP</th><th>Trend</th><th></th></tr></thead>
+              <tbody>
+                <tr class="sel"><td class="l"><span class="rk t1">1</span></td><td class="l"><div class="tm"><b>2616J</b><small>Discobots</small></div></td><td class="rec num"><b>8-0-0</b></td><td class="num">24</td><td class="num">142</td><td class="num">92.4</td><td class="num">7</td><td><span class="trend up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 15l6-6 6 6"/></svg>0</span></td><td><button class="addbtn">+ Pick</button></td></tr>
+                <tr><td class="l"><span class="rk">2</span></td><td class="l"><div class="tm"><b>1234A</b><small>Robo Eagles</small></div></td><td class="rec num"><b>7</b>-<span class="s">1</span>-0</td><td class="num">22</td><td class="num">138</td><td class="num">88.1</td><td class="num">6</td><td><span class="trend up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 15l6-6 6 6"/></svg>2</span></td><td><button class="addbtn">+ Pick</button></td></tr>
+                <tr><td class="l"><span class="rk">3</span></td><td class="l"><div class="tm"><b>99999X</b><small>Quantum</small></div></td><td class="rec num"><b>7</b>-<span class="s">1</span>-0</td><td class="num">21</td><td class="num">130</td><td class="num">85.6</td><td class="num">7</td><td><span class="trend dn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 9l6 6 6-6"/></svg>1</span></td><td><button class="addbtn">+ Pick</button></td></tr>
+                <tr><td class="l"><span class="rk">4</span></td><td class="l"><div class="tm"><b>4886B</b><small>Vortex</small></div></td><td class="rec num"><b>6</b>-<span class="s">2</span>-0</td><td class="num">19</td><td class="num">121</td><td class="num">79.3</td><td class="num">5</td><td><span class="trend up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 15l6-6 6 6"/></svg>1</span></td><td><button class="addbtn">+ Pick</button></td></tr>
+                <tr><td class="l"><span class="rk">5</span></td><td class="l"><div class="tm"><b>315R</b><small>Paradigm</small></div></td><td class="rec num"><b>6</b>-<span class="s">2</span>-0</td><td class="num">18</td><td class="num">118</td><td class="num">77.0</td><td class="num">6</td><td><span class="trend dn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 9l6 6 6-6"/></svg>2</span></td><td><button class="addbtn">+ Pick</button></td></tr>
+                <tr><td class="l"><span class="rk">6</span></td><td class="l"><div class="tm"><b>2855G</b><small>Gear Heads</small></div></td><td class="rec num"><b>5</b>-<span class="s">3</span>-0</td><td class="num">16</td><td class="num">109</td><td class="num">71.8</td><td class="num">4</td><td><span class="trend up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 15l6-6 6 6"/></svg>3</span></td><td><button class="addbtn">+ Pick</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="card fade" style="animation-delay:.12s">
+            <div class="ch"><h3>On the field</h3><span class="live"><span class="dot"></span>Q55</span></div>
+            <div class="match">
+              <div class="ally red"><div><div class="nm">Red</div><small>2616J · 8090A</small></div><div class="sc num">0</div></div>
+              <div class="ally blue"><div><div class="nm">Blue</div><small>1234A · 315R</small></div><div class="sc num">0</div></div>
+              <div class="nextrow">Up next — <span class="q">Q56</span>: 4886B 7700E vs 2855G 8090A</div>
+            </div>
+          </div>
+
+          <div class="card fade" style="animation-delay:.16s">
+            <div class="ch"><h3>Skills</h3><span class="sub">combined</span></div>
+            <div class="skill"><span class="n num">1</span><div class="who"><b>2616J</b><small>auto 78 · driver 109</small></div><div class="sc num">187</div></div>
+            <div class="skill"><span class="n num">2</span><div class="who"><b>99999X</b><small>auto 71 · driver 105</small></div><div class="sc num">176</div></div>
+            <div class="skill"><span class="n num">3</span><div class="who"><b>1234A</b><small>auto 69 · driver 102</small></div><div class="sc num">171</div></div>
+          </div>
+
+          <div class="card scout fade" style="animation-delay:.2s">
+            <div class="top"><div class="nm"><div class="badge">2616J</div><div><b>Discobots</b><small>San Jose, CA · World Skills #14</small></div></div></div>
+            <div class="kpis"><div class="kpi"><div class="k">OPR</div><div class="v num">92.4</div></div><div class="kpi"><div class="k">EPA</div><div class="v num">41.2</div></div><div class="kpi"><div class="k">AWP</div><div class="v num">7</div></div></div>
+            <div class="srow"><div class="h">Recent form</div><div class="form"><span class="g">W</span><span class="g">W</span><span class="g">W</span><span class="g">W</span><span class="g">W</span></div></div>
+            <div class="srow"><div class="h">Awards this season</div>
+              <div class="awd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 4h10v4a5 5 0 01-10 0V4zM4 5h3M17 5h3M9 18h6M8 21h8"/></svg>Tournament Champion ×2</div>
+              <div class="awd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 4h10v4a5 5 0 01-10 0V4zM4 5h3M17 5h3M9 18h6M8 21h8"/></svg>Excellence Award</div>
+            </div>
+            <div class="actions">
+              <button class="btn pri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>Add to picklist</button>
+              <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h7v12H4zM13 6h7v12h-7z"/></svg>Compare</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  document.querySelectorAll('tbody tr').forEach(function(tr){tr.addEventListener('click',function(){document.querySelectorAll('tbody tr').forEach(function(r){r.classList.remove('sel')});tr.classList.add('sel');});});
+</script>
+</body>
+</html>
