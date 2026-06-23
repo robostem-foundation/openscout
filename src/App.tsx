@@ -5357,8 +5357,10 @@ function StatCard({
   return (
     <div className="about-stat">
       <span className="about-stat-label">{label}</span>
-      <strong className="about-stat-value">{value}</strong>
-      {sub != null && <small className="about-stat-sub">{sub}</small>}
+      <div className="about-stat-figure">
+        <strong className="about-stat-value">{value}</strong>
+        {sub != null && <small className="about-stat-sub">{sub}</small>}
+      </div>
     </div>
   );
 }
@@ -5602,7 +5604,7 @@ function TeamAboutTab({
   const wsSub = worldSkills.loading
     ? "Loading leaderboard…"
     : wsEntry
-      ? `${wsEntry.scores.score} pts · ${grade}`
+      ? `${wsEntry.scores.score} pts`
       : worldSkills.error
         ? "Leaderboard unavailable"
         : "No ranked skills run";
@@ -5636,7 +5638,7 @@ function TeamAboutTab({
           accent="blue"
           icon={<Activity size={14} />}
           value={agg.bestCombined || "—"}
-          sub={agg.bestCombined ? `${agg.bestDriver} driver · ${agg.bestProg} auton` : "No skills runs"}
+          sub={agg.bestCombined ? `${agg.bestDriver} driver ${agg.bestProg} auton` : "No skills runs"}
         />
         <StatCard label="Events" accent="gray" icon={<CalendarDays size={14} />} value={agg.events || "—"} sub={seasonLabel} />
         {isIq ? (
