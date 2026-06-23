@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CornerDownLeft,
   ExternalLink,
   FilePlus2,
   Gamepad2,
@@ -63,7 +64,7 @@ import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogD
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
@@ -5147,6 +5148,7 @@ function starPoints(cx: number, cy: number, outer: number, inner: number) {
 function TrendChart({
   labels,
   tips,
+  links,
   series,
   markers,
   height = 160,
@@ -5157,6 +5159,7 @@ function TrendChart({
 }: {
   labels: string[];
   tips?: string[];
+  links?: Array<string | null>;
   series: ChartSeries[];
   markers?: boolean[];
   height?: number;
@@ -5181,7 +5184,10 @@ function TrendChart({
 
   // recharts wants flat row objects; use index-safe series keys (s0, s1, …) so
   // the generated --color-* CSS vars stay valid, with the display label, event
-  // tip, and marquee flag stashed alongside each row.
+  // tip, link, and marquee flag stashed alongside each row. The x-axis is keyed
+  // on a unique per-row `_key` (not the formatted month) so that two events in
+  // the same month don't collapse onto one category — which would desync the
+  // hover cursor from the active point.
   const config: ChartConfig = {};
   series.forEach((s, i) => {
     config[`s${i}`] = { label: s.name, color: s.color };
@@ -5189,8 +5195,10 @@ function TrendChart({
 
   const data = labels.map((label, i) => {
     const row: Record<string, number | string | boolean | null> = {
+      _key: String(i),
       _label: label,
       _tip: tips?.[i] ?? label,
+      _link: links?.[i] ?? null,
       _marquee: !!markers?.[i],
     };
     series.forEach((s, si) => {
@@ -5199,9 +5207,23 @@ function TrendChart({
     return row;
   });
 
+  const goToEvent = (index: number | string | undefined) => {
+    if (index == null) return;
+    const i = typeof index === "number" ? index : Number(index);
+    if (!Number.isFinite(i)) return;
+    const link = data[i]?._link;
+    if (typeof link === "string" && link) navigate(link);
+  };
+
   return (
     <ChartContainer config={config} className="w-full" style={{ height, aspectRatio: "auto" }}>
-      <AreaChart accessibilityLayer data={data} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
+      <AreaChart
+        accessibilityLayer
+        data={data}
+        margin={{ left: 4, right: 8, top: 8, bottom: 0 }}
+        onClick={(state) => goToEvent(state?.activeTooltipIndex ?? undefined)}
+        className="[&_.recharts-surface]:cursor-pointer"
+      >
         <defs>
           {series.map((_, i) => (
             <linearGradient key={i} id={`fill-${uid}-${i}`} x1="0" y1="0" x2="0" y2="1">
@@ -5211,26 +5233,55 @@ function TrendChart({
           ))}
         </defs>
         <CartesianGrid vertical={false} />
-        <XAxis dataKey="_label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={24} interval="preserveStartEnd" />
+        <XAxis
+          dataKey="_key"
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          minTickGap={24}
+          interval="preserveStartEnd"
+          tickFormatter={(v) => data[Number(v)]?._label as string ?? ""}
+        />
         <YAxis width={44} tickLine={false} axisLine={false} tickMargin={4} domain={[lo, hi]} tickFormatter={(v) => yFormat(Number(v))} />
         <ChartTooltip
           cursor={{ strokeDasharray: "3 3" }}
-          content={
-            <ChartTooltipContent
-              labelFormatter={(_, payload) => (payload?.[0]?.payload as { _tip?: string } | undefined)?._tip ?? ""}
-              formatter={(value, name, item) => (
-                <div className="flex w-full items-center justify-between gap-3">
-                  <span className="flex items-center gap-1.5">
-                    <span className="size-2 shrink-0 rounded-[2px]" style={{ background: item?.color as string }} />
-                    <span className="text-muted-foreground">{config[name as string]?.label ?? name}</span>
-                  </span>
-                  <span className="font-mono font-medium tabular-nums text-foreground">
-                    {value == null ? "—" : yFormat(Number(value))}
-                  </span>
+          content={(props) => {
+            const { active, payload } = props as unknown as {
+              active?: boolean;
+              payload?: ReadonlyArray<{
+                value?: number | null;
+                dataKey?: string;
+                color?: string;
+                name?: string;
+                payload?: { _tip?: string; _link?: string | null };
+              }>;
+            };
+            if (!active || !payload?.length) return null;
+            const row = payload[0]?.payload;
+            const rawTip = row?._tip ?? "";
+            const tip = rawTip.length > 20 ? `${rawTip.slice(0, 20).trimEnd()}…` : rawTip;
+            return (
+              <div className="grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+                <div className="font-medium">{tip}</div>
+                <div className="grid gap-1.5">
+                  {payload
+                    .filter((p) => p.value != null)
+                    .map((p) => (
+                      <div key={p.dataKey} className="flex w-full items-center justify-between gap-3">
+                        <span className="flex items-center gap-1.5">
+                          <span className="size-2 shrink-0 rounded-[2px]" style={{ background: p.color }} />
+                          <span className="text-muted-foreground">{config[p.dataKey as string]?.label ?? p.name}</span>
+                        </span>
+                        <span className="font-mono font-medium tabular-nums text-foreground">{yFormat(Number(p.value))}</span>
+                      </div>
+                    ))}
                 </div>
-              )}
-            />
-          }
+                <div className="mt-0.5 flex items-center gap-1 border-t border-border/50 pt-1 text-muted-foreground">
+                  <CornerDownLeft className="size-3" /> to see more
+                </div>
+              </div>
+            );
+          }}
         />
         {series.map((_, i) => (
           <Area
@@ -5436,6 +5487,8 @@ function TeamAboutTab({
         const finalsScore = finalsScores.length ? Math.max(...finalsScores) : 0;
         return {
           name: ev?.name ?? r?.event.name ?? `Event ${eventId}`,
+          id: eventId,
+          sku: ev?.sku ?? null,
           date: dateOf(eventId),
           marquee: isMarqueeEvent(ev),
           rank: r?.rank ?? 0,
@@ -5473,6 +5526,8 @@ function TeamAboutTab({
     return [...byEvent.entries()]
       .map(([eventId, v]) => ({
         name: eventIndex.get(eventId)?.name ?? `Event ${eventId}`,
+        id: eventId,
+        sku: eventIndex.get(eventId)?.sku ?? null,
         date: dateOf(eventId),
         marquee: isMarqueeEvent(eventIndex.get(eventId)),
         driver: v.driver,
@@ -5599,6 +5654,7 @@ function TeamAboutTab({
                   area
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => r.name)}
+                  links={rankRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "Win rate", color: "#337ab7", values: rankRows.map((r) => r.winRate * 100) }]}
                   markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
@@ -5623,6 +5679,7 @@ function TeamAboutTab({
                 <TrendChart
                   labels={skillRows.map((r) => shortMonthYear(r.date))}
                   tips={skillRows.map((r) => r.name)}
+                  links={skillRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[
                     { name: "Driver", color: "#337ab7", values: skillRows.map((r) => r.driver) },
                     { name: "Autonomous", color: "#8e44ad", values: skillRows.map((r) => r.prog) },
@@ -5641,6 +5698,7 @@ function TeamAboutTab({
                   area
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => r.name)}
+                  links={rankRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "Avg score", color: "#5cb85c", values: rankRows.map((r) => r.allQualAvg) }]}
                   markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
@@ -5657,6 +5715,7 @@ function TeamAboutTab({
                   area
                   labels={finalsRows.map((r) => shortMonthYear(r.date))}
                   tips={finalsRows.map((r) => r.name)}
+                  links={finalsRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "Finals score", color: "#f0ad4e", values: finalsRows.map((r) => r.finalsScore) }]}
                   markers={finalsRows.map((r) => r.marquee)}
                   yFloor={0}
@@ -5672,6 +5731,7 @@ function TeamAboutTab({
                 <TrendChart
                   labels={rankedRows.map((r) => shortMonthYear(r.date))}
                   tips={rankedRows.map((r) => `${r.name} — #${r.rank}`)}
+                  links={rankedRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "Qual rank", color: "#337ab7", values: rankedRows.map((r) => r.rank) }]}
                   markers={rankedRows.map((r) => r.marquee)}
                   yFloor={1}
@@ -5687,6 +5747,7 @@ function TeamAboutTab({
                 <TrendChart
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => r.name)}
+                  links={rankRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "Avg WP", color: "#f0ad4e", values: rankRows.map((r) => r.avgWp) }]}
                   markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
@@ -5703,6 +5764,7 @@ function TeamAboutTab({
                   area
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => `${r.name} — ${r.awp} AWP`)}
+                  links={rankRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "AWP", color: "#5cb85c", values: rankRows.map((r) => r.awp) }]}
                   markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
