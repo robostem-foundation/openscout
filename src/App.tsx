@@ -4800,9 +4800,9 @@ function formatEventDate(start: string | undefined, end: string | undefined): st
   }
 }
 
-function EventStatCard({ label, value }: { label: string; value: ReactNode }) {
+function EventStatCard({ label, value, wide }: { label: string; value: ReactNode; wide?: boolean }) {
   return (
-    <div className="event-stat-card">
+    <div className={`event-stat-card${wide ? " event-stat-card--wide" : ""}`}>
       <span className="event-stat-label">{label}</span>
       <strong className="event-stat-value">{value}</strong>
     </div>
@@ -4947,6 +4947,16 @@ function EventInfoTab({
 
   const webcast = infoData?.webcast ?? null;
   const hasWebcastLinks = (webcast?.links?.length ?? 0) > 0;
+  const isUrl = (s?: string | null) => !!s && /^https?:\/\//i.test(s.trim());
+  // URLs to render as clickable links: the explicit links, or a description
+  // that is itself just a URL. Each shows as the URL + open-in-new-tab icon.
+  const webcastUrls = hasWebcastLinks
+    ? webcast!.links.map((l) => l.url)
+    : isUrl(webcast?.description)
+      ? [webcast!.description!.trim()]
+      : [];
+  // Show the description as text only when it's prose, not a bare URL we link.
+  const webcastDescText = webcast?.description && !isUrl(webcast.description) ? webcast.description : null;
 
   return (
     <div className="event-info-tab">
@@ -4963,7 +4973,16 @@ function EventInfoTab({
 
       <div className="event-info-grid">
         {/* Left column — event details + webcast */}
-        <Panel title="Event Info" icon={<Info size={15} />}>
+        <Panel
+          title="Event Info"
+          icon={<Info size={15} />}
+          action={
+            <a href={calendarUrl} target="_blank" rel="noopener noreferrer" className="event-info-calendar-link">
+              <CalendarDays size={12} />
+              Add to Calendar
+            </a>
+          }
+        >
           <dl className="about-profile">
             <AboutProfileRow label="Date">{formatEventDate(event.start, event.end)}</AboutProfileRow>
             {event.level && (
@@ -4977,12 +4996,6 @@ function EventInfoTab({
             <AboutProfileRow label="Season">{event.season?.name ?? "—"}</AboutProfileRow>
             <AboutProfileRow label="SKU">{event.sku ?? String(event.id)}</AboutProfileRow>
           </dl>
-          <div className="event-info-calendar-row">
-            <a href={calendarUrl} target="_blank" rel="noopener noreferrer" className="event-info-calendar-link">
-              <CalendarDays size={12} />
-              Add to Calendar
-            </a>
-          </div>
 
           {/* Webcast section */}
           {(webcast || loading) && (
@@ -4995,26 +5008,21 @@ function EventInfoTab({
                 <div className="event-info-webcast-desc">Loading…</div>
               ) : webcast ? (
                 <>
-                  {webcast.description && (
-                    <div className="event-info-webcast-desc">{webcast.description}</div>
+                  {webcastDescText && (
+                    <div className="event-info-webcast-desc">{webcastDescText}</div>
                   )}
-                  {hasWebcastLinks && (
-                    <div className="event-info-webcast-links">
-                      {webcast.links.map((link, i) => (
+                  {webcastUrls.length > 0 && (
+                    <div className="event-info-webcast-urls">
+                      {webcastUrls.map((url, i) => (
                         <a
                           key={i}
-                          href={link.url}
+                          href={url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="event-info-webcast-link"
+                          className="event-info-webcast-url"
                         >
-                          {link.platform === "youtube" ? (
-                            <Youtube size={13} />
-                          ) : (
-                            <Tv2 size={13} />
-                          )}
-                          {link.label || "Watch Live"}
-                          <ExternalLink size={11} />
+                          <span className="event-info-webcast-url-text">{url}</span>
+                          <ExternalLink size={12} />
                         </a>
                       ))}
                     </div>
@@ -5058,28 +5066,28 @@ function EventInfoTab({
         <div className="event-stats-grid">
           <Panel title="Ranking Stats" icon={<BarChart3 size={15} />}>
             {statsRankings.loading ? (
-              <div className="event-stat-card"><span className="event-stat-label">Loading…</span></div>
+              <div className="event-stat-empty">Loading…</div>
             ) : rankStats ? (
               isIqProgram(event) ? (
-                <>
+                <div className="event-stat-cells">
                   <EventStatCard label="Teams" value={rankStats.teams} />
                   <EventStatCard label="Avg Rank" value={`#${rankStats.avgRank.toFixed(1)}`} />
                   <EventStatCard label="Avg Score" value={rankStats.avgScore.toFixed(1)} />
                   <EventStatCard label="High Score" value={rankStats.maxHighScore} />
-                </>
+                </div>
               ) : (
-                <>
-                  <EventStatCard label="Teams" value={rankStats.teams} />
+                <div className="event-stat-cells">
+                  <EventStatCard label="Teams" value={rankStats.teams} wide />
                   <EventStatCard label="Avg WP" value={rankStats.avgWp.toFixed(1)} />
                   <EventStatCard label="Avg AP" value={rankStats.avgAp.toFixed(1)} />
                   <EventStatCard label="Avg AWP" value={rankStats.avgAwp.toFixed(2)} />
                   <EventStatCard label="Total WP" value={rankStats.totalWp.toFixed(0)} />
                   <EventStatCard label="Total AP" value={rankStats.totalAp.toFixed(0)} />
                   <EventStatCard label="Total AWP" value={rankStats.totalAwp.toFixed(0)} />
-                </>
+                </div>
               )
             ) : (
-              <div className="event-stat-card"><span className="event-stat-label muted">No ranking data</span></div>
+              <div className="event-stat-empty">No ranking data</div>
             )}
           </Panel>
 
@@ -5087,31 +5095,29 @@ function EventInfoTab({
             <Panel title="Skills" icon={<Zap size={15} />}>
               {/* Event Skills section */}
               {statsSkills.loading ? (
-                <div className="event-stat-card"><span className="event-stat-label">Loading…</span></div>
+                <div className="event-stat-empty">Loading…</div>
               ) : skillStats ? (
-                <div className="event-stat-section">
-                  <EventStatCard label="Avg Combined" value={skillStats.avgCombined.toFixed(1)} />
+                <div className="event-stat-cells">
+                  <EventStatCard label="Avg Combined" value={skillStats.avgCombined.toFixed(1)} wide />
                   <EventStatCard label="Avg Driver" value={skillStats.avgDriver.toFixed(1)} />
                   <EventStatCard label="Avg Programming" value={skillStats.avgProg.toFixed(1)} />
                 </div>
               ) : null}
 
-              {/* World Skills section — vertical label outside the row cards */}
+              {/* World Skills section — vertical label + bracket outside the rows */}
               {(statsWorldSkills.loading || worldSkillsStats) && (
                 <div className="event-stat-world-group">
                   <span className="event-stat-world-label">World Skills</span>
-                  <div className="event-stat-section">
-                    {statsWorldSkills.loading || statsRankings.loading ? (
-                      <div className="event-stat-card"><span className="event-stat-label">Loading…</span></div>
-                    ) : worldSkillsStats ? (
-                      <>
-                        <EventStatCard label="Avg Rank" value={`#${Math.round(worldSkillsStats.avgRank)}`} />
-                        <EventStatCard label="Avg Combined" value={worldSkillsStats.avgCombined.toFixed(1)} />
-                        <EventStatCard label="Avg Driver" value={worldSkillsStats.avgDriver.toFixed(1)} />
-                        <EventStatCard label="Avg Programming" value={worldSkillsStats.avgProg.toFixed(1)} />
-                      </>
-                    ) : null}
-                  </div>
+                  {statsWorldSkills.loading || statsRankings.loading ? (
+                    <div className="event-stat-empty">Loading…</div>
+                  ) : worldSkillsStats ? (
+                    <div className="event-stat-cells">
+                      <EventStatCard label="Avg Rank" value={`#${Math.round(worldSkillsStats.avgRank)}`} />
+                      <EventStatCard label="Avg Combined" value={worldSkillsStats.avgCombined.toFixed(1)} />
+                      <EventStatCard label="Avg Driver" value={worldSkillsStats.avgDriver.toFixed(1)} />
+                      <EventStatCard label="Avg Programming" value={worldSkillsStats.avgProg.toFixed(1)} />
+                    </div>
+                  ) : null}
                 </div>
               )}
             </Panel>
@@ -6045,11 +6051,6 @@ function TeamDetail({ param }: { param: string }) {
       />
       {tab !== "about" && <DateDirectionToggle direction={dateDirection} onChange={setDateDirection} />}
       {tab !== "about" && <Status loading={activeStatus.loading} error={activeStatus.error} />}
-      {tab !== "about" && !activeStatus.loading && !events.loading && selectedSeason && (
-        <div className="table-summary">
-          Showing {selectedSeason.label} only. Change season to review another year.
-        </div>
-      )}
       {tab === "about" && (
         <TeamAboutTab
           team={team}
@@ -6590,12 +6591,14 @@ function DateDirectionToggle({ direction, onChange }: { direction: DateDirection
   return (
     <div className="date-direction-toggle" aria-label="Date order">
       <span>Order</span>
-      <button className={direction === "asc" ? "active" : ""} onClick={() => onChange("asc")}>
-        Earlier first
-      </button>
-      <button className={direction === "desc" ? "active" : ""} onClick={() => onChange("desc")}>
-        Later first
-      </button>
+      <div className="seg-track">
+        <button className={direction === "asc" ? "active" : ""} onClick={() => onChange("asc")}>
+          Earlier first
+        </button>
+        <button className={direction === "desc" ? "active" : ""} onClick={() => onChange("desc")}>
+          Later first
+        </button>
+      </div>
     </div>
   );
 }
@@ -6864,7 +6867,7 @@ function TeamEventCards({
           <details key={event.id} className="event-group">
             <summary>
               {/* Left: event name + SKU */}
-              <span>
+              <span className="event-group-head-main">
                 <button
                   className="event-group-name-btn"
                   onClick={(e) => { e.preventDefault(); onViewMatches(event.id); }}
@@ -6873,15 +6876,18 @@ function TeamEventCards({
                 </button>
                 <small>{event.sku}</small>
               </span>
-              {/* Right: program badge · city/state · dates · level */}
+              {/* Right: program badge · city/state · dates, with level tag below */}
               <span className="event-card-info">
-                <ProgramBadge program={event.program} />
-                {shortLoc && <span className="event-card-location">{shortLoc}</span>}
-                <span className="event-group-meta">{formatEventDateRange(event.start, event.end)}</span>
+                <span className="event-card-meta-row">
+                  <ProgramBadge program={event.program} />
+                  {shortLoc && <span className="event-card-location">{shortLoc}</span>}
+                  <span className="event-group-meta">{formatEventDateRange(event.start, event.end)}</span>
+                </span>
                 {cat.label !== "Other" && (
                   <span className={`event-priority priority-${cat.rank}`}>{cat.label}</span>
                 )}
               </span>
+              <ChevronDown size={15} className="event-group-chevron" aria-hidden="true" />
             </summary>
             {/* Stats: awards / ranking / skills */}
             <TeamEventDetail
@@ -6989,53 +6995,27 @@ function TeamEventDetail({
           {isIq ? (
             <div className="metric-line">
               <strong>Ranking</strong>
-              <span>
-                <b>Rank</b> {ranking?.rank ?? "-"}
-              </span>
-              <span>
-                <b>Avg</b> {formatNumber(iqStats?.avg)}
-              </span>
-              <span>
-                <b>High</b> {iqStats?.high ?? "-"}
-              </span>
-              <span>
-                <b>Low</b> {iqStats?.low ?? "-"}
-              </span>
+              <span>Rank <b>{ranking?.rank ?? "-"}</b></span>
+              <span>Avg <b>{formatNumber(iqStats?.avg)}</b></span>
+              <span>High <b>{iqStats?.high ?? "-"}</b></span>
+              <span>Low <b>{iqStats?.low ?? "-"}</b></span>
             </div>
           ) : (
             <div className="metric-line">
               <strong>Ranking</strong>
-              <span>
-                <b>Rank</b> {ranking?.rank ?? "-"}
-              </span>
-              <span>
-                <b>Record</b> {ranking ? `${ranking.wins ?? 0}-${ranking.losses ?? 0}-${ranking.ties ?? 0}` : "-"}
-              </span>
-              <span>
-                <b>WP</b> {ranking?.wp ?? "-"}
-              </span>
-              <span>
-                <b>AP</b> {ranking?.ap ?? "-"}
-              </span>
-              <span>
-                <b>SP</b> {ranking?.sp ?? "-"}
-              </span>
+              <span>Rank <b>{ranking?.rank ?? "-"}</b></span>
+              <span>Record <b>{ranking ? `${ranking.wins ?? 0}-${ranking.losses ?? 0}-${ranking.ties ?? 0}` : "-"}</b></span>
+              <span>WP <b>{ranking?.wp ?? "-"}</b></span>
+              <span>AP <b>{ranking?.ap ?? "-"}</b></span>
+              <span>SP <b>{ranking?.sp ?? "-"}</b></span>
             </div>
           )}
           <div className="metric-line">
             <strong>Skills</strong>
-            <span>
-              <b>Rank</b> {skillsRow.rank ?? "-"}
-            </span>
-            <span>
-              Combined <b>{skillsRow.combined ?? "-"}</b>
-            </span>
-            <span>
-              Driver <b>{skillsRow.driver?.score ?? "-"}</b> Attempts <b>{skillsRow.driver?.attempts ?? "-"}</b>
-            </span>
-            <span>
-              Programming <b>{skillsRow.programming?.score ?? "-"}</b> Attempts <b>{skillsRow.programming?.attempts ?? "-"}</b>
-            </span>
+            <span>Rank <b>{skillsRow.rank ?? "-"}</b></span>
+            <span>Combined <b>{skillsRow.combined ?? "-"}</b></span>
+            <span>Driver <b>{skillsRow.driver?.score ?? "-"}</b> <i>{skillsRow.driver?.attempts ?? "-"} att</i></span>
+            <span>Programming <b>{skillsRow.programming?.score ?? "-"}</b> <i>{skillsRow.programming?.attempts ?? "-"} att</i></span>
           </div>
         </div>
       </div>
@@ -8267,7 +8247,7 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent showCloseButton={false} className="w-fit max-w-none border-0 bg-transparent p-0 shadow-none">
+      <DialogContent showCloseButton={false} className="w-fit max-w-none sm:max-w-none border-0 bg-transparent p-0 shadow-none">
         <DialogTitle className="sr-only">Match video</DialogTitle>
         <div className="video-modal">
         <div className="video-modal-header">
@@ -8649,7 +8629,7 @@ function EliminationBracket({ matches }: { matches: Match[] }) {
 function EliminationBracketOverlay({ matches, onClose }: { matches: Match[]; onClose: () => void }) {
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent showCloseButton={false} className="w-fit max-w-none border-0 bg-transparent p-0 shadow-none">
+      <DialogContent showCloseButton={false} className="w-fit max-w-none sm:max-w-none border-0 bg-transparent p-0 shadow-none">
         <DialogTitle className="sr-only">Elimination bracket</DialogTitle>
         <div className="bracket-modal">
           <div className="bracket-modal-header">
@@ -11122,7 +11102,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent
         showCloseButton={false}
-        className="top-[14vh] translate-y-0 w-[min(580px,100%)] max-w-[580px] gap-0 border-0 bg-transparent p-0 shadow-none"
+        className="top-[14vh] translate-y-0 w-[min(580px,100%)] max-w-[580px] sm:max-w-[580px] gap-0 border-0 bg-transparent p-0 shadow-none"
       >
         <DialogTitle className="sr-only">Command palette</DialogTitle>
         <div className="spotlight-modal">
@@ -11746,7 +11726,7 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent showCloseButton={false} className="w-fit max-w-none border-0 bg-transparent p-0 shadow-none">
+      <DialogContent showCloseButton={false} className="w-fit max-w-none sm:max-w-none border-0 bg-transparent p-0 shadow-none">
         <DialogTitle className="sr-only">Compare teams</DialogTitle>
       <div
         className="compare-modal"
