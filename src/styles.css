@@ -2802,46 +2802,56 @@ tbody tr:hover {
   margin-top: 4px;
 }
 
+/* Resting state: a neutral grey tag. Turns its alliance color once the team
+   number is typed into the note (.mentioned). */
 .note-team-chip {
   display: inline-flex;
   align-items: center;
   padding: 3px 9px;
   border-radius: var(--radius);
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   text-decoration: none;
   letter-spacing: 0.01em;
-  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
-  opacity: 0.65;
-  color: var(--link);
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  color: var(--text-muted);
 }
-.note-team-chip:hover,
-.note-team-chip.mentioned {
-  opacity: 1;
+.note-team-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 
-/* Red alliance tint */
-.note-team-chip.note-team-chip-red {
-  background: rgba(217, 83, 79, 0.1);
-  border-color: rgba(217, 83, 79, 0.28);
-}
-.note-team-chip.note-team-chip-red:hover,
+/* Red alliance — colored only when mentioned */
 .note-team-chip.note-team-chip-red.mentioned {
-  background: rgba(217, 83, 79, 0.2);
+  background: rgba(217, 83, 79, 0.16);
   border-color: rgba(217, 83, 79, 0.5);
+  color: #c0392b;
+}
+.note-team-chip.note-team-chip-red.mentioned:hover {
+  background: rgba(217, 83, 79, 0.26);
 }
 
-/* Blue alliance tint */
-.note-team-chip.note-team-chip-blue {
-  background: rgba(51, 122, 183, 0.1);
-  border-color: rgba(51, 122, 183, 0.28);
-}
-.note-team-chip.note-team-chip-blue:hover,
+/* Blue alliance — colored only when mentioned */
 .note-team-chip.note-team-chip-blue.mentioned {
-  background: rgba(51, 122, 183, 0.2);
+  background: rgba(51, 122, 183, 0.16);
   border-color: rgba(51, 122, 183, 0.5);
+  color: #2c6da3;
+}
+.note-team-chip.note-team-chip-blue.mentioned:hover {
+  background: rgba(51, 122, 183, 0.26);
+}
+
+/* Event team not in this match — accent tag when mentioned */
+.note-team-chip.note-team-chip-accent.mentioned {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
+}
+.note-team-chip.note-team-chip-accent.mentioned:hover {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
 }
 
 /* ── Char counter ── */
@@ -5675,6 +5685,57 @@ td.quick-look-col {
   background: var(--accent);
   color: var(--accent-ink);
 }
+
+/* Org preview list in the account menu */
+.auth-menu-orgs {
+  margin: 4px 0 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+.auth-menu-section-label {
+  padding: 0 8px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.auth-menu-org { gap: 9px; }
+.auth-menu-org-badge {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.auth-menu-org-id {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.auth-menu-org-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.auth-menu-org-role {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+.auth-menu-org-go { flex-shrink: 0; color: var(--text-faint); }
 
 /* Home sign-in card */
 .auth-card-body {
@@ -8888,80 +8949,65 @@ a.org-note-row:hover { background: var(--surface-2); }
     font-size: 16px;
   }
 
-  /* ── Bottom tab bar ── */
+  /* ── Floating frosted nav island ──
+     A small, centered, pill-shaped island that hovers above the content with an
+     Apple-style frosted backdrop. Icon-only: the four sections are self-evident,
+     so dropping labels keeps the island compact and unobtrusive. Reuses the
+     Geist glass token (--topbar-bg) so it tracks light/dark automatically. */
   .mobile-tabbar {
     position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left: 12px;
+    right: 12px;
+    bottom: calc(14px + env(safe-area-inset-bottom));
     z-index: 90;
     display: flex;
-    align-items: stretch;
-    height: calc(58px + env(safe-area-inset-bottom));
-    padding-bottom: env(safe-area-inset-bottom);
-    background: var(--topbar-bg);
-    border-top: 1px solid rgba(0, 0, 0, 0.45);
-    box-shadow: 0 -3px 14px rgba(0, 0, 0, 0.3);
+    align-items: center;
+    gap: 2px;
+    padding: 5px;
+    background: rgba(255, 255, 255, 0.6);
+    -webkit-backdrop-filter: saturate(180%) blur(24px);
+    backdrop-filter: saturate(180%) blur(24px);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+  :root[data-theme="dark"] .mobile-tabbar {
+    background: rgba(20, 20, 20, 0.55);
   }
   .mobile-tab {
     position: relative;
     flex: 1 1 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    padding-top: 6px;
-    color: rgba(255, 255, 255, 0.55);
-    font-size: 11px;
-    font-weight: 500;
-    text-decoration: none;
-    -webkit-tap-highlight-color: transparent;
-    transition: color 0.15s ease;
-  }
-  .mobile-tab:hover,
-  .mobile-tab:focus {
-    color: rgba(255, 255, 255, 0.82);
-    text-decoration: none;
-  }
-  .mobile-tab.active {
-    color: #fff;
-  }
-  .mobile-tab-icon {
     display: grid;
     place-items: center;
-    width: 46px;
-    height: 26px;
+    height: 44px;
     border-radius: 999px;
-    transition: background 0.15s ease;
+    color: var(--text-muted);
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.18s ease, background 0.18s ease, transform 0.18s ease;
   }
-  .mobile-tab.active .mobile-tab-icon {
-    background: rgba(255, 255, 255, 0.14);
+  .mobile-tab:hover,
+  .mobile-tab:focus-visible {
+    color: var(--text-2);
+    text-decoration: none;
   }
-  .mobile-tab-label {
-    line-height: 1;
+  .mobile-tab:active {
+    transform: scale(0.92);
   }
-  /* Branded accent on the active tab. */
-  .mobile-tab.active::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 26px;
-    height: 3px;
-    border-radius: 0 0 3px 3px;
-    background: linear-gradient(90deg, #a22fd6, #f0395b, #ff9d2e);
+  /* Active tab: accent-tinted icon over a soft circular wash — quiet, no labels. */
+  .mobile-tab.active {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
   }
 
-  /* Reserve space so the fixed bar never hides the footer / last content. */
+  /* Reserve space so the floating island never hides the footer / last content. */
   body {
-    padding-bottom: calc(58px + env(safe-area-inset-bottom));
+    padding-bottom: calc(78px + env(safe-area-inset-bottom));
   }
 
-  /* Float the compare tray above the tab bar instead of behind it. */
+  /* Float the compare tray above the nav island instead of behind it. */
   .compare-tray {
-    bottom: calc(58px + env(safe-area-inset-bottom));
+    bottom: calc(78px + env(safe-area-inset-bottom));
   }
 
   /* Smooth momentum scrolling for horizontally-scrollable table panels. */

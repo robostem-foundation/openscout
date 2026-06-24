@@ -2221,8 +2221,10 @@ function PicklistTab({ event, orgId }: { event: { id: number; name: string }; or
 }
 
 // App-like bottom navigation, shown only on mobile (see .mobile-tabbar in CSS).
-// Mirrors the primary desktop nav so phone users always have one-tap access to
-// the core sections without the topbar links.
+// A compact, frosted, rounded floating island — icon-only (labels are redundant
+// for four self-evident sections), so it stays small and out of the way while
+// mirroring the primary desktop nav for one-tap access. Each tab carries an
+// aria-label/title since there's no visible text.
 function MobileTabBar({ path }: { path: string }) {
   const tabs: Array<{ href: string; label: string; Icon: typeof House; active: boolean }> = [
     { href: "/", label: "Home", Icon: House, active: path === "/" },
@@ -2237,12 +2239,11 @@ function MobileTabBar({ path }: { path: string }) {
           key={href}
           href={href}
           className={`mobile-tab ${active ? "active" : ""}`}
+          aria-label={label}
+          title={label}
           aria-current={active ? "page" : undefined}
         >
-          <span className="mobile-tab-icon">
-            <Icon size={22} strokeWidth={active ? 2.4 : 2} />
-          </span>
-          <span className="mobile-tab-label">{label}</span>
+          <Icon size={23} strokeWidth={active ? 2.4 : 2} />
         </Link>
       ))}
     </nav>
@@ -6442,7 +6443,9 @@ function SeasonSelector({
     };
   }, [updateEdges, seasons]);
 
-  // Vertical wheel over the strip scrolls it horizontally instead of the page.
+  // Vertical wheel over the strip scrolls it horizontally instead of the page,
+  // and arrow keys do the same while the pointer is hovering the strip.
+  const hoverRef = useRef(false);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -6453,8 +6456,29 @@ function SeasonSelector({
       e.preventDefault();
       el.scrollLeft += delta;
     };
+    const onEnter = () => { hoverRef.current = true; };
+    const onLeave = () => { hoverRef.current = false; };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!hoverRef.current) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      // Don't hijack arrows when the user is typing in a field.
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
+      e.preventDefault();
+      el.scrollLeft += e.key === "ArrowRight" ? 80 : -80;
+    };
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    el.addEventListener("mouseenter", onEnter);
+    el.addEventListener("mouseleave", onLeave);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("mouseenter", onEnter);
+      el.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [seasons]);
 
   const stopAuto = useCallback(() => {
@@ -7534,6 +7558,19 @@ function MatchesTable({
 }) {
   const [qualificationDirection, setQualificationDirection] = useState<DateDirection>("asc");
   const [bracketOpen, setBracketOpen] = useState(false);
+  // Every team that appears in any match = the event's competing teams. Lets a
+  // note recognize any event team you type, not just the ones in that match.
+  const eventTeams = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const match of matches) {
+      for (const alliance of match.alliances) {
+        for (const entry of alliance.teams) {
+          if (entry.team?.id && entry.team?.name) m.set(entry.team.id, entry.team.name);
+        }
+      }
+    }
+    return [...m].map(([id, number]) => ({ id, number }));
+  }, [matches]);
   const qualificationMatches = matches
     .filter((match) => match.round === 2)
     .sort((a, b) => (qualificationDirection === "asc" ? 1 : -1) * (a.matchnum - b.matchnum));
@@ -7566,6 +7603,7 @@ function MatchesTable({
             dayNumbers={dayNumbers}
             showNoteRail={showNoteRail}
             eventId={eventId}
+            eventTeams={eventTeams}
           />
         </section>
       ));
@@ -7609,6 +7647,7 @@ function MatchesTable({
             scoreTier={scoreTier}
             showNoteRail
             eventId={eventId}
+            eventTeams={eventTeams}
           />
         )}
       </section>
@@ -7709,10 +7748,11 @@ const NOTE_CHAR_LIMIT = 2000;
  * Chips that appear in the note body get a "mentioned" highlight.
  * Clicking opens the team page. Works for both V5RC (red/blue) and IQ.
  */
-function NoteTeamChips({ match, body }: { match: Match; body: string }) {
+function NoteTeamChips({ match, body, eventTeams }: { match: Match; body: string; eventTeams?: { id: number; number: string }[] }) {
   const programCode = useContext(ProgramContext);
 
-  const teams = useMemo(() => {
+  // Teams playing in this match — shown as the resting roster (grey chips).
+  const matchTeams = useMemo(() => {
     const out: Array<{ id: number; name: string; color: string }> = [];
     for (const alliance of match.alliances) {
       for (const entry of alliance.teams) {
@@ -7724,33 +7764,51 @@ function NoteTeamChips({ match, body }: { match: Match; body: string }) {
     return out;
   }, [match]);
 
-  const mentioned = useMemo(() => {
-    if (!body.trim() || !teams.length) return new Set<number>();
-    return new Set(
-      teams
-        .filter(({ name }) => {
-          // Non-alphanumeric boundary on both sides — handles team nums like 169W, 9181X
-          const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          return new RegExp(`(?:^|[^A-Za-z0-9])${escaped}(?:$|[^A-Za-z0-9])`, "i").test(body);
-        })
-        .map(({ id }) => id),
-    );
-  }, [body, teams]);
+  // Match a team number on non-alphanumeric boundaries (handles 169W, 9181X).
+  const mentions = useMemo(() => {
+    const text = body;
+    return (name: string) => {
+      if (!text.trim()) return false;
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(?:^|[^A-Za-z0-9])${escaped}(?:$|[^A-Za-z0-9])`, "i").test(text);
+    };
+  }, [body]);
 
-  if (!teams.length) return null;
+  const matchIds = useMemo(() => new Set(matchTeams.map((t) => t.id)), [matchTeams]);
+
+  // Teams elsewhere in the event that the note mentions but aren't in this match
+  // — surfaced as extra colored tags so any event team you type becomes clickable.
+  const extraTeams = useMemo(() => {
+    if (!eventTeams || !body.trim()) return [] as { id: number; number: string }[];
+    return eventTeams.filter((t) => !matchIds.has(t.id) && mentions(t.number));
+  }, [eventTeams, matchIds, mentions, body]);
+
+  if (!matchTeams.length && !extraTeams.length) return null;
 
   return (
     <div className="note-team-chips">
-      {teams.map(({ id, name, color }) => (
+      {matchTeams.map(({ id, name, color }) => (
         <TeamQuickLink
           key={id}
           teamId={id}
           teamNumber={name}
           programCode={programCode}
-          className={`note-team-chip note-team-chip-${color} ${mentioned.has(id) ? "mentioned" : ""}`}
+          className={`note-team-chip note-team-chip-${color} ${mentions(name) ? "mentioned" : ""}`}
           title={`Open team ${name}`}
         >
           {name}
+        </TeamQuickLink>
+      ))}
+      {extraTeams.map(({ id, number }) => (
+        <TeamQuickLink
+          key={id}
+          teamId={id}
+          teamNumber={number}
+          programCode={programCode}
+          className="note-team-chip note-team-chip-accent mentioned"
+          title={`Open team ${number}`}
+        >
+          {number}
         </TeamQuickLink>
       ))}
     </div>
@@ -7763,11 +7821,13 @@ function NoteTeamChips({ match, body }: { match: Match; body: string }) {
 function MatchNotePopover({
   match,
   eventId,
+  eventTeams,
   anchorRect,
   onClose,
 }: {
   match: Match;
   eventId?: number;
+  eventTeams?: { id: number; number: string }[];
   anchorRect: DOMRect;
   onClose: () => void;
 }) {
@@ -7837,7 +7897,7 @@ function MatchNotePopover({
         onChange={(e) => handleChange(e.target.value)}
         placeholder={scope === "personal" ? "Add a note…" : "Add a team note…"}
       />
-      <NoteTeamChips match={match} body={activeBody} />
+      <NoteTeamChips match={match} body={activeBody} eventTeams={eventTeams} />
       <div className="note-popover-footer">
         <span className="note-popover-hint">Saved automatically · empty clears</span>
         {showCounter && (
@@ -7867,6 +7927,7 @@ function ResultsMatchTable({
   markWinningIqScore = false,
   showNoteRail = false,
   eventId,
+  eventTeams,
 }: {
   matches: Match[];
   emptyText: string;
@@ -7885,6 +7946,7 @@ function ResultsMatchTable({
   markWinningIqScore?: boolean;
   showNoteRail?: boolean;
   eventId?: number;
+  eventTeams?: { id: number; number: string }[];
 }) {
   const tbodyRef = useRef<HTMLTableSectionElement>(null);
   const rafRef = useRef(0);
@@ -8093,6 +8155,7 @@ function ResultsMatchTable({
       <MatchNotePopover
         match={popover.match}
         eventId={eventId}
+        eventTeams={eventTeams}
         anchorRect={popover.rect}
         onClose={() => setPopover(null)}
       />
