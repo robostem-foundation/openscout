@@ -39,8 +39,8 @@
   /* text on light-colored solid badges (cyan/amber meta pills). White in light
      mode keeps the original look; dark mode swaps to dark ink for contrast. */
   --badge-ink: #ffffff;
-  /* team-number links inside result/alliance cells — neutral B&W (winners bold) */
-  --team-link: var(--text);
+  /* team-number links inside result/alliance cells — accent (cyan) */
+  --team-link: var(--link);
   /* Blue Alliance score badge — a true blue, not the cyan accent */
   --score-blue: #2563eb;
   /* effects — soft, diffuse Geist shadows */
@@ -95,8 +95,8 @@
   --award-inset: transparent;
   /* dark ink on the light cyan/amber badges so their text is legible on dark */
   --badge-ink: #06232b;
-  /* team numbers neutral B&W on dark too (winners bold) */
-  --team-link: var(--text);
+  /* team numbers in accent (cyan), bright for the dark row tints */
+  --team-link: var(--link);
   --score-blue: #3b82f6;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
   --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.7);
@@ -155,6 +155,11 @@ button {
 
 /* Floating tinted-glass header "island" — Geist style. */
 .topbar {
+  /* backdrop-filter makes this a stacking context, so the account dropdown's
+     own z-index can't escape it — lift the whole island above page content
+     (kept below modal overlays at 500+) so the dropdown lands on top. */
+  position: relative;
+  z-index: 400;
   width: min(1170px, calc(100% - 24px));
   margin: 12px auto 24px;
   min-height: 56px;
@@ -1903,6 +1908,30 @@ tbody tr:hover {
   background: #999;
 }
 
+/* Inside the team-card match tables, render team numbers as plain links (like
+   the event view) rather than solid chips — the gray/teal fills muddy in dark
+   mode. The page's own team stays bold so it's still easy to spot per row. */
+.team-match-table .team-chip,
+.team-event-match-preview .team-chip {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--team-link);
+  font-size: inherit;
+  font-weight: 500;
+}
+.team-match-table .team-chip:hover,
+.team-match-table .team-chip:focus,
+.team-event-match-preview .team-chip:hover,
+.team-event-match-preview .team-chip:focus {
+  background: transparent;
+  text-decoration: underline;
+}
+.team-match-table .team-chip-focus,
+.team-event-match-preview .team-chip-focus {
+  font-weight: 700;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -1918,6 +1947,8 @@ tbody tr:hover {
   white-space: nowrap;
 }
 
+/* Event-level badge: soft pastel pill (washed background + saturated ink +
+   hairline), uppercase with wide tracking. Replaces the old solid color bars. */
 .event-priority {
   display: inline-flex;
   align-items: center;
@@ -1950,6 +1981,14 @@ tbody tr:hover {
 
 .priority-3 {
   background: #777;
+}
+
+/* Team #events cards: keep the level tag compact (no 88px min-width) while
+   using the same solid style as everywhere else. */
+.event-card-info .event-priority {
+  min-width: 0;
+  padding: 0.15em 0.5em 0.2em;
+  font-size: 10px;
 }
 
 .notice,
@@ -2094,6 +2133,18 @@ tbody tr:hover {
   min-width: 0;
   min-height: 18px;
   padding: 0.2em 0.45em 0.3em;
+}
+
+/* Program badge (shadcn <Badge>) in the event header defaults to a full pill —
+   square it to match the solid tags beside it (date / season / level). */
+.meta-line [data-slot="badge"] {
+  border-radius: 0.25em;
+  background: #5bc0de;
+  color: var(--badge-ink);
+  min-height: 18px;
+  padding: 0.2em 0.6em 0.3em;
+  font-size: 75%;
+  font-weight: 700;
 }
 
 .date-range {
@@ -2941,7 +2992,7 @@ tbody tr:hover {
 .alliance-cell {
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text);
+  color: var(--link);
   font-size: 14px;
   font-weight: 400;
   text-align: center !important;
@@ -2953,13 +3004,6 @@ tbody tr:hover {
   background: transparent;
   color: var(--team-link);
   font-size: inherit;
-}
-
-/* Keep team numbers neutral on hover — underline is the only affordance. */
-.alliance-cell a:hover,
-.alliance-cell a:focus {
-  color: var(--team-link);
-  text-decoration: underline;
 }
 
 .winning-alliance-cell a {
@@ -3507,83 +3551,137 @@ tbody tr:hover {
   border-color: var(--border-strong);
 }
 
+/* Segmented control: muted track with a white "lifted" active segment — matches
+   the season strip's pill aesthetic instead of the old bright-teal buttons. */
+.date-direction-toggle .seg-track {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-e3);
+  border-radius: 9px;
+}
+
 .date-direction-toggle button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
-  padding: 5px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--link);
-  line-height: 1.42857143;
+  min-height: 28px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, box-shadow 0.12s;
 }
 
-.date-direction-toggle button.active,
 .date-direction-toggle button:hover {
-  border-color: var(--accent-hover);
-  background: var(--accent);
-  color: var(--accent-ink);
+  color: var(--text);
+}
+
+.date-direction-toggle button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .event-groups {
   display: grid;
-  gap: 10px;
-  padding: 10px 12px 12px;
+  gap: 8px;
+  padding: 2px 0 14px;
 }
 
+/* One card per event. Flat white surface, hairline border, 12px radius to match
+   the About-tab cards. Hover lifts the border; expanding adds an ultra-subtle
+   shadow and a hairline under the header. */
 .event-group {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 12px;
+  background: var(--surface);
   overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.event-group:hover {
+  border-color: var(--border-strong);
+}
+
+.event-group[open] {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .event-group summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 9px 13px;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
+  gap: 16px;
+  padding: 13px 16px;
+  background: transparent;
   cursor: pointer;
-  font-weight: 700;
   list-style: none;
 }
 .event-group summary::-webkit-details-marker { display: none; }
 
-.event-group summary:hover {
-  background: var(--surface-3, var(--surface-2));
+.event-group[open] summary {
+  border-bottom: 1px solid var(--border-soft);
 }
 
-.event-group summary span:first-child {
+/* Left side: event name + SKU stacked. Flexes to fill, lets the name wrap. */
+.event-group-head-main {
   display: grid;
-  gap: 1px;
+  gap: 2px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .event-group summary small {
-  color: var(--text-muted);
-  font-size: 12px;
+  color: var(--text-faint);
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 11px;
   font-weight: 400;
+  letter-spacing: 0.02em;
 }
 
 .event-group-meta {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 400;
   white-space: nowrap;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Right side of TeamEventCards summary — program badge + location + dates + level */
+/* Chevron affordance — rotates when the card is open. */
+.event-group-chevron {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: transform 0.18s ease, color 0.15s ease;
+}
+.event-group:hover .event-group-chevron {
+  color: var(--text-muted);
+}
+.event-group[open] .event-group-chevron {
+  transform: rotate(180deg);
+}
+
+/* Right side of TeamEventCards summary — program badge + location + dates on the
+   top row, level tag right-aligned beneath them. */
 .event-card-info {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 7px;
-  flex-wrap: wrap;
   flex-shrink: 0;
+}
+.event-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .event-card-location {
   font-size: 12px;
@@ -3608,49 +3706,72 @@ tbody tr:hover {
 .team-event-detail {
   display: grid;
   gap: 6px;
-  padding: 8px 10px 10px;
+  padding: 14px 16px 12px;
   border-top: 1px solid var(--border-soft);
 }
 
+/* Awards on the left, ranking + skills on the right, split by a hairline. */
 .team-event-summary-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(390px, 1.2fr);
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 0 22px;
+  align-items: stretch;
+  padding-bottom: 4px;
 }
 
 .team-event-awards,
 .team-event-metrics {
   display: grid;
-  gap: 5px;
+  gap: 9px;
+  align-content: start;
   min-width: 0;
+}
+
+.team-event-metrics {
+  border-left: 1px solid var(--border-soft);
+  padding-left: 22px;
 }
 
 .team-event-awards-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
+/* Section labels: mono uppercase eyebrow, matching the About-tab stat labels. */
 .team-event-awards > strong,
 .metric-line > strong {
-  color: var(--link);
-  font-size: 12px;
+  flex: 0 0 58px;
+  color: var(--text-faint);
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
 }
 
 .metric-line {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 9px;
+  align-items: baseline;
+  gap: 6px 18px;
   min-width: 0;
-  color: var(--text-2);
-  font-size: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
+/* Label sits muted, value is the emphasized tabular figure. */
 .metric-line b {
   color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-line i {
+  font-style: normal;
+  color: var(--text-faint);
+  font-size: 11px;
 }
 
 .metric-line span {
@@ -3659,19 +3780,53 @@ tbody tr:hover {
 
 .team-elim-seed {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 20px;
-  padding: 2px 7px;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 9px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 9999px;
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 11.5px;
+  font-weight: 500;
 }
 
 .team-elim-seed span {
   color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* Award pills under the Awards label: soft rounded chips. */
+.team-event-awards .winner-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+}
+.team-event-awards .winner-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.team-event-awards .winner-row .muted {
+  font-size: 12.5px;
+}
+
+@media (max-width: 720px) {
+  .team-event-summary-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .team-event-metrics {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--border-soft);
+    padding-top: 12px;
+  }
 }
 
 .team-event-match-preview {
@@ -4564,7 +4719,10 @@ td.grade-col {
   background: none;
   color: var(--link);
   font: inherit;
-  font-weight: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
   cursor: pointer;
   text-align: left;
 }
@@ -7302,15 +7460,36 @@ td.quick-look-col {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 9px 15px;
-  font-size: 13px;
+  padding: 10px 14px;
+  font-size: 12.5px;
   color: var(--link);
   text-decoration: none;
   border-bottom: 1px solid var(--border);
-  background: var(--surface-2);
+  background: transparent;
 }
 .event-info-open-link:hover {
   text-decoration: underline;
+}
+
+/* Minimalist panel chrome for the Event Info tab — flat hairline cards with
+   mono eyebrow titles instead of the default filled gray header bar (matches
+   the About-tab language). Scoped so panels elsewhere are untouched. */
+.event-info-tab .panel,
+.event-stats-grid .panel {
+  border-radius: 12px;
+  box-shadow: none;
+}
+.event-info-tab .panel > h2,
+.event-stats-grid .panel > h2 {
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 15px 10px;
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
 }
 
 /* Two-column grid: info left, agenda right.
@@ -7342,12 +7521,7 @@ td.quick-look-col {
   flex: 0 0 auto;
 }
 
-/* Calendar link inside the info panel */
-.event-info-calendar-row {
-  padding: 8px 15px 10px;
-  border-top: 1px solid var(--border);
-  margin-top: 4px;
-}
+/* Calendar link — lives in the panel header's top-right action slot */
 .event-info-calendar-link {
   display: inline-flex;
   align-items: center;
@@ -7378,6 +7552,7 @@ td.quick-look-col {
   color: var(--text-2);
   margin-bottom: 8px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 .event-info-webcast-links {
   display: flex;
@@ -7402,6 +7577,34 @@ td.quick-look-col {
 }
 .event-info-webcast-link svg:last-child {
   opacity: 0.4;
+}
+
+/* Multiple webcast links — plain clickable URLs with an open-in-new-tab icon */
+.event-info-webcast-urls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.event-info-webcast-url {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--link);
+  text-decoration: none;
+}
+.event-info-webcast-url-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.event-info-webcast-url:hover .event-info-webcast-url-text {
+  text-decoration: underline;
+}
+.event-info-webcast-url svg {
+  flex: 0 0 auto;
+  opacity: 0.55;
 }
 
 /* Agenda: fills remaining height of the panel, scrolls if content overflows */
@@ -7472,7 +7675,11 @@ td.quick-look-col {
    are unaffected. */
 .event-info-tab .about-profile {
   display: block;
-  padding: 6px 0 4px;
+  padding: 6px 0 8px;
+  /* Flush inside the panel — no nested bordered card. */
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .event-info-tab .about-profile-row {
   display: grid;
@@ -7482,12 +7689,18 @@ td.quick-look-col {
   align-items: baseline;
 }
 .event-info-tab .about-profile-row dt {
-  font-size: 12px;
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
   white-space: nowrap;
 }
 .event-info-tab .about-profile-row dd {
   text-align: left;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Responsive: stack columns on narrow viewports */
@@ -7509,25 +7722,48 @@ td.quick-look-col {
 @media (max-width: 700px) {
   .event-stats-grid { grid-template-columns: 1fr; }
 }
-.event-stat-card {
+/* Stat rows — label left, value right, hairline-split list (original layout)
+   with the mono eyebrow label + tabular value styling kept. */
+.event-stat-cells {
+  display: block;
+  margin: 6px 0 8px;
+}
+.event-stat-card--wide { /* no-op in the row layout */ }
+.event-stats-grid .event-stat-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 7px 15px;
+  gap: 12px;
+  padding: 9px 16px;
+  background: var(--surface);
+  border: 0;
   border-bottom: 1px solid var(--border-soft);
 }
-.event-stat-card:last-child { border-bottom: 0; }
-.event-stat-section .event-stat-card:last-child { border-bottom: 0; }
-.event-stat-label { font-size: 12px; color: var(--text-muted); }
-.event-stat-value { font-size: 20px; font-weight: 600; color: var(--text); line-height: 1; }
+.event-stat-cells .event-stat-card:last-child { border-bottom: 0; }
+.event-stats-grid .event-stat-label {
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.event-stats-grid .event-stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 /* World Skills group — rows fill the full panel width;
-   bracket + label float OUTSIDE the panel's right border. */
+   bracket + vertical label float OUTSIDE the panel's right border. */
 .event-stat-world-group {
   position: relative;
   border-top: 1px solid var(--border-soft);
 }
-/* ] bracket spanning all four world-skills rows */
+/* ] bracket spanning all the world-skills rows */
 .event-stat-world-group::after {
   content: "";
   position: absolute;
@@ -7552,6 +7788,13 @@ td.quick-look-col {
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Loading / empty state for the stat panels */
+.event-stat-empty {
+  padding: 14px 15px 16px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 
