@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { LogOut, Settings, User as UserIcon } from "lucide-react";
+import { ChevronRight, LogOut, Settings, User as UserIcon } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./supabase";
+import { useOrgs } from "./orgs";
 import { setTheme, useTheme } from "./theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -319,8 +320,17 @@ export function useOutsideClick<T extends HTMLElement>(onClose: () => void) {
 export function AuthSlot() {
   const { ready, configured, user, profile, signOut, updateProfile } = useAuth();
   const theme = useTheme();
+  const orgs = useOrgs();
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(() => setOpen(false));
+
+  // Client-side nav that mirrors App's navigate() (popstate triggers the router).
+  const goTo = (path: string) => {
+    setOpen(false);
+    window.history.pushState(null, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   // Theme writes go to both the global store (instant) and the cloud profile,
   // matching the Settings page.
@@ -388,16 +398,32 @@ export function AuthSlot() {
               </button>
             ))}
           </div>
+          {orgs.length > 0 && (
+            <div className="auth-menu-orgs">
+              <div className="auth-menu-section-label">Your {orgs.length === 1 ? "org" : "orgs"}</div>
+              {orgs.map((org) => (
+                <button
+                  key={org.orgId}
+                  type="button"
+                  className="auth-menu-item auth-menu-org"
+                  onClick={() => goTo(`/org/${org.orgId}`)}
+                >
+                  <span className="auth-menu-org-badge">{(org.name || "?").charAt(0).toUpperCase()}</span>
+                  <span className="auth-menu-org-id">
+                    <span className="auth-menu-org-name">{org.name}</span>
+                    <span className="auth-menu-org-role">
+                      {org.role}{org.teamNumber ? ` · ${programLabel(org.teamProgram)} ${org.teamNumber}`.trimEnd() : ""}
+                    </span>
+                  </span>
+                  <ChevronRight size={14} className="auth-menu-org-go" />
+                </button>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             className="auth-menu-item"
-            onClick={() => {
-              setOpen(false);
-              // Route to the dedicated /settings page (mirrors App's navigate()).
-              window.history.pushState(null, "", "/settings");
-              window.dispatchEvent(new PopStateEvent("popstate"));
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
+            onClick={() => goTo("/settings")}
           >
             <Settings size={15} />
             Settings

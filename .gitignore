@@ -16,3 +16,6 @@ EVENT_INFO_TAB_PLAN.md
 
 # Local git hooks
 .git/hooks/commit-msg
+
+# Design mockups (local only)
+mockups/
