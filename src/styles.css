@@ -39,8 +39,10 @@
   /* text on light-colored solid badges (cyan/amber meta pills). White in light
      mode keeps the original look; dark mode swaps to dark ink for contrast. */
   --badge-ink: #ffffff;
-  /* team-number links inside result/alliance cells */
-  --team-link: #0891b2;
+  /* team-number links inside result/alliance cells — neutral B&W (winners bold) */
+  --team-link: var(--text);
+  /* Blue Alliance score badge — a true blue, not the cyan accent */
+  --score-blue: #2563eb;
   /* effects — soft, diffuse Geist shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.12);
@@ -93,8 +95,9 @@
   --award-inset: transparent;
   /* dark ink on the light cyan/amber badges so their text is legible on dark */
   --badge-ink: #06232b;
-  /* brighter team links so numbers stay legible over the dark row tints */
-  --team-link: #22d3ee;
+  /* team numbers neutral B&W on dark too (winners bold) */
+  --team-link: var(--text);
+  --score-blue: #3b82f6;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
   --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.7);
   --overlay: rgba(0, 0, 0, 0.7);
@@ -2938,7 +2941,7 @@ tbody tr:hover {
 .alliance-cell {
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--link);
+  color: var(--text);
   font-size: 14px;
   font-weight: 400;
   text-align: center !important;
@@ -2950,6 +2953,13 @@ tbody tr:hover {
   background: transparent;
   color: var(--team-link);
   font-size: inherit;
+}
+
+/* Keep team numbers neutral on hover — underline is the only affordance. */
+.alliance-cell a:hover,
+.alliance-cell a:focus {
+  color: var(--team-link);
+  text-decoration: underline;
 }
 
 .winning-alliance-cell a {
@@ -3452,23 +3462,26 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  width: 88px;
+  width: 104px;
   padding-right: 2px;
+  z-index: 20; /* above the ToggleGroup's z-10 so the fade/chip cover the labels */
   pointer-events: none; /* let scroll pass through; the button re-enables itself */
 }
 
-/* Frosted right edge: a masked backdrop-blur (plus a faint tint) that ramps up
-   toward the right, so the trailing seasons dissolve behind the chevron instead
-   of the button overlapping sharp text. */
+/* Solid right-edge fade: the trailing seasons dissolve into the toolbar
+   background before the chevron, so the white chevron chip never overlaps
+   readable text. (backdrop-filter blur can't sample a native scroll
+   container's content in Chrome, so we use an opaque color fade instead.) */
 .season-fade::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(to right, transparent, var(--muted) 72%);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 52%);
-  mask-image: linear-gradient(to right, transparent, #000 52%);
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--surface-2) 45%,
+    var(--surface-2) 100%
+  );
 }
 
 .season-more {
@@ -3948,7 +3961,7 @@ tbody tr:hover {
 }
 
 .score.blue {
-  background: var(--accent);
+  background: var(--score-blue);
 }
 
 .score.red.score-loser {
@@ -3959,8 +3972,8 @@ tbody tr:hover {
 
 .score.blue.score-loser {
   background: var(--surface);
-  border-color: var(--accent);
-  color: var(--link);
+  border-color: var(--score-blue);
+  color: var(--score-blue);
 }
 
 .capitalize {
