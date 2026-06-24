@@ -16,6 +16,7 @@ import {
   FilePlus2,
   Gamepad2,
   Info,
+  LayoutDashboard,
   Link2,
   GripVertical,
   ListFilter,
@@ -30,6 +31,7 @@ import {
   Pause,
   Plus,
   Play,
+  Printer,
   RotateCw,
   Scale,
   Search,
@@ -38,8 +40,6 @@ import {
   Star,
   StickyNote,
   Clock,
-  Moon,
-  Sun,
   Trophy,
   Tv2,
   Unlink,
@@ -69,8 +69,13 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
-import { useOrgMatchNote, setOrgMatchNote, useHasAnyOrgNote } from "./org-notes";
+import { useOrgMatchNote, setOrgMatchNote, useHasAnyOrgNote, useOrgNotesList } from "./org-notes";
+import type { OrgNoteListItem } from "./org-notes";
 import { useOrgFavorites, useIsOrgFavorite, toggleOrgFavorite } from "./org-favorites";
+import { useEventNames, useOrgPicklistEvents, loadOrgActivity } from "./org-aggregate";
+import type { ActivityItem } from "./org-aggregate";
+import { loadOrgPicklistEntries } from "./picklist";
+import type { OrgPicklistSummary, PicklistEntry } from "./picklist";
 import {
   createOrg,
   deleteOrg,
@@ -105,6 +110,27 @@ const programOptions = [
   { label: "VURC", value: "4" },
   { label: "VAIRC", value: "57" },
 ];
+
+// Events filter — program toggle: V5RC / VIQRC up front, the rest behind a "…".
+const PROGRAM_TOGGLE_PRIMARY = [
+  { value: "1", label: "V5RC" },
+  { value: "41", label: "VIQRC" },
+];
+const PROGRAM_TOGGLE_MORE = [
+  { value: "4", label: "VURC" },
+  { value: "57", label: "VAIRC" },
+];
+// Grade codes available per program. Drives the dependent grade toggle:
+//   V5RC → HS/MS · VIQRC → MS/ES · VURC → U (single) · VAIRC → none (N/A)
+const GRADES_BY_PROGRAM: Record<string, string[]> = {
+  "1": ["HS", "MS"],
+  "41": ["MS", "ES"],
+  "4": ["U"],
+  "57": [],
+};
+function gradeShortLabel(code: string): string {
+  return code === "HS" ? "HS" : code === "MS" ? "MS" : code === "ES" ? "ES" : code === "U" ? "U" : code;
+}
 
 const today = new Date();
 const oneDay = 24 * 60 * 60 * 1000;
@@ -584,6 +610,12 @@ function GlobalSearch({ className = "" }: { className?: string }) {
   const [query, setQuery] = useState("");
   const debounced = useDebouncedValue(query.trim(), 220);
   const [open, setOpen] = useState(false);
+  // When the header gets too narrow to hold the full search bar, collapse it to
+  // an icon that opens the search as a popup. Only applies in the topbar.
+  const collapsible = className.includes("topbar-search");
+  const [compact, setCompact] = useState(() => collapsible && typeof matchMedia === "function" && matchMedia("(max-width: 820px)").matches);
+  const [compactOpen, setCompactOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Teams results
   const [teams, setTeams] = useState<Team[]>([]);
@@ -631,10 +663,25 @@ function GlobalSearch({ className = "" }: { className?: string }) {
     return () => { live = false; };
   }, [debounced]);
 
+  // Track the narrow-header breakpoint (topbar only).
+  useEffect(() => {
+    if (!collapsible || typeof matchMedia !== "function") return;
+    const mq = matchMedia("(max-width: 820px)");
+    const onChange = () => { setCompact(mq.matches); if (!mq.matches) setCompactOpen(false); };
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [collapsible]);
+
+  // Focus the input when the compact search popup opens.
+  useEffect(() => {
+    if (compactOpen) inputRef.current?.focus();
+  }, [compactOpen]);
+
   // Close on outside click
   useEffect(() => {
     const handler = (e: globalThis.MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) { setOpen(false); setCompactOpen(false); }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -645,12 +692,13 @@ function GlobalSearch({ className = "" }: { className?: string }) {
 
   const handleSelect = useCallback((href: string) => {
     setOpen(false);
+    setCompactOpen(false);
     setQuery("");
     navigate(href);
   }, []);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") setOpen(false);
+    if (e.key === "Escape") { setOpen(false); setCompactOpen(false); }
     if (e.key === "Enter") {
       e.preventDefault();
       if (query.trim()) {
@@ -660,85 +708,113 @@ function GlobalSearch({ className = "" }: { className?: string }) {
     }
   };
 
+  const inputRow = (
+    <div className="global-search-input-row">
+      <Search size={16} className="global-search-icon" />
+      <input
+        ref={inputRef}
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={handleKeyDown}
+        placeholder="Search teams or events..."
+        className="global-search-input"
+      />
+      {!query && (
+        <span
+          className="gs-kbd-hint"
+          onClick={() => { setOpen(false); openSpotlight(); }}
+          aria-hidden="true"
+        >
+          {isMac ? "⌘K" : "Ctrl K"}
+        </span>
+      )}
+    </div>
+  );
+
+  const dropdown = showDropdown ? (
+    <div className="global-search-dropdown">
+      {/* Teams section */}
+      <div className="gs-section-label">Teams</div>
+      {teamsLoading && !teams.length && (
+        <div className="gs-loading">Loading...</div>
+      )}
+      {teams.map((team) => (
+        <button
+          key={team.id}
+          type="button"
+          className="gs-result"
+          onMouseDown={() => handleSelect(teamPath(team))}
+        >
+          <span className="gs-result-main">{team.number} - {team.team_name ?? "Unnamed Team"}</span>
+          <span className="gs-result-sub">{locationLine(team)}</span>
+        </button>
+      ))}
+      {!teamsLoading && !teams.length && (
+        <div className="gs-empty">No teams found.</div>
+      )}
+      <button
+        type="button"
+        className="gs-find-more"
+        onMouseDown={() => handleSelect(`/teams?search=${encodeURIComponent(searchTerm)}`)}
+      >
+        Find more teams...
+      </button>
+
+      {/* Events section */}
+      <div className="gs-section-label">Events</div>
+      {eventsLoading && !events.length && (
+        <div className="gs-loading">Loading...</div>
+      )}
+      {events.map((event) => (
+        <button
+          key={event.id}
+          type="button"
+          className="gs-result"
+          onMouseDown={() => handleSelect(eventPath(event))}
+        >
+          <span className="gs-result-main">{event.name}</span>
+          <span className="gs-result-sub">{event.sku} · {locationLine(event)}</span>
+        </button>
+      ))}
+      {!eventsLoading && !events.length && (
+        <div className="gs-empty">No events found.</div>
+      )}
+      <button
+        type="button"
+        className="gs-find-more"
+        onMouseDown={() => handleSelect(`/events?search=${encodeURIComponent(searchTerm)}`)}
+      >
+        Find more events...
+      </button>
+    </div>
+  ) : null;
+
   return (
-    <div className={`global-search-wrap ${className}`.trim()} ref={wrapRef}>
-      <div className="global-search-input-row">
-        <Search size={16} className="global-search-icon" />
-        <input
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={handleKeyDown}
-          placeholder="Search teams or events..."
-          className="global-search-input"
-        />
-        {!query && (
-          <span
-            className="gs-kbd-hint"
-            onClick={() => { setOpen(false); openSpotlight(); }}
-            aria-hidden="true"
-          >
-            {isMac ? "⌘K" : "Ctrl K"}
-          </span>
-        )}
-      </div>
-
-      {showDropdown && (
-        <div className="global-search-dropdown">
-          {/* Teams section */}
-          <div className="gs-section-label">Teams</div>
-          {teamsLoading && !teams.length && (
-            <div className="gs-loading">Loading...</div>
-          )}
-          {teams.map((team) => (
-            <button
-              key={team.id}
-              type="button"
-              className="gs-result"
-              onMouseDown={() => handleSelect(teamPath(team))}
-            >
-              <span className="gs-result-main">{team.number} - {team.team_name ?? "Unnamed Team"}</span>
-              <span className="gs-result-sub">{locationLine(team)}</span>
-            </button>
-          ))}
-          {!teamsLoading && !teams.length && (
-            <div className="gs-empty">No teams found.</div>
-          )}
+    <div className={`global-search-wrap ${className}${compact ? " is-compact" : ""}`.trim()} ref={wrapRef}>
+      {compact ? (
+        <>
           <button
             type="button"
-            className="gs-find-more"
-            onMouseDown={() => handleSelect(`/teams?search=${encodeURIComponent(searchTerm)}`)}
+            className="global-search-trigger"
+            aria-label="Search"
+            aria-expanded={compactOpen}
+            onClick={() => setCompactOpen((o) => !o)}
           >
-            Find more teams...
+            <Search size={18} />
           </button>
-
-          {/* Events section */}
-          <div className="gs-section-label">Events</div>
-          {eventsLoading && !events.length && (
-            <div className="gs-loading">Loading...</div>
+          {compactOpen && (
+            <div className="global-search-popup">
+              {inputRow}
+              {dropdown}
+            </div>
           )}
-          {events.map((event) => (
-            <button
-              key={event.id}
-              type="button"
-              className="gs-result"
-              onMouseDown={() => handleSelect(eventPath(event))}
-            >
-              <span className="gs-result-main">{event.name}</span>
-              <span className="gs-result-sub">{event.sku} · {locationLine(event)}</span>
-            </button>
-          ))}
-          {!eventsLoading && !events.length && (
-            <div className="gs-empty">No events found.</div>
-          )}
-          <button
-            type="button"
-            className="gs-find-more"
-            onMouseDown={() => handleSelect(`/events?search=${encodeURIComponent(searchTerm)}`)}
-          >
-            Find more events...
-          </button>
-        </div>
+        </>
+      ) : (
+        <>
+          {inputRow}
+          {dropdown}
+        </>
       )}
     </div>
   );
@@ -2175,24 +2251,48 @@ function MobileTabBar({ path }: { path: string }) {
 
 // Compact light/dark switch for the header island. Reads the live theme pref and
 // flips to the opposite of whatever is currently showing (resolving "system").
-function ThemeToggle() {
-  const pref = useTheme();
-  const prefersDark = typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches;
-  const isDark = pref === "dark" || (pref === "system" && prefersDark);
+// Cross-fade content whenever `trigger` changes (season / filter / setting
+// re-render). Animates opacity only via the Web Animations API, so children
+// keep their state — no remount, no refetch. Skips the initial mount and
+// honors prefers-reduced-motion. `duration` defaults to a 200ms "Fast" fade;
+// route changes pass a shorter, more subtle value.
+function CrossFade({
+  trigger,
+  duration = 200,
+  className,
+  children,
+}: {
+  trigger: unknown;
+  duration?: number;
+  className?: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const prev = useRef(trigger);
+  // useLayoutEffect so opacity:0 is applied before the browser paints the new
+  // content — otherwise you'd see one frame at full opacity before the fade.
+  useLayoutEffect(() => {
+    if (Object.is(prev.current, trigger)) return;
+    prev.current = trigger;
+    const el = ref.current;
+    if (!el) return;
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    el.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease" });
+  }, [trigger, duration]);
   return (
-    <button
-      type="button"
-      className="theme-toggle"
-      onClick={() => applyTheme(isDark ? "light" : "dark")}
-      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
-      title={isDark ? "Light theme" : "Dark theme"}
-    >
-      {isDark ? <Sun size={16} /> : <Moon size={16} />}
-    </button>
+    <div ref={ref} className={className}>
+      {children}
+    </div>
   );
 }
 
 function Layout({ children, path }: { children: ReactNode; path: string }) {
+  // Route-change fade keys on the pathname only (ignore query/hash) so in-page
+  // filter changes that don't navigate never trigger the route fade. The
+  // settings epoch is folded in so settings changes that remount page content
+  // (synced filters/preferences) also get the subtle fade.
+  const settingsEpoch = useSettingsEpoch();
+  const routeKey = `${path.split("?")[0].split("#")[0]}:${settingsEpoch}`;
   const nav = [
     ["/", "OpenScout"],
     ["/events", "Events"],
@@ -2217,12 +2317,15 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
           </nav>
           <div className="topbar-actions">
             <GlobalSearch className="topbar-search" />
-            <ThemeToggle />
             <AuthSlot />
           </div>
         </div>
       </header>
-      <main>{children}</main>
+      <main>
+        <CrossFade trigger={routeKey} duration={120}>
+          {children}
+        </CrossFade>
+      </main>
       <footer>
         <div className="footer-row">
           <span className="footer-copy">© 2026 RoboSTEM Foundation, All Rights Reserved.</span>
@@ -2754,8 +2857,6 @@ function highlightMatch(text: string, query: string): ReactNode {
 function EventsPageInner() {
   const params = new URLSearchParams(window.location.search);
   const [quickSearch, setQuickSearch] = useState(params.get("search") ?? "");
-  const [quickSearchLimit, setQuickSearchLimit] = useState(3);
-  const [activeQuickResult, setActiveQuickResult] = useState(0);
   const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>(() => {
     const saved = window.localStorage.getItem("vex-events-programs");
     if (!saved) return ["1"];
@@ -2766,7 +2867,6 @@ function EventsPageInner() {
       return ["1"];
     }
   });
-  const [programMenuOpen, setProgramMenuOpen] = useState(false);
   const [level, setLevel] = useState<string>(() => readEventFilters().level ?? "");
   const [selectedRegionKeys, setSelectedRegionKeys] = useState<string[]>(() => readEventFilters().selectedRegionKeys ?? []);
   const [regionMenuOpen, setRegionMenuOpen] = useState(false);
@@ -2781,12 +2881,11 @@ function EventsPageInner() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [selectedSeasonIds, setSelectedSeasonIds] = useState<number[]>(() => readEventFilters().selectedSeasonIds ?? []);
   const [seasonSelectionTouched, setSeasonSelectionTouched] = useState<boolean>(() => readEventFilters().seasonSelectionTouched ?? false);
-  const [seasonMenuOpen, setSeasonMenuOpen] = useState(false);
   const [seasonMultiSelect, setSeasonMultiSelect] = useState<boolean>(() => readEventFilters().seasonMultiSelect ?? false);
   const [programMultiSelect, setProgramMultiSelect] = useState<boolean>(() => readEventFilters().programMultiSelect ?? false);
   const [pastSeasonDateDir, setPastSeasonDateDir] = useState<"asc" | "desc">(() => readEventFilters().pastSeasonDateDir ?? "asc");
   const [selectedGrades, setSelectedGrades] = useState<string[]>(() => readEventFilters().selectedGrades ?? []);
-  const [gradeMenuOpen, setGradeMenuOpen] = useState(false);
+  const [programMoreOpen, setProgramMoreOpen] = useState(false);
   const [lastOpenedMenu, setLastOpenedMenu] = useState<"region" | "season" | "program" | "sort" | "grade" | null>(null);
   const [hideCanceled, setHideCanceled] = useState<boolean>(() => readEventFilters().hideCanceled ?? true);
   const [page, setPage] = useState(1);
@@ -2823,22 +2922,6 @@ function EventsPageInner() {
   const allSeasonsSelected = !!seasonOptions.length && sameNumberSet(selectedSeasonIds, allSeasonIds);
   const currentSeasonId = seasonOptions[0]?.id;
   const isPastSeasonView = !!currentSeasonId && selectedSeasonIds.length > 0 && !selectedSeasonIds.includes(currentSeasonId);
-  const selectedProgramLabels = programOptions
-    .filter((option) => option.value && selectedProgramIds.includes(option.value))
-    .map((option) => option.label);
-  const programButtonLabel =
-    !selectedProgramIds.length || selectedProgramIds.length === programOptions.length - 1
-      ? "All programs"
-      : selectedProgramIds.length === 1
-        ? selectedProgramLabels[0] ?? "Program"
-        : `${selectedProgramIds.length} programs`;
-  const gradeOptions = ["HS", "MS", "ES"] as const;
-  const gradeButtonLabel =
-    selectedGrades.length === 0 || selectedGrades.length === gradeOptions.length
-      ? "All grades"
-      : selectedGrades.length === 1
-        ? selectedGrades[0]!
-        : `${selectedGrades.length} grades`;
   const countryOptions = useMemo(() => dedupeCountryGroups(countries.data ?? []), [countries.data]);
   const sortOptions: Array<{ label: string; value: EventSort }> = [
     { label: "Smart Sort", value: "smart" },
@@ -2915,35 +2998,22 @@ function EventsPageInner() {
       }),
     [data, selectedProgramIds, level, selectedRegionOptions, selectedSeasonIds, hideCanceled, selectedGrades, sort, isPastSeasonView],
   );
-  const quickResults = useMemo(() => {
+  // Quick search live-filters the visible events directly (no results dropdown).
+  const searchedEvents = useMemo(() => {
     const needle = quickSearch.trim().toLowerCase();
-    if (!needle) return [];
-    return visibleEvents.filter((event) => event.name.toLowerCase().includes(needle)).slice(0, quickSearchLimit);
-  }, [visibleEvents, quickSearch, quickSearchLimit]);
-  const quickResultTotal = useMemo(() => {
-    const needle = quickSearch.trim().toLowerCase();
-    if (!needle) return 0;
-    return visibleEvents.filter((event) => event.name.toLowerCase().includes(needle)).length;
+    if (!needle) return visibleEvents;
+    return visibleEvents.filter((event) => event.name.toLowerCase().includes(needle));
   }, [visibleEvents, quickSearch]);
   const pageSize = 40;
-  const totalPages = Math.max(1, Math.ceil(visibleEvents.length / pageSize));
-  const pageEvents = visibleEvents.slice((page - 1) * pageSize, page * pageSize);
-  const selectedSeasonLabels = seasonOptions.filter((season) => selectedSeasonIds.includes(season.id)).map((season) => season.label);
-  const seasonButtonLabel =
-    !selectedSeasonIds.length || selectedSeasonIds.length === seasonOptions.length
-      ? "All seasons"
-      : selectedSeasonIds.length === 1
-        ? selectedSeasonLabels[0] ?? "Season"
-        : `${selectedSeasonIds.length} seasons`;
-
+  const totalPages = Math.max(1, Math.ceil(searchedEvents.length / pageSize));
+  const pageEvents = searchedEvents.slice((page - 1) * pageSize, page * pageSize);
   useEffect(() => {
     setPage(1);
   }, [selectedProgramIds, level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds, hideCanceled, selectedGrades]);
 
   useEffect(() => {
-    setQuickSearchLimit(3);
-    setActiveQuickResult(0);
-  }, [quickSearch, visibleEvents]);
+    setPage(1);
+  }, [quickSearch]);
 
   useEffect(() => {
     setEventsSettings({
@@ -2978,47 +3048,11 @@ function EventsPageInner() {
     }
   }, [selectedRegionKeys, regionOptions]);
 
-  const toggleSeason = (seasonId: number) => {
+  const selectSeason = (seasonId: number) => {
     setSeasonSelectionTouched(true);
-    if (!seasonMultiSelect) {
-      setSelectedSeasonIds([seasonId]);
-      setSeasonMenuOpen(false);
-      if (currentSeasonId && seasonId !== currentSeasonId) {
-        setEventWindow("allSeason");
-      } else {
-        setEventWindow("near");
-      }
-    } else {
-      setSelectedSeasonIds((ids) => (ids.includes(seasonId) ? ids.filter((id) => id !== seasonId) : [...ids, seasonId]));
-    }
-  };
-  const toggleProgram = (programId: string) => {
-    if (!programMultiSelect) {
-      setSelectedProgramIds([programId]);
-      setProgramMenuOpen(false);
-    } else {
-      setSelectedProgramIds((ids) => (ids.includes(programId) ? ids.filter((id) => id !== programId) : [...ids, programId]));
-    }
-    setSeasonSelectionTouched(false);
-    setSelectedSeasonIds([]);
-  };
-  const selectAllPrograms = () => {
-    setSelectedProgramIds(programOptions.map((option) => option.value).filter(Boolean));
-    setSeasonSelectionTouched(false);
-    setSelectedSeasonIds([]);
-  };
-  const clearPrograms = () => {
-    setSelectedProgramIds([]);
-    setSeasonSelectionTouched(false);
-    setSelectedSeasonIds([]);
-  };
-  const selectAllSeasons = () => {
-    setSeasonSelectionTouched(true);
-    setSelectedSeasonIds(seasonOptions.map((season) => season.id));
-  };
-  const clearSeasons = () => {
-    setSeasonSelectionTouched(true);
-    setSelectedSeasonIds([]);
+    setSelectedSeasonIds([seasonId]);
+    if (currentSeasonId && seasonId !== currentSeasonId) setEventWindow("allSeason");
+    else setEventWindow("near");
   };
   const resetFilters = () => {
     window.localStorage.removeItem(EVENT_FILTER_KEY);
@@ -3048,203 +3082,82 @@ function EventsPageInner() {
   const clearRegions = () => {
     setSelectedRegionKeys([]);
   };
-  const openQuickResult = (event?: Event) => {
-    if (event) navigate(eventPath(event));
+
+  // Program is single-select in the toggle UI; grade options depend on it.
+  const activeProgramId = selectedProgramIds.length === 1 ? selectedProgramIds[0] : null;
+  const availableGrades = activeProgramId ? (GRADES_BY_PROGRAM[activeProgramId] ?? []) : [];
+  const activeGrade = selectedGrades.length === 1 ? selectedGrades[0] : null;
+  const moreProgramActive = !!activeProgramId && PROGRAM_TOGGLE_MORE.some((p) => p.value === activeProgramId);
+  const selectProgram = (programId: string) => {
+    setSelectedProgramIds([programId]);
+    setSelectedGrades([]);
+    setSeasonSelectionTouched(false);
+    setSelectedSeasonIds([]);
   };
-  const handleQuickSearchKey = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (!quickResults.length) return;
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setActiveQuickResult((index) => Math.min(index + 1, quickResults.length - 1));
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setActiveQuickResult((index) => Math.max(index - 1, 0));
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      openQuickResult(quickResults[activeQuickResult] ?? quickResults[0]);
-    }
-  };
+  const selectGrade = (code: string | null) => setSelectedGrades(code ? [code] : []);
 
   const filterControls = (
     <>
-      <div className="filter-section">
-        <div className="filter-section-title">Time</div>
-        <div className="quick-filters">
-          <button className={eventWindow === "near" ? "active" : ""} onClick={() => setEventWindow("near")}>
-            Near today
-          </button>
-          <button className={eventWindow === "upcoming" ? "active" : ""} onClick={() => setEventWindow("upcoming")}>
-            Upcoming
-          </button>
-          <button className={eventWindow === "allSeason" ? "active" : ""} onClick={() => setEventWindow("allSeason")}>
-            All
-          </button>
-        </div>
-      </div>
-      <div className="filter-section">
-        <div className="filter-section-title">Type</div>
-        <div className="quick-filters">
-          <button className={!level ? "active" : ""} onClick={() => setLevel("")}>
-            All
-          </button>
-          <button className={level === "World" ? "active" : ""} onClick={() => setQuickFilter("World", eventWindow)}>
-            Worlds
-          </button>
-          <button className={level === "Signature" ? "active" : ""} onClick={() => setQuickFilter("Signature", eventWindow)}>
-            Signature
-          </button>
-          <button className={level === "Championship" ? "active" : ""} onClick={() => setQuickFilter("Championship", eventWindow)}>
-            Championships
-          </button>
-          <button className={level === "Other" ? "active" : ""} onClick={() => setLevel("Other")}>
-            Other
-          </button>
-        </div>
-      </div>
       <div className="event-filter-fields">
-        <div className="filter-field">
-          <span>
-            Seasons
+        <div className="filter-section">
+          <div className="filter-section-title filter-section-title-row">
+            <span>Season</span>
             {isPastSeasonView && currentSeasonId && (
-              <button
-                type="button"
-                className="back-to-season-btn"
-                onClick={() => {
-                  setSeasonSelectionTouched(true);
-                  setSelectedSeasonIds([currentSeasonId]);
-                  setEventWindow("near");
-                }}
-              >
+              <button type="button" className="back-to-season-btn" onClick={() => selectSeason(currentSeasonId)}>
                 Back to {seasonOptions[0]?.label}
               </button>
             )}
-          </span>
-          <div className="picker-menu season-picker-menu">
-            <button type="button" onClick={() => { setSeasonMenuOpen((open) => !open); setLastOpenedMenu("season"); }} aria-expanded={seasonMenuOpen}>
-              {seasonButtonLabel}
-            </button>
-            {seasonMenuOpen && (
-              <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "season" ? 20 : 10 }}>
-                <label className="picker-multi-toggle">
-                  <input
-                    type="checkbox"
-                    checked={seasonMultiSelect}
-                    onChange={(e) => {
-                      setSeasonMultiSelect(e.target.checked);
-                      if (!e.target.checked && selectedSeasonIds.length > 1) {
-                        setSelectedSeasonIds(selectedSeasonIds.slice(0, 1));
-                      }
-                    }}
-                  />
-                  <span>Select multiple</span>
-                </label>
-                {seasonMultiSelect && (
-                  <div className="picker-menu-actions">
-                    <button type="button" onClick={selectAllSeasons}>All</button>
-                    <button type="button" onClick={clearSeasons}>Clear</button>
-                  </div>
-                )}
-                {seasonOptions.map((season) =>
-                  seasonMultiSelect ? (
-                    <label key={season.id}>
-                      <input type="checkbox" checked={selectedSeasonIds.includes(season.id)} onChange={() => toggleSeason(season.id)} />
-                      <span>{season.label}</span>
-                      {season.program && <small>{season.program}</small>}
-                    </label>
-                  ) : (
-                    <button key={season.id} type="button" className={selectedSeasonIds.includes(season.id) ? "active" : ""} onClick={() => toggleSeason(season.id)}>
-                      <span>{season.label}</span>
-                      {season.program && <small>{season.program}</small>}
-                    </button>
-                  )
-                )}
-                {!seasonOptions.length && <div className="picker-menu-empty">Loading seasons...</div>}
-              </div>
-            )}
           </div>
+          <SeasonSelector
+            seasons={seasonOptions.map((season) => ({ id: season.id, label: season.label }))}
+            selectedSeasonId={selectedSeasonIds[0] ?? null}
+            onChange={selectSeason}
+            loading={seasons.loading}
+            hideCount
+            hideLabel
+          />
         </div>
-        <div className="filter-field-pair">
-          <div className="filter-field">
-            <span>Programs</span>
-            <div className="picker-menu">
-              <button type="button" onClick={() => { setProgramMenuOpen((open) => !open); setLastOpenedMenu("program"); }} aria-expanded={programMenuOpen}>
-                {programButtonLabel}
+        <div className="filter-section">
+          <div className="filter-section-title">Program &amp; Grade</div>
+          <div className="program-grade">
+            <div className="seg-toggle">
+              {PROGRAM_TOGGLE_PRIMARY.map((p) => (
+                <button key={p.value} type="button" className={activeProgramId === p.value ? "active" : ""} onClick={() => selectProgram(p.value)}>
+                  {p.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`seg-toggle-more${programMoreOpen || moreProgramActive ? " active" : ""}`}
+                aria-expanded={programMoreOpen || moreProgramActive}
+                title="More programs"
+                onClick={() => setProgramMoreOpen((open) => !open)}
+              >
+                &hellip;
               </button>
-              {programMenuOpen && (
-                <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "program" ? 20 : 10 }}>
-                  <label className="picker-multi-toggle">
-                    <input
-                      type="checkbox"
-                      checked={programMultiSelect}
-                      onChange={(e) => {
-                        setProgramMultiSelect(e.target.checked);
-                        if (!e.target.checked && selectedProgramIds.length > 1) {
-                          setSelectedProgramIds(selectedProgramIds.slice(0, 1));
-                          setSeasonSelectionTouched(false);
-                          setSelectedSeasonIds([]);
-                        }
-                      }}
-                    />
-                    <span>Select multiple</span>
-                  </label>
-                  {programMultiSelect && (
-                    <div className="picker-menu-actions">
-                      <button type="button" onClick={selectAllPrograms}>All</button>
-                      <button type="button" onClick={clearPrograms}>Clear</button>
-                    </div>
-                  )}
-                  {programOptions
-                    .filter((option) => option.value)
-                    .map((option) =>
-                      programMultiSelect ? (
-                        <label key={option.value}>
-                          <input type="checkbox" checked={selectedProgramIds.includes(option.value)} onChange={() => toggleProgram(option.value)} />
-                          <span>{option.label}</span>
-                        </label>
-                      ) : (
-                        <button key={option.value} type="button" className={selectedProgramIds.includes(option.value) ? "active" : ""} onClick={() => toggleProgram(option.value)}>
-                          <span>{option.label}</span>
-                        </button>
-                      )
-                    )}
-                </div>
-              )}
+              {(programMoreOpen || moreProgramActive) &&
+                PROGRAM_TOGGLE_MORE.map((p) => (
+                  <button key={p.value} type="button" className={activeProgramId === p.value ? "active" : ""} onClick={() => selectProgram(p.value)}>
+                    {p.label}
+                  </button>
+                ))}
             </div>
-          </div>
-          <div className="filter-field">
-            <span>Grade</span>
-            <div className="picker-menu">
-              <button type="button" onClick={() => { setGradeMenuOpen((open) => !open); setLastOpenedMenu("grade"); }} aria-expanded={gradeMenuOpen}>
-                {gradeButtonLabel}
-              </button>
-              {gradeMenuOpen && (
-                <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "grade" ? 20 : 10 }}>
-                  <div className="picker-menu-actions">
-                    <button type="button" onClick={() => setSelectedGrades([])}>All</button>
-                    <button type="button" onClick={() => setSelectedGrades([])}>Clear</button>
-                  </div>
-                  {gradeOptions.map((g) => (
-                    <label key={g}>
-                      <input
-                        type="checkbox"
-                        checked={selectedGrades.length === 0 || selectedGrades.includes(g)}
-                        onChange={() =>
-                          setSelectedGrades((prev) => {
-                            // If currently "all" (empty = all), clicking one grade means exclude others
-                            const effective = prev.length === 0 ? [...gradeOptions] : prev;
-                            const next = effective.includes(g) ? effective.filter((x) => x !== g) : [...effective, g];
-                            return next.length === gradeOptions.length ? [] : next;
-                          })
-                        }
-                      />
-                      <span>{g === "HS" ? "High School" : g === "MS" ? "Middle School" : "Elementary"}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
+            {availableGrades.length > 1 ? (
+              <div className="seg-toggle">
+                <button type="button" className={!activeGrade ? "active" : ""} onClick={() => selectGrade(null)}>
+                  All
+                </button>
+                {availableGrades.map((g) => (
+                  <button key={g} type="button" className={activeGrade === g ? "active" : ""} onClick={() => selectGrade(g)}>
+                    {gradeShortLabel(g)}
+                  </button>
+                ))}
+              </div>
+            ) : availableGrades.length === 1 ? (
+              <div className="grade-static">{gradeShortLabel(availableGrades[0]!)}</div>
+            ) : (
+              <div className="grade-static grade-na">N/A</div>
+            )}
           </div>
         </div>
         <div className="filter-field">
@@ -3286,6 +3199,40 @@ function EventsPageInner() {
             )}
           </div>
         </div>
+        <div className="filter-section">
+          <div className="filter-section-title">Time</div>
+          <div className="seg-toggle">
+            <button className={eventWindow === "near" ? "active" : ""} onClick={() => setEventWindow("near")}>
+              Near today
+            </button>
+            <button className={eventWindow === "upcoming" ? "active" : ""} onClick={() => setEventWindow("upcoming")}>
+              Upcoming
+            </button>
+            <button className={eventWindow === "allSeason" ? "active" : ""} onClick={() => setEventWindow("allSeason")}>
+              All
+            </button>
+          </div>
+        </div>
+        <div className="filter-section">
+          <div className="filter-section-title">Type</div>
+          <div className="seg-toggle">
+            <button className={!level ? "active" : ""} onClick={() => setLevel("")}>
+              All
+            </button>
+            <button className={level === "World" ? "active" : ""} onClick={() => setQuickFilter("World", eventWindow)}>
+              Worlds
+            </button>
+            <button className={level === "Signature" ? "active" : ""} onClick={() => setQuickFilter("Signature", eventWindow)}>
+              Signature
+            </button>
+            <button className={level === "Championship" ? "active" : ""} onClick={() => setQuickFilter("Championship", eventWindow)}>
+              Championships
+            </button>
+            <button className={level === "Other" ? "active" : ""} onClick={() => setLevel("Other")}>
+              Other
+            </button>
+          </div>
+        </div>
         <div className="filter-field">
           <span>Sort</span>
           <div className="picker-menu">
@@ -3320,7 +3267,7 @@ function EventsPageInner() {
   );
 
   return (
-    <section className="page">
+    <section className={`page${filterLayout === "sidebar" ? " events-page-wide" : ""}`}>
       <div className="events-title-row">
         <PageTitle icon={<CalendarDays />} title="Events" />
         <button
@@ -3337,65 +3284,56 @@ function EventsPageInner() {
         <Panel title="Event List" icon={<CalendarDays />}>
           <Status loading={loading} error={error} />
           <div className="event-quick-search">
-            <label className="search-field">
-              <Search size={16} />
+            <label className="search-field event-search-field">
+              <Search size={16} className="event-search-icon" />
               <input
                 value={quickSearch}
                 onChange={(event) => setQuickSearch(event.target.value)}
-                onKeyDown={handleQuickSearchKey}
-                placeholder="Quick search event name"
+                placeholder="Search events by name"
               />
+              {!!quickSearch.trim() && (
+                <button type="button" className="event-search-clear" onClick={() => setQuickSearch("")} aria-label="Clear search">
+                  <X size={15} />
+                </button>
+              )}
             </label>
-            {!!quickSearch.trim() && (
-              <div className="quick-search-results">
-                {quickResults.map((event, index) => (
-                  <button
-                    key={event.id}
-                    className={index === activeQuickResult ? "active" : ""}
-                    type="button"
-                    onMouseEnter={() => setActiveQuickResult(index)}
-                    onClick={() => openQuickResult(event)}
-                  >
-                    <span>{highlightMatch(event.name, quickSearch)}</span>
-                    <small>{formatEventDateRange(event.start, event.end)}</small>
-                  </button>
-                ))}
-                {!quickResults.length && <div className="quick-search-empty">No matching event names.</div>}
-                {quickSearchLimit < quickResultTotal && (
-                  <button type="button" className="show-more-results" onClick={() => setQuickSearchLimit((limit) => limit + 3)}>
-                    Show more
-                  </button>
-                )}
-              </div>
+            {!loading && (
+              <span className="event-search-count">
+                {searchedEvents.length.toLocaleString()} {searchedEvents.length === 1 ? "event" : "events"}
+              </span>
             )}
           </div>
-          {isPastSeasonView ? (
-            <PastSeasonEventView
-              events={visibleEvents}
-              loading={loading}
-              showSeason={!selectedSeasonIds.length || allSeasonsSelected}
-              showGrade
-              dateDir={pastSeasonDateDir}
-              onDateDirToggle={() => setPastSeasonDateDir((d) => (d === "asc" ? "desc" : "asc"))}
-            />
-          ) : (
-            <>
-              <EventTable events={pageEvents} loading={loading} showPriority showGrade showSeason={!selectedSeasonIds.length || allSeasonsSelected} />
-              {!loading && (
-                <div className="pager">
-                  <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
-                    <ChevronLeft size={16} />
-                  </button>
-                  <span>
-                    Page {page.toLocaleString()} of {totalPages.toLocaleString()}
-                  </span>
-                  <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} aria-label="Next page">
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              )}
-            </>
-          )}
+          <CrossFade
+            trigger={`${selectedSeasonIds.join(",")}|${selectedProgramIds.join(",")}|${selectedGrades.join(",")}|${selectedRegionKeys.join(",")}|${level}|${eventWindow}|${sort}|${pastSeasonDateDir}|${page}`}
+          >
+            {isPastSeasonView ? (
+              <PastSeasonEventView
+                events={searchedEvents}
+                loading={loading}
+                showSeason={!selectedSeasonIds.length || allSeasonsSelected}
+                showGrade
+                dateDir={pastSeasonDateDir}
+                onDateDirToggle={() => setPastSeasonDateDir((d) => (d === "asc" ? "desc" : "asc"))}
+              />
+            ) : (
+              <>
+                <EventTable events={pageEvents} loading={loading} showPriority showGrade showSeason={!selectedSeasonIds.length || allSeasonsSelected} />
+                {!loading && (
+                  <div className="pager">
+                    <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span>
+                      Page {page.toLocaleString()} of {totalPages.toLocaleString()}
+                    </span>
+                    <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} aria-label="Next page">
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </CrossFade>
         </Panel>
         {filterLayout === "sidebar" && (
           <aside className={`event-filter-sidebar ${mobileFiltersOpen ? "mobile-open" : ""}`}>
@@ -3574,11 +3512,11 @@ function EventTable({
       <thead>
         <tr>
           <th>Event</th>
-          {showPriority && <th>Priority</th>}
-          {showProgram && <th>Program</th>}
+          {showPriority && <th className="event-col-priority">Priority</th>}
+          {showProgram && <th className="event-col-program">Program</th>}
           {showGrade && <th className="grade-col">Grade</th>}
-          {showSeason && <th>Season</th>}
-          <th>
+          {showSeason && <th className="event-col-season">Season</th>}
+          <th className="event-col-dates">
             {onDateSortToggle ? (
               <button type="button" className="sort-col-btn" onClick={onDateSortToggle}>
                 Dates {dateSortDir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -3587,7 +3525,7 @@ function EventTable({
               "Dates"
             )}
           </th>
-          {showLevel && <th>Level</th>}
+          {showLevel && <th className="event-col-level">Level</th>}
         </tr>
       </thead>
       {loading ? (
@@ -6051,6 +5989,7 @@ function TeamDetail({ param }: { param: string }) {
       />
       {tab !== "about" && <DateDirectionToggle direction={dateDirection} onChange={setDateDirection} />}
       {tab !== "about" && <Status loading={activeStatus.loading} error={activeStatus.error} />}
+      <CrossFade trigger={`${tab}:${selectedSeasonId}`}>
       {tab === "about" && (
         <TeamAboutTab
           team={team}
@@ -6127,6 +6066,7 @@ function TeamDetail({ param }: { param: string }) {
           }}
         />
       )}
+      </CrossFade>
       </div>
       </div>
     </section>
@@ -6449,11 +6389,15 @@ function SeasonSelector({
   selectedSeasonId,
   onChange,
   loading,
+  hideCount,
+  hideLabel,
 }: {
-  seasons: Array<{ id: number; label: string; count: number }>;
+  seasons: Array<{ id: number; label: string; count?: number }>;
   selectedSeasonId: number | null;
   onChange: (seasonId: number) => void;
   loading: boolean;
+  hideCount?: boolean;
+  hideLabel?: boolean;
 }) {
   // Sliding highlight pill: track the active segment's position/size and move a
   // single absolutely-positioned pill to it, so selection slides instead of the
@@ -6536,8 +6480,8 @@ function SeasonSelector({
   if (loading || !seasons.length) return null;
 
   return (
-    <div className="season-toolbar">
-      <span>Season</span>
+    <div className={`season-toolbar${hideLabel ? " season-toolbar-nolabel" : ""}`}>
+      {!hideLabel && <span>Season</span>}
       <div className="season-scroll">
         <div ref={scrollRef} className="season-scroll-view no-scrollbar">
           <div ref={trackRef} className="relative w-max rounded-lg bg-muted p-1">
@@ -6562,7 +6506,7 @@ function SeasonSelector({
                   className="gap-1.5 rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground data-[state=on]:bg-transparent data-[state=on]:text-foreground"
                 >
                   {season.label}
-                  <span className="opacity-60 tabular-nums">{season.count}</span>
+                  {!hideCount && <span className="opacity-60 tabular-nums">{season.count}</span>}
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
@@ -9438,6 +9382,7 @@ function WorldSkillsPageInner() {
       {/* Table */}
       <Status loading={wsLoading} error={wsError} />
       {!wsLoading && !wsError && (
+        <CrossFade trigger={`${program}|${grade}|${resolvedSeasonId}|${debouncedSearch}|${filterCountries.join(",")}|${filterRegions.join(",")}|${page}`}>
         <div className="ws-table-wrap">
           <table className="ws-table">
             <colgroup>
@@ -9517,6 +9462,7 @@ function WorldSkillsPageInner() {
             </tbody>
           </table>
         </div>
+        </CrossFade>
       )}
       <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
     </section>
@@ -10747,24 +10693,345 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
   );
 }
 
-type OrgSettingsTab = "overview" | "members" | "invites";
-const ORG_SETTINGS_TABS: Array<{ value: OrgSettingsTab; label: string; icon: ReactNode }> = [
-  { value: "overview", label: "Overview", icon: <Settings size={15} /> },
-  { value: "members",  label: "Members",  icon: <Users size={15} /> },
-  { value: "invites",  label: "Invites",  icon: <Link2 size={15} /> },
+// ── Org Workspace (/org/:id) ──────────────────────────────────────────────────
+
+const ORG_WORKSPACE_TABS = ["dashboard", "notes", "picklists", "activity", "export", "settings"] as const;
+type OrgWorkspaceTab = typeof ORG_WORKSPACE_TABS[number];
+const ORG_WORKSPACE_NAV: Array<{ value: OrgWorkspaceTab; label: string; icon: ReactNode }> = [
+  { value: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={15} /> },
+  { value: "notes",     label: "Notes",     icon: <StickyNote size={15} /> },
+  { value: "picklists", label: "Picklists", icon: <ListOrdered size={15} /> },
+  { value: "activity",  label: "Activity",  icon: <Activity size={15} /> },
+  { value: "export",    label: "Export",    icon: <Download size={15} /> },
+  { value: "settings",  label: "Settings",  icon: <Settings size={15} /> },
 ];
 
-function OrgSettingsPage({ orgId }: { orgId: string }) {
+function orgSlug(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "org";
+}
+
+function activityVerb(item: ActivityItem): string {
+  switch (item.kind) {
+    case "note": return "added a note";
+    case "picklist": return item.teamNumber ? `ranked ${item.teamNumber} in a picklist` : "updated a picklist";
+    case "favorite": return item.refKind === "event" ? "favorited an event" : "favorited a team";
+  }
+}
+
+function OrgActivityRow({ item, eventName }: { item: ActivityItem; eventName: string | null }) {
+  const initial = (item.userName || "?").charAt(0).toUpperCase();
+  const when = formatRelativeTime(new Date(item.ts).getTime());
+  const eventLabel = item.eventId ? (eventName ?? `Event ${item.eventId}`) : null;
+  const href = item.eventId ? urlWithHash(`/event/${item.eventId}`, item.kind === "picklist" ? "picklist" : "matches") : null;
+  const body = (
+    <>
+      <span className="org-member-avatar" aria-hidden>{initial}</span>
+      <span className="org-activity-text">
+        <strong>{item.userName}</strong> {activityVerb(item)}
+        {eventLabel && <> · <span className="org-activity-event">{eventLabel}</span></>}
+      </span>
+      <span className="org-activity-time">{when}</span>
+    </>
+  );
+  return href
+    ? <Link href={href} className="org-activity-row">{body}</Link>
+    : <div className="org-activity-row">{body}</div>;
+}
+
+function OrgDashboardTab({ orgId, onNavigate }: { orgId: string; onNavigate: (tab: OrgWorkspaceTab) => void }) {
+  const favs = useOrgFavorites(orgId);
+  const notes = useOrgNotesList(orgId);
+  const picks = useOrgPicklistEvents(orgId);
+  const [memberCount, setMemberCount] = useState<number | null>(null);
+  const [activity, setActivity] = useState<ActivityItem[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getOrgMembers(orgId).then((m) => { if (!cancelled) setMemberCount(m.length); });
+    void loadOrgActivity(orgId, 5).then((a) => { if (!cancelled) setActivity(a); });
+    return () => { cancelled = true; };
+  }, [orgId]);
+
+  const names = useEventNames((activity ?? []).map((a) => a.eventId));
+  const nameOf = (id: string | null) => { const ev = id ? names.get(id) : null; return ev?.name ?? null; };
+  const favCount = favs.teams.length + favs.events.length;
+
+  const tiles: Array<{ label: string; value: number | string; icon: ReactNode; tab?: OrgWorkspaceTab }> = [
+    { label: "Notes",            value: notes.length,                            icon: <StickyNote size={16} />,  tab: "notes" },
+    { label: "Active picklists", value: picks.loading ? "…" : picks.data.length, icon: <ListOrdered size={16} />, tab: "picklists" },
+    { label: "Shared favorites", value: favCount,                                icon: <Star size={16} /> },
+    { label: "Members",          value: memberCount ?? "…",                      icon: <Users size={16} />,       tab: "settings" },
+  ];
+
+  return (
+    <div className="org-ws-section">
+      <div className="org-ws-stats">
+        {tiles.map((t) => {
+          const inner = (
+            <>
+              <span className="org-ws-stat-top">{t.icon}<span className="org-ws-stat-value">{t.value}</span></span>
+              <span className="org-ws-stat-label">{t.label}</span>
+            </>
+          );
+          return t.tab
+            ? <button key={t.label} type="button" className="org-ws-stat org-ws-stat--btn" onClick={() => onNavigate(t.tab as OrgWorkspaceTab)}>{inner}</button>
+            : <div key={t.label} className="org-ws-stat">{inner}</div>;
+        })}
+      </div>
+
+      <div className="org-ws-block">
+        <div className="org-ws-block-head">
+          <h3>Recent activity</h3>
+          <button type="button" className="panel-action-link" onClick={() => onNavigate("activity")}>View all</button>
+        </div>
+        {activity === null
+          ? <Skeleton className="h-24 w-full" />
+          : activity.length === 0
+            ? <p className="org-ws-empty">No shared activity yet.</p>
+            : <div className="org-activity-list">{activity.map((a, i) => <OrgActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>}
+      </div>
+    </div>
+  );
+}
+
+function OrgNotesHubTab({ orgId }: { orgId: string }) {
+  const notes = useOrgNotesList(orgId);
+  const [query, setQuery] = useState("");
+  const [eventFilter, setEventFilter] = useState("all");
+  const names = useEventNames(notes.map((n) => n.eventId));
+  const nameOf = (id: string | null) => { const ev = id ? names.get(id) : null; return ev?.name ?? (id ? `Event ${id}` : "No event"); };
+
+  const eventOptions = useMemo(
+    () => Array.from(new Set(notes.map((n) => n.eventId ?? "none"))),
+    [notes],
+  );
+
+  const filtered = notes.filter((n) => {
+    if (eventFilter !== "all" && (n.eventId ?? "none") !== eventFilter) return false;
+    const q = query.trim().toLowerCase();
+    if (q && !n.body.toLowerCase().includes(q) && !nameOf(n.eventId).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const groups = useMemo(() => {
+    const m = new Map<string, OrgNoteListItem[]>();
+    for (const n of filtered) {
+      const k = n.eventId ?? "none";
+      const arr = m.get(k) ?? []; arr.push(n); m.set(k, arr);
+    }
+    return [...m.entries()];
+  }, [filtered]);
+
+  if (notes.length === 0) {
+    return <p className="org-ws-empty">No shared notes yet. Add a note from any match's note button and switch it to your org to share it here.</p>;
+  }
+
+  return (
+    <div className="org-ws-section">
+      <div className="org-ws-toolbar">
+        <Input placeholder="Search notes…" value={query} onChange={(e) => setQuery(e.target.value)} className="org-ws-search" />
+        <Select value={eventFilter} onValueChange={setEventFilter}>
+          <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All events</SelectItem>
+            {eventOptions.map((id) => (
+              <SelectItem key={id} value={id}>{id === "none" ? "No event" : nameOf(id)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {groups.length === 0
+        ? <p className="org-ws-empty">No notes match your search.</p>
+        : groups.map(([eid, items]) => (
+          <div key={eid} className="org-notes-group">
+            <div className="org-notes-group-head">
+              <span className="org-notes-group-name">{eid === "none" ? "No event" : nameOf(eid)}</span>
+              <span className="org-ws-badge">{items.length}</span>
+            </div>
+            {items.map((n) => {
+              const href = n.eventId ? urlWithHash(`/event/${n.eventId}`, "matches") : null;
+              const inner = <span className="org-note-body">{n.body}</span>;
+              return href
+                ? <Link key={n.matchId} href={href} className="org-note-row">{inner}<ChevronRight size={14} className="org-note-go" /></Link>
+                : <div key={n.matchId} className="org-note-row">{inner}</div>;
+            })}
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function OrgPicklistRow({ summary, eventName, eventSku }: { summary: OrgPicklistSummary; eventName: string | null; eventSku: string | null }) {
+  const name = eventName ?? `Event ${summary.eventId}`;
+  const href = urlWithHash(`/event/${eventSku || summary.eventId}`, "picklist");
+  return (
+    <Link href={href} className="org-picklist-card">
+      <div className="org-picklist-card-head">
+        <span className="org-picklist-name">{name}</span>
+        <span className="org-ws-badge">{summary.teamCount} team{summary.teamCount !== 1 ? "s" : ""}</span>
+      </div>
+      <div className="org-picklist-preview">
+        {summary.topTeams.map((t, i) => (
+          <span key={t.teamNumber} className="org-picklist-team"><span className="org-picklist-rank">{i + 1}</span>{t.teamNumber}</span>
+        ))}
+        {summary.teamCount > summary.topTeams.length && (
+          <span className="org-picklist-more">+{summary.teamCount - summary.topTeams.length} more</span>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+function OrgPicklistsTab({ orgId }: { orgId: string }) {
+  const { data, loading } = useOrgPicklistEvents(orgId);
+  const names = useEventNames(data.map((d) => d.eventId));
+  if (loading) return <Skeleton className="h-28 w-full" />;
+  if (data.length === 0) return <p className="org-ws-empty">No picklists yet. Build one from an event's Picklist tab and it will show up here.</p>;
+  return (
+    <div className="org-picklist-grid">
+      {data.map((s) => {
+        const ev = names.get(s.eventId);
+        return <OrgPicklistRow key={s.eventId} summary={s} eventName={ev?.name ?? null} eventSku={ev?.sku ?? null} />;
+      })}
+    </div>
+  );
+}
+
+function OrgActivityTab({ orgId }: { orgId: string }) {
+  const [items, setItems] = useState<ActivityItem[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void loadOrgActivity(orgId, 60).then((a) => { if (!cancelled) setItems(a); });
+    return () => { cancelled = true; };
+  }, [orgId]);
+  const names = useEventNames((items ?? []).map((a) => a.eventId));
+  const nameOf = (id: string | null) => { const ev = id ? names.get(id) : null; return ev?.name ?? null; };
+  if (items === null) return <Skeleton className="h-40 w-full" />;
+  if (items.length === 0) return <p className="org-ws-empty">No shared activity yet.</p>;
+  return <div className="org-activity-list">{items.map((a, i) => <OrgActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>;
+}
+
+function OrgExportTab({ orgId, orgName }: { orgId: string; orgName: string }) {
+  const notes = useOrgNotesList(orgId);
+  const [picklists, setPicklists] = useState<Array<{ eventId: string; entries: PicklistEntry[] }> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void loadOrgPicklistEntries(orgId).then((p) => { if (!cancelled) setPicklists(p); });
+    return () => { cancelled = true; };
+  }, [orgId]);
+
+  const eventIds = [...new Set([...notes.map((n) => n.eventId), ...(picklists ?? []).map((p) => p.eventId)])];
+  const names = useEventNames(eventIds);
+  const nameOf = (id: string | null) => { const ev = id ? names.get(id) : null; return ev?.name ?? (id ? `Event ${id}` : "No event"); };
+
+  const downloadCsv = (filename: string, rows: (string | number)[][]) => {
+    const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPicklists = () => {
+    const rows: (string | number)[][] = [["Event", "Rank", "Team #", "Team Name", "Crossed Out", "Notes"]];
+    for (const p of picklists ?? []) {
+      p.entries.forEach((e, i) => rows.push([nameOf(p.eventId), i + 1, e.teamNumber, e.teamName ?? "", e.crossedOut ? "yes" : "", e.notes]));
+    }
+    downloadCsv(`${orgSlug(orgName)}-picklists.csv`, rows);
+  };
+
+  const exportNotes = () => {
+    const rows: (string | number)[][] = [["Event", "Match ID", "Note", "Updated"]];
+    for (const n of notes) rows.push([nameOf(n.eventId), n.matchId, n.body, n.updatedAt]);
+    downloadCsv(`${orgSlug(orgName)}-notes.csv`, rows);
+  };
+
+  const hasPicklists = (picklists ?? []).some((p) => p.entries.length > 0);
+
+  return (
+    <div className="org-ws-section">
+      <p className="org-ws-help">Download your org's shared data as CSV, or print a clean copy for the competition table.</p>
+      <div className="org-ws-export-actions">
+        <Button variant="outline" onClick={exportPicklists} disabled={!hasPicklists}>
+          <Download data-icon="inline-start" />Picklists CSV
+        </Button>
+        <Button variant="outline" onClick={exportNotes} disabled={notes.length === 0}>
+          <Download data-icon="inline-start" />Notes CSV
+        </Button>
+        <Button variant="secondary" onClick={() => window.print()}>
+          <Printer data-icon="inline-start" />Print / Save PDF
+        </Button>
+      </div>
+
+      {/* Print-only formatted view — hidden on screen, isolated for print */}
+      <div className="org-print-root">
+        <h1>{orgName}</h1>
+        <section className="org-print-section">
+          <h2>Picklists</h2>
+          {!hasPicklists ? <p>No picklists.</p> : (picklists ?? []).filter((p) => p.entries.length > 0).map((p) => (
+            <div key={p.eventId} className="org-print-block">
+              <h3>{nameOf(p.eventId)}</h3>
+              <ol>
+                {p.entries.map((e) => (
+                  <li key={e.teamId} style={{ textDecoration: e.crossedOut ? "line-through" : "none" }}>
+                    {e.teamNumber}{e.teamName ? ` — ${e.teamName}` : ""}{e.notes ? ` — ${e.notes}` : ""}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </section>
+        <section className="org-print-section">
+          <h2>Notes</h2>
+          {notes.length === 0 ? <p>No notes.</p> : notes.map((n) => (
+            <div key={n.matchId} className="org-print-note">
+              <strong>{nameOf(n.eventId)}</strong>
+              <p>{n.body}</p>
+            </div>
+          ))}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function OrgSettingsSection({ orgId, org }: { orgId: string; org: OrgMembership | undefined }) {
+  return (
+    <div className="org-ws-section">
+      <OrgOverviewTab orgId={orgId} org={org} />
+      <div className="org-ws-subsection">
+        <h3 className="org-ws-subhead">Members</h3>
+        <OrgMembersTab orgId={orgId} org={org} />
+      </div>
+      <div className="org-ws-subsection">
+        <h3 className="org-ws-subhead">Invites</h3>
+        <OrgInvitesTab orgId={orgId} />
+      </div>
+    </div>
+  );
+}
+
+function OrgWorkspacePage({ orgId }: { orgId: string }) {
   const org = useOrg(orgId);
   const ready = useOrgsReady();
-  const [tab, setTab] = useState<OrgSettingsTab>("overview");
   const { user } = useAuth();
+  const [tab, setTab] = useState<OrgWorkspaceTab>(() => hashTab(ORG_WORKSPACE_TABS, "dashboard"));
+
+  useEffect(() => {
+    const handler = () => setTab(hashTab(ORG_WORKSPACE_TABS, "dashboard"));
+    window.addEventListener("hashchange", handler);
+    return () => window.removeEventListener("hashchange", handler);
+  }, []);
+
+  useEffect(() => { replaceCurrentHash(tab); }, [tab]);
 
   if (!user) {
     return (
       <section className="page">
         <div style={{ padding: "40px 20px", textAlign: "center" }}>
-          <p style={{ color: "var(--text-muted)" }}>Sign in to manage this org.</p>
+          <p style={{ color: "var(--text-muted)" }}>Sign in to view this org.</p>
         </div>
       </section>
     );
@@ -10783,13 +11050,13 @@ function OrgSettingsPage({ orgId }: { orgId: string }) {
 
   return (
     <section className="page">
-      <PageTitle icon={<Users />} title={org?.name ?? "Org Settings"} />
+      <PageTitle icon={<Users />} title={org?.name ?? "Org"} />
       <div style={{ marginBottom: 12 }}>
         <a href="/" className="join-org-back" onClick={(e) => { e.preventDefault(); navigate("/"); }}>← Back to home</a>
       </div>
       <div className="settings-layout">
-        <nav className="settings-tabs" aria-label="Org settings sections">
-          {ORG_SETTINGS_TABS.map((t) => (
+        <nav className="settings-tabs" aria-label="Org sections">
+          {ORG_WORKSPACE_NAV.map((t) => (
             <button
               key={t.value}
               type="button"
@@ -10802,9 +11069,12 @@ function OrgSettingsPage({ orgId }: { orgId: string }) {
           ))}
         </nav>
         <div className="settings-content">
-          {tab === "overview" && <OrgOverviewTab orgId={orgId} org={org} />}
-          {tab === "members"  && <OrgMembersTab orgId={orgId} org={org} />}
-          {tab === "invites"  && <OrgInvitesTab orgId={orgId} />}
+          {tab === "dashboard" && <OrgDashboardTab orgId={orgId} onNavigate={setTab} />}
+          {tab === "notes"     && <OrgNotesHubTab orgId={orgId} />}
+          {tab === "picklists" && <OrgPicklistsTab orgId={orgId} />}
+          {tab === "activity"  && <OrgActivityTab orgId={orgId} />}
+          {tab === "export"    && <OrgExportTab orgId={orgId} orgName={org?.name ?? "org"} />}
+          {tab === "settings"  && <OrgSettingsSection orgId={orgId} org={org} />}
         </div>
       </div>
     </section>
@@ -11927,8 +12197,8 @@ function route(path: string) {
   if (path === "/privacy") return <PrivacyPage />;
   const joinMatch = path.match(/^\/join\/([0-9a-f-]+)$/i);
   if (joinMatch) return <JoinOrgPage token={joinMatch[1]} />;
-  const orgMatch = path.match(/^\/org\/([0-9a-f-]+)\/settings$/i);
-  if (orgMatch) return <OrgSettingsPage orgId={orgMatch[1]} />;
+  const orgMatch = path.match(/^\/org\/([0-9a-f-]+)(?:\/settings)?$/i);
+  if (orgMatch) return <OrgWorkspacePage orgId={orgMatch[1]} />;
   const compareMatch = path.match(/^\/compare\/(.+)$/);
   if (compareMatch) return <CompareFromUrl param={compareMatch[1]} />;
   const eventMatch = path.match(/^\/events?\/(.+)$/);

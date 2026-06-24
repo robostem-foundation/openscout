@@ -755,6 +755,53 @@ main {
   align-self: center;
 }
 
+/* Collapsed (narrow header): the wrap shrinks to just the trigger icon and the
+   search becomes a popup, so the header never wraps to two rows. */
+.global-search-wrap.topbar-search.is-compact {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
+}
+.global-search-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.global-search-trigger:hover,
+.global-search-trigger:focus-visible {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.global-search-popup {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 200;
+  width: min(320px, calc(100vw - 32px));
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+/* Inside the popup the results stack below the input (not as a floating layer). */
+.global-search-popup .global-search-dropdown {
+  position: static;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
 .home-global-search {
   max-width: none;
   margin: 0;
@@ -1146,6 +1193,26 @@ main {
   align-items: start;
 }
 
+/* ── Events page: full-width "workspace" layout (v3) ──
+   The floating header caps page width at ~1170px; for the events workspace we
+   intentionally break out of that so the filter rail + event list fill the
+   viewport. The filter card keeps its rounded corners (it's a card, not a
+   flush rail) and the list sits in the wide right column. */
+.page.events-page-wide {
+  width: min(1640px, calc(100% - 48px));
+}
+.events-page-wide .events-layout {
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 18px;
+}
+/* Filter card on the LEFT (DOM order keeps the list first for a11y) */
+.events-page-wide .event-filter-sidebar {
+  order: -1;
+  position: sticky;
+  top: 16px;
+  align-self: start;
+}
+
 .event-filter-sidebar,
 .event-toolbar {
   margin-bottom: 15px;
@@ -1217,6 +1284,78 @@ main {
   color: var(--accent-ink);
 }
 
+/* Program / Grade live together under one "Program & Grade" title; the grade
+   row sits tucked just under the program row. */
+.program-grade {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* Horizontal toggle — styled like the season picker: a muted track with a
+   white "lifted" active segment. Spans the full width of its column; the
+   segments flex to share the row edge-to-edge. */
+.seg-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  width: 100%;
+  padding: 3px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-e3);
+  border-radius: 9px;
+}
+.seg-toggle button {
+  flex: 1 1 auto;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+.seg-toggle button:hover {
+  color: var(--text);
+}
+.seg-toggle button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+/* The "…" more-button stays compact instead of flexing to a full segment. */
+.seg-toggle-more {
+  flex: 0 0 auto;
+  min-width: 34px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+/* Non-interactive grade display (VURC = single grade, VAIRC = N/A) —
+   matches the muted track and spans the full width too. */
+.grade-static {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 14px;
+  border: 1px solid var(--border-e3);
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+.grade-static.grade-na {
+  color: var(--text-faint);
+}
+
 .event-filter-fields {
   display: grid;
   gap: 8px;
@@ -1230,7 +1369,14 @@ main {
 .event-filter-sidebar .quick-filters,
 .event-filter-sidebar .event-filter-fields {
   display: grid;
-  grid-template-columns: 1fr;
+  /* minmax(0,1fr) — NOT plain 1fr — so the season picker's intrinsic (w-max)
+     width can't propagate as min-content and blow the sidebar past its column.
+     Paired with min-width:0 on the items so overflow clips/scrolls instead. */
+  grid-template-columns: minmax(0, 1fr);
+}
+.event-filter-sidebar .filter-section,
+.event-filter-sidebar .filter-field {
+  min-width: 0;
 }
 
 .filter-field,
@@ -1322,12 +1468,14 @@ main {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
 }
 
+/* Filters now live on the LEFT, so flyout menus open to the RIGHT of the
+   sidebar (top-aligned with their trigger) instead of to the left. */
 .event-filter-sidebar .picker-menu-list {
-  top: auto;
-  bottom: 0;
-  left: auto;
-  right: calc(100% + 8px);
-  width: 100%;
+  top: 0;
+  bottom: auto;
+  left: calc(100% + 8px);
+  right: auto;
+  width: min(320px, 80vw);
   margin-top: 0;
 }
 
@@ -1456,73 +1604,88 @@ main {
   gap: 1px;
 }
 
+/* Event List search row: a clean search input + a live result count. The
+   search live-filters the list below (no results dropdown). */
 .event-quick-search {
-  position: relative;
-  padding: 10px 15px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 15px;
   border-bottom: 1px solid var(--border);
 }
 
-.event-quick-search .search-field {
-  max-width: 520px;
+.event-search-field {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 560px;
+  min-width: 0;
 }
-
-.event-quick-search input {
-  width: 100%;
-  height: 34px;
-  padding: 6px 12px 6px 32px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text-2);
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-  outline: 0;
-}
-
-.quick-search-results {
+/* Override the shared .search-field icon offset — here the icon is absolute. */
+.event-search-field .event-search-icon {
   position: absolute;
-  z-index: 8;
-  width: min(520px, calc(100% - 30px));
-  margin-top: 4px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  left: 12px;
+  top: 50%;
+  width: 16px;
+  margin: 0;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
 }
-
-.quick-search-results button,
-.quick-search-empty {
-  display: grid;
+.event-search-field input {
   width: 100%;
-  gap: 2px;
-  padding: 8px 10px;
-  border: 0;
-  border-bottom: 1px solid var(--border-soft);
+  height: 38px;
+  padding: 6px 38px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
   background: var(--surface);
   color: var(--text);
-  text-align: left;
+  font-size: 14px;
+  outline: 0;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
-
-.quick-search-results button.active,
-.quick-search-results button:hover {
-  background: var(--surface-2);
+.event-search-field input::placeholder {
+  color: var(--text-faint);
 }
-
-.quick-search-results small,
-.quick-search-empty {
+.event-search-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.event-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.event-search-clear:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.event-search-count {
+  flex: 0 0 auto;
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  white-space: nowrap;
 }
 
-/* Bolded substring that matches the search query in quick-search results. */
+/* Bolded substring that matches the search query (shared highlight helper). */
 .search-highlight {
   font-weight: 700;
   color: inherit;
-}
-
-.quick-search-results .show-more-results {
-  display: block;
-  color: var(--link);
-  text-align: center;
 }
 
 .filters {
@@ -3212,6 +3375,20 @@ tbody tr:hover {
   flex-direction: column;
 }
 
+/* Each tier renders its own <table>; with auto layout the Event column sizes to
+   each tier's own content, so "World Championships" (short names) ends up
+   narrower than the rest. Force a fixed layout with shared column widths so
+   every tier's columns line up — the Event column is identical across tiers. */
+.past-season-view .event-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.past-season-view .event-table .event-col-program { width: 84px; }
+.past-season-view .event-table .grade-col { width: 60px; }
+.past-season-view .event-table .event-col-season { width: 108px; }
+.past-season-view .event-table .event-col-dates { width: 132px; }
+.past-season-view .event-table .event-col-level { width: 116px; }
+
 .tier-section {
   margin-bottom: 4px;
 }
@@ -3474,6 +3651,34 @@ tbody tr:hover {
 .date-direction-toggle span {
   color: var(--text-2);
   font-weight: 700;
+}
+
+/* Labelless variant (events filter sidebar): drop the boxed chrome so the
+   scrollable picker sits flush under its "Season" section title. */
+.season-toolbar-nolabel {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+/* Soften the right edge so the overflowing seasons fade out instead of being
+   cut off hard — just a hair of fade. */
+.season-toolbar-nolabel .season-scroll-view {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 10px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 10px), transparent 100%);
+}
+/* No scroll chevron in the sidebar variant — the fade alone signals overflow. */
+.season-toolbar-nolabel .season-fade {
+  display: none;
+}
+
+/* Section title that also carries an inline action (e.g. "Back to <season>"). */
+.filter-section-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 /* Season strip: takes remaining width, hides its scrollbar, and reveals a
@@ -4314,38 +4519,24 @@ footer {
 }
 
 @media (max-width: 900px) {
-  .topbar-inner {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 0;
-  }
-
-  .topbar-actions {
-    width: 100%;
-    margin-left: 0;
-  }
-
-  .global-search-wrap.topbar-search {
-    flex: 1 1 auto;
-    width: 100%;
-    max-width: none;
-    margin: 6px 0 10px;
-  }
-
-  nav a {
-    min-height: 40px;
-    padding: 10px 12px;
-  }
-
+  /* Topbar stays a single row at all widths — the search collapses to an icon
+     (see .is-compact) instead of stacking the header into multiple rows. */
   .home-grid,
   .home-dashboard,
   .two-column,
   .events-layout,
+  .events-page-wide .events-layout,
   .stats-row {
     grid-template-columns: 1fr;
   }
 
-  .event-filter-sidebar {
+  /* Wide events page collapses back to the normal centered width on mobile */
+  .page.events-page-wide {
+    width: calc(100% - 30px);
+  }
+
+  .event-filter-sidebar,
+  .events-page-wide .event-filter-sidebar {
     position: static;
     order: -1;
   }
@@ -6207,6 +6398,280 @@ td.quick-look-col {
   font-size: 11px;
   color: var(--text-faint);
   white-space: nowrap;
+}
+
+/* ── Org Workspace (dashboard / notes / picklists / activity / export) ─────── */
+.org-ws-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Dashboard stat tiles — flat cards, no shadow, tabular figures */
+.org-ws-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.org-ws-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+}
+.org-ws-stat--btn {
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.org-ws-stat--btn:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.org-ws-stat-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+.org-ws-stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+.org-ws-stat-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* Generic block (e.g. recent-activity card on the dashboard) */
+.org-ws-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 4px 16px 8px;
+}
+.org-ws-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0 6px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 4px;
+}
+.org-ws-block-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.org-ws-empty,
+.org-ws-help {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.org-ws-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.org-ws-search { flex: 1; min-width: 180px; }
+
+/* Flat count badge (not a pill) */
+.org-ws-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  background: var(--surface-3);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Activity feed */
+.org-activity-list { display: flex; flex-direction: column; }
+.org-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+.org-activity-row:last-child { border-bottom: none; }
+a.org-activity-row:hover { color: var(--text); }
+a.org-activity-row:hover .org-activity-text { color: var(--accent); }
+.org-activity-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-activity-text strong { color: var(--text); font-weight: 600; }
+.org-activity-event { color: var(--text-muted); }
+.org-activity-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Notes hub — grouped by event */
+.org-notes-group { display: flex; flex-direction: column; }
+.org-notes-group + .org-notes-group { margin-top: 8px; }
+.org-notes-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.org-notes-group-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-note-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-top: none;
+  color: var(--text-2);
+  text-decoration: none;
+}
+.org-note-row:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+a.org-note-row:hover { background: var(--surface-2); }
+.org-note-body {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.org-note-go { flex-shrink: 0; color: var(--text-faint); }
+
+/* Picklists overview */
+.org-picklist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.org-picklist-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.org-picklist-card:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.org-picklist-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.org-picklist-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-picklist-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.org-picklist-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.org-picklist-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-3);
+  border-radius: var(--radius);
+}
+.org-picklist-more { font-size: 11.5px; color: var(--text-faint); align-self: center; }
+
+/* Settings section (stacked Overview / Members / Invites) */
+.org-ws-subsection {
+  padding-top: 18px;
+  border-top: 1px solid var(--border-soft);
+}
+.org-ws-subhead {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Export actions */
+.org-ws-export-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Print-only export view — hidden on screen, isolated for print */
+.org-print-root { display: none; }
+@media print {
+  body * { visibility: hidden; }
+  .org-print-root, .org-print-root * { visibility: visible; }
+  .org-print-root {
+    display: block;
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    color: #000;
+    font-size: 12px;
+  }
+  .org-print-root h1 { font-size: 20px; margin: 0 0 12px; }
+  .org-print-root h2 { font-size: 15px; margin: 16px 0 8px; }
+  .org-print-root h3 { font-size: 13px; margin: 10px 0 4px; }
+  .org-print-section { break-inside: avoid; }
+  .org-print-block, .org-print-note { break-inside: avoid; margin-bottom: 8px; }
+  .org-print-block ol { margin: 0; padding-left: 20px; }
+  .org-print-note p { margin: 2px 0 0; }
 }
 
 /* Note scope toggle (popover + video panel) */
@@ -8375,8 +8840,9 @@ td.quick-look-col {
   display: none;
 }
 
-@media (max-width: 760px) {
-  /* ── Slim, sticky top header: brand + search + account (no inline nav) ── */
+@media (max-width: 560px) {
+  /* True phones only: nav moves to the bottom tab bar; keep it in the header
+     above this width (it fits fine alongside the collapsed search icon). */
   .topbar {
     position: sticky;
     top: 0;

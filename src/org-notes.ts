@@ -243,6 +243,32 @@ export function useHasOrgNote(orgId: string, matchId: string | number): boolean 
   return Boolean(getForOrg(orgId)[String(matchId)]);
 }
 
+export type OrgNoteListItem = {
+  matchId: string;
+  eventId: string | null;
+  body: string;
+  updatedAt: string;
+};
+
+/**
+ * All of an org's notes as a flat list, newest first. Triggers the same lazy
+ * load as the single-note hooks and reads the already-loaded per-org cache —
+ * no extra round-trips. Used by the org workspace Notes hub.
+ */
+export function useOrgNotesList(orgId: string): OrgNoteListItem[] {
+  if (orgId && orgId !== "__none__" && !loaded.has(orgId)) {
+    void loadForOrg(orgId);
+  }
+  useSyncExternalStore(subscribe, getEpoch, getEpoch);
+  const list: OrgNoteListItem[] = [];
+  for (const [matchId, entry] of Object.entries(getForOrg(orgId))) {
+    if (!entry.body || entry.body.trim() === "") continue;
+    list.push({ matchId, eventId: entry.eventId, body: entry.body, updatedAt: entry.updatedAt });
+  }
+  list.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
+  return list;
+}
+
 /**
  * Cross-org derived selector — returns true if ANY loaded org has a note for
  * this match. Used by NoteRailDot so it doesn't need to call hooks in a loop.
