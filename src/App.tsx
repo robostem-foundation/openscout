@@ -2334,7 +2334,7 @@ function PicklistTab({ event, orgId, rankings = [], isIq = false }: { event: { i
       </div>
 
       {boardMode ? (
-        <AllianceBoard eventId={eventIdStr} rankings={rankings} entries={entries} />
+        <AllianceBoard key={eventIdStr} eventId={eventIdStr} rankings={rankings} entries={entries} />
       ) : entries.length === 0 ? (
         <div className="picklist-empty">
           <ListOrdered size={28} />
@@ -5129,7 +5129,7 @@ function EventDetail({ param }: { param: string }) {
       {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} eventId={event.id} divisionMap={teamDivisionNameMap} />}
       {tab === "picklist" && (
         primaryOrg
-          ? <PicklistTab event={event} orgId={primaryOrg.orgId} rankings={filteredRankings} isIq={isIqProgram(event)} />
+          ? <PicklistTab event={event} orgId={primaryOrg.orgId} rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} />
           : <div className="picklist-empty"><p>Join or create an org to use shared picklists.</p></div>
       )}
       </div>
@@ -5512,6 +5512,8 @@ function starPoints(cx: number, cy: number, outer: number, inner: number) {
 // Compact recharts sparkline of a team's qual scores in match order — no axes,
 // grid, or tooltip. Visually consistent with TrendChart; used in quick view.
 function ScoreSparkline({ values, height = 44 }: { values: number[]; height?: number }) {
+  // Unique per-instance gradient id so multiple sparklines don't collide.
+  const gradId = `score-spark-fill-${useId().replace(/:/g, "")}`;
   const config: ChartConfig = { score: { label: "Qual score", color: "#5cb85c" } };
   if (values.length < 2) return null;
   const data = values.map((v, i) => ({ i, score: v }));
@@ -5519,12 +5521,12 @@ function ScoreSparkline({ values, height = 44 }: { values: number[]; height?: nu
     <ChartContainer config={config} className="w-full" style={{ height, aspectRatio: "auto" }}>
       <AreaChart accessibilityLayer data={data} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
         <defs>
-          <linearGradient id="score-spark-fill" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-score)" stopOpacity={0.3} />
             <stop offset="100%" stopColor="var(--color-score)" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <Area dataKey="score" type="monotone" stroke="var(--color-score)" strokeWidth={1.5} fill="url(#score-spark-fill)" isAnimationActive={false} dot={false} />
+        <Area dataKey="score" type="monotone" stroke="var(--color-score)" strokeWidth={1.5} fill={`url(#${gradId})`} isAnimationActive={false} dot={false} />
       </AreaChart>
     </ChartContainer>
   );
