@@ -105,6 +105,9 @@ import type { RecentEntry } from "./recently-viewed";
 import { addToTray, canAddToTray, clearTray, closeCompareModal, getContextEventId, getContextSeasonId, getTrayEntries, isInTray, openCompareModal, removeFromTray, useCompareTray, useCompareModalOpen, useIsInTray } from "./compare";
 import { addToPicklist, removeFromPicklist, reorderPicklist, updatePicklistNotes, toggleCrossedOut, clearCrossedOut, usePicklist, useIsInPicklist } from "./picklist";
 import type { TrayEntry } from "./compare";
+import { toCsv, downloadCsv as downloadCsvFile } from "./export";
+import { computeEventOpr } from "./analytics";
+import type { TeamOpr } from "./analytics";
 import type { Alliance, Award, CountryGroup, Event, EventInfoData, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
 
 const programOptions = [
@@ -272,6 +275,9 @@ let _currentTeam: Team | null = null;
 let _currentEventSeasonId: number | null = null;
 let _currentEventId: number | null = null;
 let _currentEventRankings: Ranking[] = [];
+// All matches for the current event — used by the comparison modal to compute
+// per-event OPR/DPR/CCWM (per-team slots only hold a team's own matches).
+let _currentEventMatches: Match[] = [];
 
 // Module-level: opens the in-event team search — registered by EventDetail while
 // mounted, cleared on unmount. Lets the global F shortcut expand the search bar
@@ -2056,12 +2062,203 @@ function PicklistRowBtn({
   );
 }
 
+// ── Alliance selection simulator (selection tracker) ──────────────────────────
+// V5RC/VURC only — VEX IQ has no alliance draft. State is local + localStorage
+// per event (no Supabase), mirroring the picklist's optimistic-local approach.
+
+type AllianceBoardState = { size: number; count: number; slots: Array<Array<number | null>> };
+
+function emptyBoardSlots(count: number, size: number): Array<Array<number | null>> {
+  return Array.from({ length: count }, () => new Array(size).fill(null));
+}
+
+function allianceBoardKey(eventId: string) {
+  return `alliance-sim:${eventId}`;
+}
+
+function readAllianceBoard(eventId: string): AllianceBoardState | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(allianceBoardKey(eventId)) ?? "null");
+    if (!raw || typeof raw !== "object") return null;
+    const size = raw.size === 3 ? 3 : 2;
+    const count = typeof raw.count === "number" ? Math.min(Math.max(raw.count, 2), 16) : 8;
+    const slots = emptyBoardSlots(count, size);
+    if (Array.isArray(raw.slots)) {
+      for (let a = 0; a < count; a++) {
+        for (let s = 0; s < size; s++) {
+          const v = raw.slots[a]?.[s];
+          if (typeof v === "number") slots[a][s] = v;
+        }
+      }
+    }
+    return { size, count, slots };
+  } catch {
+    return null;
+  }
+}
+
+function writeAllianceBoard(eventId: string, board: AllianceBoardState) {
+  try {
+    localStorage.setItem(allianceBoardKey(eventId), JSON.stringify(board));
+  } catch {
+    // ignore quota / unavailable storage
+  }
+}
+
+function AllianceBoard({
+  eventId,
+  rankings,
+  entries,
+}: {
+  eventId: string;
+  rankings: Ranking[];
+  entries: PicklistEntry[];
+}) {
+  const [board, setBoard] = useState<AllianceBoardState>(
+    () => readAllianceBoard(eventId) ?? { size: 2, count: 8, slots: emptyBoardSlots(8, 2) },
+  );
+
+  useEffect(() => {
+    writeAllianceBoard(eventId, board);
+  }, [eventId, board]);
+
+  // Picklist notes/names by teamId, for quick reference in the pool.
+  const picklistInfo = useMemo(() => {
+    const map = new Map<string, { teamName?: string; notes: string }>();
+    for (const e of entries) map.set(e.teamId, { teamName: e.teamName, notes: e.notes });
+    return map;
+  }, [entries]);
+
+  const placed = useMemo(() => {
+    const set = new Set<number>();
+    for (const alliance of board.slots) for (const id of alliance) if (id != null) set.add(id);
+    return set;
+  }, [board]);
+
+  const sortedRankings = useMemo(() => [...rankings].sort((a, b) => a.rank - b.rank), [rankings]);
+  const pool = sortedRankings.filter((r) => !placed.has(r.team.id));
+
+  const rankByTeam = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const r of rankings) m.set(r.team.id, r.rank);
+    return m;
+  }, [rankings]);
+
+  function placeTeam(teamId: number) {
+    setBoard((prev) => {
+      const slots = prev.slots.map((row) => row.slice());
+      for (let a = 0; a < slots.length; a++) {
+        const open = slots[a].indexOf(null);
+        if (open !== -1) {
+          slots[a][open] = teamId;
+          return { ...prev, slots };
+        }
+      }
+      return prev; // board full
+    });
+  }
+
+  function clearSlot(a: number, s: number) {
+    setBoard((prev) => {
+      const slots = prev.slots.map((row) => row.slice());
+      slots[a][s] = null;
+      return { ...prev, slots };
+    });
+  }
+
+  function setSize(size: number) {
+    setBoard((prev) => {
+      const slots = prev.slots.map((row) => {
+        const next = new Array(size).fill(null);
+        for (let s = 0; s < Math.min(size, row.length); s++) next[s] = row[s];
+        return next;
+      });
+      return { ...prev, size, slots };
+    });
+  }
+
+  function setCount(count: number) {
+    const clamped = Math.min(Math.max(count, 2), 16);
+    setBoard((prev) => {
+      const slots = emptyBoardSlots(clamped, prev.size);
+      for (let a = 0; a < Math.min(clamped, prev.slots.length); a++) slots[a] = prev.slots[a].slice();
+      return { ...prev, count: clamped, slots };
+    });
+  }
+
+  function reset() {
+    setBoard((prev) => ({ ...prev, slots: emptyBoardSlots(prev.count, prev.size) }));
+  }
+
+  return (
+    <div className="alliance-board">
+      <div className="alliance-board-controls">
+        <span>Alliances</span>
+        <button type="button" className="picklist-move-btn" onClick={() => setCount(board.count - 1)} disabled={board.count <= 2} title="Fewer alliances"><ChevronDown size={11} /></button>
+        <strong>{board.count}</strong>
+        <button type="button" className="picklist-move-btn" onClick={() => setCount(board.count + 1)} disabled={board.count >= 16} title="More alliances"><ChevronUp size={11} /></button>
+        <span style={{ marginLeft: 12 }}>Teams each</span>
+        <button type="button" className={`button-sm${board.size === 2 ? " active" : ""}`} onClick={() => setSize(2)}>2</button>
+        <button type="button" className={`button-sm${board.size === 3 ? " active" : ""}`} onClick={() => setSize(3)}>3</button>
+        <button type="button" className="button-sm" style={{ marginLeft: "auto" }} onClick={reset}>Reset board</button>
+      </div>
+      <div className="alliance-board-grid">
+        <div className="alliance-pool">
+          <div className="alliance-pool-head">Available ({pool.length})</div>
+          {pool.map((r) => {
+            const info = picklistInfo.get(String(r.team.id));
+            return (
+              <button type="button" key={r.team.id} className="alliance-pool-row" onClick={() => placeTeam(r.team.id)} title="Add to next open alliance slot">
+                <span className="picklist-rank">#{r.rank}</span>
+                <span className="alliance-pool-team">{r.team.name}</span>
+                {info?.teamName && <span className="picklist-team-name">{info.teamName}</span>}
+                {info?.notes && <span className="alliance-pool-note">{info.notes}</span>}
+              </button>
+            );
+          })}
+          {!pool.length && <div className="muted" style={{ padding: 8 }}>All ranked teams placed.</div>}
+        </div>
+        <div className="alliance-list">
+          {board.slots.map((alliance, a) => (
+            <div className="alliance-row" key={a}>
+              <span className="alliance-seed">A{a + 1}</span>
+              {alliance.map((teamId, s) => {
+                const ranking = teamId != null ? rankings.find((r) => r.team.id === teamId) : null;
+                return (
+                  <button
+                    type="button"
+                    key={s}
+                    className={`alliance-slot${teamId == null ? " empty" : ""}`}
+                    onClick={() => teamId != null && clearSlot(a, s)}
+                    title={teamId != null ? "Click to remove" : ""}
+                    disabled={teamId == null}
+                  >
+                    {teamId != null && ranking ? (
+                      <>
+                        <span className="alliance-slot-team">{ranking.team.name}</span>
+                        <span className="alliance-slot-seed">#{rankByTeam.get(teamId) ?? "?"}</span>
+                      </>
+                    ) : (
+                      <span className="muted">{s === 0 ? "Captain" : `Pick ${s}`}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Picklist tab ──────────────────────────────────────────────────────────────
 
 /** Full picklist panel rendered as a tab in EventDetail. */
-function PicklistTab({ event, orgId }: { event: { id: number; name: string }; orgId: string }) {
+function PicklistTab({ event, orgId, rankings = [], isIq = false }: { event: { id: number; name: string }; orgId: string; rankings?: Ranking[]; isIq?: boolean }) {
   const { entries, ready } = usePicklist(orgId, String(event.id));
   const [allianceMode, setAllianceMode] = useState(false);
+  const [boardMode, setBoardMode] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   // Local notes state for uncontrolled editing (save on blur)
@@ -2099,24 +2296,15 @@ function PicklistTab({ event, orgId }: { event: { id: number; name: string }; or
     return <div className="picklist-empty"><span className="muted">Loading…</span></div>;
   }
 
-  if (entries.length === 0) {
-    return (
-      <div className="picklist-empty">
-        <ListOrdered size={28} />
-        <p>No teams yet.</p>
-        <p className="muted">
-          Add teams from the <strong>Rankings</strong> tab using the{" "}
-          <Plus size={12} style={{ display: "inline-block", verticalAlign: "middle" }} /> button.
-        </p>
-      </div>
-    );
-  }
+  const showBoard = !isIq && rankings.length > 0;
 
   return (
     <div>
       <div className="picklist-header">
-        <span className="picklist-count">{remaining} team{remaining !== 1 ? "s" : ""} remaining</span>
-        {allianceMode && (
+        <span className="picklist-count">
+          {boardMode ? "Alliance board" : `${remaining} team${remaining !== 1 ? "s" : ""} remaining`}
+        </span>
+        {!boardMode && allianceMode && entries.length > 0 && (
           <button
             type="button"
             className="button-sm"
@@ -2125,15 +2313,38 @@ function PicklistTab({ event, orgId }: { event: { id: number; name: string }; or
             Reset
           </button>
         )}
-        <button
-          type="button"
-          className={`button-sm${allianceMode ? " active" : ""}`}
-          onClick={() => setAllianceMode((v) => !v)}
-        >
-          {allianceMode ? "Exit Alliance Mode" : "Alliance Selection"}
-        </button>
+        {!boardMode && entries.length > 0 && (
+          <button
+            type="button"
+            className={`button-sm${allianceMode ? " active" : ""}`}
+            onClick={() => setAllianceMode((v) => !v)}
+          >
+            {allianceMode ? "Exit Alliance Mode" : "Alliance Selection"}
+          </button>
+        )}
+        {showBoard && (
+          <button
+            type="button"
+            className={`button-sm${boardMode ? " active" : ""}`}
+            onClick={() => setBoardMode((v) => !v)}
+          >
+            {boardMode ? "Exit Board" : "Alliance Board"}
+          </button>
+        )}
       </div>
 
+      {boardMode ? (
+        <AllianceBoard key={eventIdStr} eventId={eventIdStr} rankings={rankings} entries={entries} />
+      ) : entries.length === 0 ? (
+        <div className="picklist-empty">
+          <ListOrdered size={28} />
+          <p>No teams yet.</p>
+          <p className="muted">
+            Add teams from the <strong>Rankings</strong> tab using the{" "}
+            <Plus size={12} style={{ display: "inline-block", verticalAlign: "middle" }} /> button.
+          </p>
+        </div>
+      ) : (
       <div className="picklist-list">
         {entries.map((entry, i) => (
           <div
@@ -2227,6 +2438,7 @@ function PicklistTab({ event, orgId }: { event: { id: number; name: string }; or
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
@@ -4747,8 +4959,9 @@ function EventDetail({ param }: { param: string }) {
 
   useEffect(() => {
     _currentEventRankings = rankings.data?.data ?? [];
-    return () => { _currentEventRankings = []; };
-  }, [event?.id, rankings.data]);
+    _currentEventMatches = matches.data?.data ?? [];
+    return () => { _currentEventRankings = []; _currentEventMatches = []; };
+  }, [event?.id, rankings.data, matches.data]);
 
   if (loading || error || !event) {
     return (
@@ -4761,6 +4974,7 @@ function EventDetail({ param }: { param: string }) {
   _currentEventSeasonId = event.season.id;
   _currentEventId = event.id;
   _currentEventRankings = rankings.data?.data ?? [];
+  _currentEventMatches = matches.data?.data ?? [];
 
   return (
     <ProgramContext.Provider value={programSlug(event.program)}>
@@ -4892,7 +5106,7 @@ function EventDetail({ param }: { param: string }) {
           eventId={event.id}
         />
       )}
-      {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} orgId={primaryOrg?.orgId} eventId={String(event.id)} />}
+      {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} allMatches={matches.data?.data ?? []} orgId={primaryOrg?.orgId} eventId={String(event.id)} />}
       {tab === "skills" && <SkillsTable skills={filteredSkills} />}
       {tab === "awards" && <AwardsList awards={filteredAwards} />}
       {tab === "teams" && divisions.length > 1 && (
@@ -4915,7 +5129,7 @@ function EventDetail({ param }: { param: string }) {
       {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} eventId={event.id} divisionMap={teamDivisionNameMap} />}
       {tab === "picklist" && (
         primaryOrg
-          ? <PicklistTab event={event} orgId={primaryOrg.orgId} />
+          ? <PicklistTab event={event} orgId={primaryOrg.orgId} rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} />
           : <div className="picklist-empty"><p>Join or create an org to use shared picklists.</p></div>
       )}
       </div>
@@ -5293,6 +5507,29 @@ function starPoints(cx: number, cy: number, outer: number, inner: number) {
     pts.push(`${(cx + r * Math.cos(angle)).toFixed(2)},${(cy + r * Math.sin(angle)).toFixed(2)}`);
   }
   return pts.join(" ");
+}
+
+// Compact recharts sparkline of a team's qual scores in match order — no axes,
+// grid, or tooltip. Visually consistent with TrendChart; used in quick view.
+function ScoreSparkline({ values, height = 44 }: { values: number[]; height?: number }) {
+  // Unique per-instance gradient id so multiple sparklines don't collide.
+  const gradId = `score-spark-fill-${useId().replace(/:/g, "")}`;
+  const config: ChartConfig = { score: { label: "Qual score", color: "#5cb85c" } };
+  if (values.length < 2) return null;
+  const data = values.map((v, i) => ({ i, score: v }));
+  return (
+    <ChartContainer config={config} className="w-full" style={{ height, aspectRatio: "auto" }}>
+      <AreaChart accessibilityLayer data={data} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-score)" stopOpacity={0.3} />
+            <stop offset="100%" stopColor="var(--color-score)" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <Area dataKey="score" type="monotone" stroke="var(--color-score)" strokeWidth={1.5} fill={`url(#${gradId})`} isAnimationActive={false} dot={false} />
+      </AreaChart>
+    </ChartContainer>
+  );
 }
 
 function TrendChart({
@@ -6428,6 +6665,21 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   // Event stat tiles for the panel's lead section.
   const iqEvt = isIq && teamId != null ? iqTeamQualStats(eventMatches, teamId, eventRanking) : null;
   const teamDivision = eventRanking?.division?.name ?? eventMatches.find((m) => m.division?.name)?.division?.name ?? null;
+  // Within-event qual-score trend + OPR (only when opened from the current event,
+  // where we hold all its matches for the OPR solve).
+  const qualScores = useMemo(
+    () =>
+      eventMatches
+        .filter((m) => m.round === 2)
+        .sort((a, b) => a.matchnum - b.matchnum)
+        .map((m) => m.alliances.find((al) => isTeamInAlliance(al, teamId ?? -1))?.score)
+        .filter((s): s is number => typeof s === "number"),
+    [eventMatches, teamId],
+  );
+  const evtOpr =
+    contextEventId != null && contextEventId === _currentEventId && teamId != null
+      ? currentEventOprMap().get(teamId)?.opr ?? null
+      : null;
   const fmtNum = (v: number | null | undefined) => (v == null ? "—" : Number.isInteger(v) ? String(v) : v.toFixed(1));
   const rankRow: Array<{ label: string; value: ReactNode }> = isIq
     ? [
@@ -6527,6 +6779,17 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
                       <div className="quick-view-stat-row">
                         {rankRow.map((c) => <EventStatCard key={c.label} label={c.label} value={eventLoading ? "…" : c.value} />)}
                       </div>
+                      {!matchesQ.loading && (qualScores.length > 1 || evtOpr != null) && (
+                        <div className="quick-view-spark">
+                          {qualScores.length > 1 && (
+                            <div className="quick-view-spark-chart"><ScoreSparkline values={qualScores} /></div>
+                          )}
+                          <span className="quick-view-spark-label">
+                            Qual scores
+                            {evtOpr != null && <> · <strong>OPR {evtOpr.toFixed(1)}</strong></>}
+                          </span>
+                        </div>
+                      )}
                       <div className="quick-view-stat-row">
                         {skillsRow.map((c) => <EventStatCard key={c.label} label={c.label} value={skillsQ.loading ? "…" : c.value} />)}
                       </div>
@@ -8929,41 +9192,131 @@ function DroppedScores({ dropped }: { dropped: Array<{ matchnum: number; score: 
   );
 }
 
-function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }: { rankings: Ranking[]; isIq?: boolean; matches?: Match[]; orgId?: string; eventId?: string }) {
-  const sortedRankings = [...rankings].sort((a, b) => a.rank - b.rank);
+type SortState = { key: string; dir: "asc" | "desc" };
+
+/** Clickable, sort-toggling table header cell with an asc/desc caret. */
+function SortableTh({ col, label, sort, onSort, title, className }: { col: string; label: ReactNode; sort: SortState; onSort: (key: string) => void; title?: string; className?: string }) {
+  const active = sort.key === col;
+  return (
+    <th
+      className={`sortable-th${active ? " sorted" : ""}${className ? ` ${className}` : ""}`}
+      title={title}
+      onClick={() => onSort(col)}
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}
+    >
+      {label}
+      <span className="sort-caret">{active && (sort.dir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}</span>
+    </th>
+  );
+}
+
+function RankingsTable({ rankings, isIq = false, matches = [], allMatches, orgId, eventId }: { rankings: Ranking[]; isIq?: boolean; matches?: Match[]; allMatches?: Match[]; orgId?: string; eventId?: string }) {
   const programCode = useContext(ProgramContext);
   const showPicklist = !!(orgId && eventId);
+  // Rank ascending is the natural default; clicking a column sorts by it
+  // (numeric cols default to descending = best first), re-clicking flips.
+  const [sort, setSort] = useState<SortState>({ key: "rank", dir: "asc" });
+  const onSort = (key: string) =>
+    setSort((p) => (p.key === key ? { key, dir: p.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "rank" || key === "team" ? "asc" : "desc" }));
+
+  // Per-event OPR/DPR/CCWM from this event's qual matches. CCWM/DPR are only
+  // meaningful where alliances oppose each other (V5RC/VURC), not IQ teamwork.
+  // Use the unfiltered match set so a team-search filter doesn't skew the solve.
+  const oprMatches = allMatches ?? matches;
+  const oprMap = useMemo(() => computeEventOpr(oprMatches), [oprMatches]);
+  // IQ avg/high/low come from per-team qual matches — compute once for sort + render.
+  const iqStatsByRow = useMemo(() => {
+    const m = new Map<number, ReturnType<typeof iqTeamQualStats>>();
+    if (isIq) for (const r of rankings) m.set(r.team.id, iqTeamQualStats(matches, r.team.id, r));
+    return m;
+  }, [isIq, rankings, matches]);
+  const fmtRating = (v: number | undefined) => (v === undefined ? "-" : formatNumber(v));
+
+  const sortValue = (row: Ranking): number | string => {
+    const o = oprMap.get(row.team.id);
+    const iq = iqStatsByRow.get(row.team.id);
+    switch (sort.key) {
+      case "team": return row.team.name;
+      case "record": return row.wins ?? -Infinity;
+      case "wp": return row.wp ?? -Infinity;
+      case "ap": return row.ap ?? -Infinity;
+      case "awp": return rankingAwp(row);
+      case "sp": return row.sp ?? -Infinity;
+      case "high": return isIq ? (iq?.high ?? -Infinity) : (row.high_score ?? -Infinity);
+      case "avg": return isIq ? (iq?.avg ?? -Infinity) : (row.average_points ?? -Infinity);
+      case "low": return iq?.low ?? -Infinity;
+      case "opr": return o?.opr ?? -Infinity;
+      case "dpr": return o?.dpr ?? -Infinity;
+      case "ccwm": return o?.ccwm ?? -Infinity;
+      default: return row.rank;
+    }
+  };
+  const dir = sort.dir === "asc" ? 1 : -1;
+  const displayRows = [...rankings].sort((a, b) => {
+    const va = sortValue(a), vb = sortValue(b);
+    if (typeof va === "string" || typeof vb === "string") return dir * String(va).localeCompare(String(vb), undefined, { numeric: true });
+    return dir * ((va as number) - (vb as number));
+  });
+
+  function exportRankings() {
+    const headers = isIq
+      ? ["Rank", "Team #", "Avg", "High", "Low", "OPR"]
+      : ["Rank", "Team #", "W", "L", "T", "WP", "AP", "SP", "AWP", "High", "Avg", "OPR", "DPR", "CCWM"];
+    const rows = displayRows.map((row) => {
+      const o = oprMap.get(row.team.id);
+      const opr = o ? Number(o.opr.toFixed(1)) : "";
+      if (isIq) {
+        const stats = iqStatsByRow.get(row.team.id);
+        return [row.rank, row.team.name, stats?.avg ?? "", stats?.high ?? "", stats?.low ?? "", opr];
+      }
+      return [
+        row.rank, row.team.name,
+        row.wins ?? 0, row.losses ?? 0, row.ties ?? 0,
+        row.wp ?? "", row.ap ?? "", row.sp ?? "", rankingAwp(row), row.high_score ?? "", row.average_points ?? "",
+        opr, o ? Number(o.dpr.toFixed(1)) : "", o ? Number(o.ccwm.toFixed(1)) : "",
+      ];
+    });
+    downloadCsvFile(`rankings-${eventId ?? "event"}.csv`, toCsv(headers, rows));
+  }
+
+  const exportBtn = displayRows.length ? (
+    <button type="button" className="ws-csv-btn" onClick={exportRankings} title="Download rankings (with OPR) as CSV">
+      <Download size={13} /> CSV
+    </button>
+  ) : undefined;
 
   if (isIq) {
     return (
-      <Panel title="Rankings" icon={<BarChart3 />}>
+      <Panel title="Rankings" icon={<BarChart3 />} action={exportBtn}>
         <table>
           <thead>
             <tr>
-              <th>Rank</th>
-              <th>Team</th>
-              <th>Avg</th>
-              <th>High</th>
-              <th>Low</th>
+              <SortableTh col="rank" label="Rank" sort={sort} onSort={onSort} />
+              <SortableTh col="team" label="Team" sort={sort} onSort={onSort} />
+              <SortableTh col="avg" label="Avg" sort={sort} onSort={onSort} />
+              <SortableTh col="high" label="High" sort={sort} onSort={onSort} />
+              <SortableTh col="low" label="Low" sort={sort} onSort={onSort} />
+              <SortableTh col="opr" label="OPR" sort={sort} onSort={onSort} title="Offensive Power Rating (this event)" />
               <th>Dropped scores</th>
               <th className="compare-col">Compare</th>
               {showPicklist && <th className="picklist-col">Picklist</th>}
             </tr>
           </thead>
           <tbody>
-            {sortedRankings.map((row) => {
-              const stats = iqTeamQualStats(matches, row.team.id, row);
+            {displayRows.map((row) => {
+              const stats = iqStatsByRow.get(row.team.id);
               return (
                 <tr key={row.id}>
                   <td>{row.rank}</td>
                   <td className="team-cell">
                     <CompareTeamLink teamId={row.team.id} teamNumber={row.team.name} programCode={programCode} />
                   </td>
-                  <td>{formatNumber(stats.avg)}</td>
-                  <td>{stats.high ?? "-"}</td>
-                  <td>{stats.low ?? "-"}</td>
+                  <td>{formatNumber(stats?.avg)}</td>
+                  <td>{stats?.high ?? "-"}</td>
+                  <td>{stats?.low ?? "-"}</td>
+                  <td>{fmtRating(oprMap.get(row.team.id)?.opr)}</td>
                   <td>
-                    <DroppedScores dropped={stats.dropped} />
+                    <DroppedScores dropped={stats?.dropped ?? []} />
                   </td>
                   <td className="compare-col">
                     <CompareRowBtn teamId={row.team.id} teamNumber={row.team.name} programCode={programCode ?? ""} />
@@ -8976,9 +9329,9 @@ function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }:
                 </tr>
               );
             })}
-            {!sortedRankings.length && (
+            {!displayRows.length && (
               <tr>
-                <td colSpan={showPicklist ? 8 : 7}>
+                <td colSpan={showPicklist ? 9 : 8}>
                   <Empty>No rankings returned.</Empty>
                 </td>
               </tr>
@@ -8990,24 +9343,30 @@ function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }:
   }
 
   return (
-    <Panel title="Rankings" icon={<BarChart3 />}>
+    <Panel title="Rankings" icon={<BarChart3 />} action={exportBtn}>
       <table>
         <thead>
           <tr>
-            <th>Rank</th>
-            <th>Team</th>
-            <th>Record</th>
-            <th>WP</th>
-            <th>AP</th>
-            <th>SP</th>
-            <th>High</th>
-            <th>Avg</th>
+            <SortableTh col="rank" label="Rank" sort={sort} onSort={onSort} />
+            <SortableTh col="team" label="Team" sort={sort} onSort={onSort} />
+            <SortableTh col="record" label="Record" sort={sort} onSort={onSort} title="Sort by wins" />
+            <SortableTh col="wp" label="WP" sort={sort} onSort={onSort} />
+            <SortableTh col="ap" label="AP" sort={sort} onSort={onSort} />
+            <SortableTh col="sp" label="SP" sort={sort} onSort={onSort} />
+            <SortableTh col="awp" label="AWP" sort={sort} onSort={onSort} title="Autonomous Win Points" />
+            <SortableTh col="high" label="High" sort={sort} onSort={onSort} className="col-muted" />
+            <SortableTh col="avg" label="Avg" sort={sort} onSort={onSort} className="col-muted" />
+            <SortableTh col="opr" label="OPR" sort={sort} onSort={onSort} title="Offensive Power Rating (this event)" className="col-muted" />
+            <SortableTh col="dpr" label="DPR" sort={sort} onSort={onSort} title="Defensive Power Rating (this event)" className="col-muted" />
+            <SortableTh col="ccwm" label="CCWM" sort={sort} onSort={onSort} title="Calculated Contribution to Winning Margin (OPR − DPR)" />
             <th className="compare-col">Compare</th>
             {showPicklist && <th className="picklist-col">Picklist</th>}
           </tr>
         </thead>
         <tbody>
-          {sortedRankings.map((row) => (
+          {displayRows.map((row) => {
+            const o = oprMap.get(row.team.id);
+            return (
             <tr key={row.id}>
               <td>{row.rank}</td>
               <td className="team-cell">
@@ -9019,8 +9378,12 @@ function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }:
               <td>{row.wp ?? "-"}</td>
               <td>{row.ap ?? "-"}</td>
               <td>{row.sp ?? "-"}</td>
-              <td>{row.high_score ?? "-"}</td>
-              <td>{formatNumber(row.average_points)}</td>
+              <td>{rankingAwp(row)}</td>
+              <td className="col-muted">{row.high_score ?? "-"}</td>
+              <td className="col-muted">{formatNumber(row.average_points)}</td>
+              <td className="col-muted">{fmtRating(o?.opr)}</td>
+              <td className="col-muted">{fmtRating(o?.dpr)}</td>
+              <td>{fmtRating(o?.ccwm)}</td>
               <td className="compare-col">
                 <CompareRowBtn teamId={row.team.id} teamNumber={row.team.name} programCode={programCode ?? ""} />
               </td>
@@ -9030,10 +9393,11 @@ function RankingsTable({ rankings, isIq = false, matches = [], orgId, eventId }:
                 </td>
               )}
             </tr>
-          ))}
-          {!sortedRankings.length && (
+            );
+          })}
+          {!displayRows.length && (
             <tr>
-              <td colSpan={showPicklist ? 10 : 9}>
+              <td colSpan={showPicklist ? 14 : 13}>
                 <Empty>No rankings returned.</Empty>
               </td>
             </tr>
@@ -11853,6 +12217,9 @@ type CompareStats = {
   evtWp: number | null; evtAp: number | null; evtAwp: number | null;
   // IQ event-specific
   evtAvg: number | null; evtHigh: number | null; evtLow: number | null; evtDropped: number | null;
+  // Per-event OPR/DPR/CCWM (null when not in event context). DPR/CCWM are only
+  // meaningful for V5RC/VURC (opposing alliances), not IQ teamwork.
+  evtOpr: number | null; evtDpr: number | null; evtCcwm: number | null;
 };
 
 function emptyCompareStats(): CompareStats {
@@ -11864,7 +12231,18 @@ function emptyCompareStats(): CompareStats {
     awardCount: 0, topAwardTitle: null, eventCount: 0,
     evtRank: null, evtRecord: null, evtWp: null, evtAp: null, evtAwp: null,
     evtAvg: null, evtHigh: null, evtLow: null, evtDropped: null,
+    evtOpr: null, evtDpr: null, evtCcwm: null,
   };
+}
+
+// Memoized OPR/DPR/CCWM for the current event, shared across compare slots so
+// we solve the linear system once per modal, not once per team.
+let _oprCache: { matches: Match[]; map: Map<number, TeamOpr> } | null = null;
+function currentEventOprMap(): Map<number, TeamOpr> {
+  if (!_oprCache || _oprCache.matches !== _currentEventMatches) {
+    _oprCache = { matches: _currentEventMatches, map: computeEventOpr(_currentEventMatches) };
+  }
+  return _oprCache.map;
 }
 
 function rankingAwp(ranking: Ranking) {
@@ -12003,6 +12381,9 @@ function computeCompareStats(slot: TeamCompareSlot, contextEventId: number | nul
   const evtRanking = contextEventId ? nonScrimmageRankings.find((r) => r.event.id === contextEventId) ?? null : null;
   // IQ: derive Avg/High/Low + dropped scores from the team's qual matches at the event.
   const evtIq = isIq && contextEventId ? iqTeamQualStats(slot.eventMatches, teamId, evtRanking) : null;
+  // Per-event OPR/DPR/CCWM, available only when comparing within the event
+  // currently open (we have all its matches via _currentEventMatches).
+  const evtOprStats = contextEventId && contextEventId === _currentEventId ? currentEventOprMap().get(teamId) ?? null : null;
 
   return {
     wins, losses, ties, totalMatches, winRate,
@@ -12021,6 +12402,9 @@ function computeCompareStats(slot: TeamCompareSlot, contextEventId: number | nul
     evtHigh:      evtIq?.high ?? evtRanking?.high_score ?? null,
     evtLow:       evtIq?.low ?? null,
     evtDropped:   evtIq ? evtIq.dropped.reduce((sum, d) => sum + d.score, 0) : null,
+    evtOpr:       evtOprStats ? Number(evtOprStats.opr.toFixed(1)) : null,
+    evtDpr:       evtOprStats ? Number(evtOprStats.dpr.toFixed(1)) : null,
+    evtCcwm:      evtOprStats ? Number(evtOprStats.ccwm.toFixed(1)) : null,
   };
 }
 
@@ -12057,6 +12441,7 @@ function buildCompareRows(hasEventContext: boolean, isIq: boolean): CompareRowDe
           { key: "evtHigh",    label: "High",           getValue: (s) => s.evtHigh ?? null, higherBetter: true },
           { key: "evtLow",     label: "Low",            getValue: (s) => s.evtLow ?? null, higherBetter: true },
           { key: "evtDropped", label: "Dropped Scores", getValue: (s) => s.evtDropped ?? null, higherBetter: true },
+          { key: "evtOpr",     label: "OPR",            getValue: (s) => s.evtOpr ?? null, higherBetter: true },
         ]
       : [
           { key: "s-evt",      isSection: true,  label: "At This Event" },
@@ -12065,6 +12450,9 @@ function buildCompareRows(hasEventContext: boolean, isIq: boolean): CompareRowDe
           { key: "evtWp",      label: "WP",          getValue: (s: CompareStats) => s.evtWp ?? null, higherBetter: true },
           { key: "evtAp",      label: "AP",          getValue: (s: CompareStats) => s.evtAp ?? null, higherBetter: true },
           { key: "evtAwp",     label: "AWP",         getValue: (s: CompareStats) => s.evtAwp ?? null, higherBetter: true },
+          { key: "evtOpr",     label: "OPR",         getValue: (s: CompareStats) => s.evtOpr ?? null, higherBetter: true },
+          { key: "evtDpr",     label: "DPR",         getValue: (s: CompareStats) => s.evtDpr ?? null, higherBetter: false },
+          { key: "evtCcwm",    label: "CCWM",        getValue: (s: CompareStats) => s.evtCcwm ?? null, higherBetter: true },
         ];
   return [
     ...seasonRows,
