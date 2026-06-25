@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenScout — Redesign directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500&display=swap" rel="stylesheet" />
+<style>
+  :root{--bg:#fafafa;--surface:#fff;--text:#18181b;--text-2:#5c5c66;--text-3:#909099;--line:#e8e8e6;--accent:#2f6feb}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:"Geist","SF Pro Display",sans-serif;-webkit-font-smoothing:antialiased;line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto;padding:56px 28px 80px}
+  .eyebrow{font-family:"Geist Mono",monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:500}
+  h1{font-size:34px;font-weight:600;letter-spacing:-.03em;margin:14px 0 12px}
+  .lead{font-size:16px;color:var(--text-2);max-width:680px;line-height:1.6}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(440px,1fr));gap:24px;margin-top:42px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;transition:box-shadow .2s,transform .2s}
+  .card:hover{box-shadow:0 12px 40px rgba(0,0,0,.08);transform:translateY(-2px)}
+  .thumb{position:relative;height:248px;overflow:hidden;background:#111;border-bottom:1px solid var(--line)}
+  .thumb iframe{width:1440px;height:900px;border:0;transform:scale(.305);transform-origin:top left;pointer-events:none}
+  .thumb a.cover{position:absolute;inset:0;z-index:2}
+  .meta{padding:18px 20px 20px}
+  .meta .n{display:flex;align-items:center;gap:10px}
+  .meta .ix{font-family:"Geist Mono";font-size:12px;color:var(--text-3);font-weight:500}
+  .meta h2{font-size:18px;font-weight:600;letter-spacing:-.01em}
+  .meta .tagrow{display:flex;gap:6px;margin:10px 0 10px;flex-wrap:wrap}
+  .tag{font-size:11px;font-weight:500;padding:3px 9px;border-radius:999px;background:#f1f1ef;color:var(--text-2)}
+  .meta p{font-size:13.5px;color:var(--text-2);line-height:1.55}
+  .foot{display:flex;align-items:center;gap:12px;margin-top:15px}
+  .swatches{display:flex;gap:5px}
+  .sw{width:16px;height:16px;border-radius:5px;border:1px solid rgba(0,0,0,.08)}
+  .open{margin-left:auto;font-size:13px;font-weight:600;color:var(--accent);display:flex;align-items:center;gap:5px}
+  .open svg{width:14px;height:14px;stroke-width:2.2}
+  .note{margin-top:44px;padding:18px 20px;background:#f3f4f6;border:1px solid var(--line);border-radius:12px;font-size:13.5px;color:var(--text-2);line-height:1.6}
+  .note b{color:var(--text);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">OpenScout · UX/UI exploration</div>
+  <h1>Five redesign directions</h1>
+  <p class="lead">Same scouting hub, five quiet skins. Every direction shares one rethink: a single labeled nav, the whole live event visible at once (rankings, on-field, skills, scout panel) instead of eight buried tabs, a readable rankings table, and an always-present team scout panel. Click any preview to open it full screen.</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="thumb"><iframe src="01-clarity.html" scrolling="no"></iframe><a class="cover" href="01-clarity.html"></a></div>
+      <div class="meta">
+        <div class="n"><span class="ix">01</span><h2>Clarity</h2></div>
+        <div class="tagrow"><span class="tag">Light</span><span class="tag">Geist</span><span class="tag">Balanced density</span></div>
+        <p>Clean and neutral. Hairline borders, one restrained blue accent, generous spacing. The safe, modern default — fast to read, nothing shouts.</p>
+        <div class="foot"><div class="swatches"><span class="sw" style="background:#fbfbfa"></span><span class="sw" style="background:#18181b"></span><span class="sw" style="background:#2f6feb"></span><span class="sw" style="background:#1c7c54"></span></div><a class="open" href="01-clarity.html">Open<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="thumb"><iframe src="02-dusk.html" scrolling="no"></iframe><a class="cover" href="02-dusk.html"></a></div>
+      <div class="meta">
+        <div class="n"><span class="ix">02</span><h2>Dusk</h2></div>
+        <div class="tagrow"><span class="tag">Dark</span><span class="tag">Hanken Grotesk</span><span class="tag">Easy on eyes</span></div>
+        <p>A calm dark mode for dim venues — soft slate surfaces, low-contrast lines, a quiet periwinkle accent, rounded and friendly. Not a cockpit.</p>
+        <div class="foot"><div class="swatches"><span class="sw" style="background:#0f1115"></span><span class="sw" style="background:#1c202b"></span><span class="sw" style="background:#8aa6f0"></span><span class="sw" style="background:#5dc08c"></span></div><a class="open" href="02-dusk.html">Open<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="thumb"><iframe src="03-almanac.html" scrolling="no"></iframe><a class="cover" href="03-almanac.html"></a></div>
+      <div class="meta">
+        <div class="n"><span class="ix">03</span><h2>Almanac</h2></div>
+        <div class="tagrow"><span class="tag">Warm light</span><span class="tag">Fraunces serif</span><span class="tag">Airy</span></div>
+        <p>Editorial and print-inspired. Paper tones, a serif for headings, ruled tables over heavy cards, lots of breathing room. Reads like a scouting report.</p>
+        <div class="foot"><div class="swatches"><span class="sw" style="background:#f7f3ea"></span><span class="sw" style="background:#221d17"></span><span class="sw" style="background:#9a3324"></span><span class="sw" style="background:#8a6a2f"></span></div><a class="open" href="03-almanac.html">Open<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="thumb"><iframe src="04-bloom.html" scrolling="no"></iframe><a class="cover" href="04-bloom.html"></a></div>
+      <div class="meta">
+        <div class="n"><span class="ix">04</span><h2>Bloom</h2></div>
+        <div class="tagrow"><span class="tag">Light</span><span class="tag">Figtree</span><span class="tag">Approachable</span></div>
+        <p>Soft and friendly. Gentle muted-pastel tints separate sections, rounder corners, warm welcome. Best for newer scouts and students.</p>
+        <div class="foot"><div class="swatches"><span class="sw" style="background:#f5f6f9"></span><span class="sw" style="background:#edf2fe"></span><span class="sw" style="background:#5b7cf0"></span><span class="sw" style="background:#e9f7ef"></span></div><a class="open" href="04-bloom.html">Open<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="thumb"><iframe src="05-index.html" scrolling="no"></iframe><a class="cover" href="05-index.html"></a></div>
+      <div class="meta">
+        <div class="n"><span class="ix">05</span><h2>Index</h2></div>
+        <div class="tagrow"><span class="tag">Dark</span><span class="tag">IBM Plex Mono</span><span class="tag">Dense</span></div>
+        <p>High-contrast and Swiss. Strict neutral palette, one signal-red accent, monospaced labels, hairline grid rules. Maximum clarity for power users.</p>
+        <div class="foot"><div class="swatches"><span class="sw" style="background:#0b0b0c"></span><span class="sw" style="background:#18181b"></span><span class="sw" style="background:#f0473c"></span><span class="sw" style="background:#54c08a"></span></div><a class="open" href="05-index.html">Open<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note"><b>Note on the screen shown.</b> Each mockup is the redesigned <b>event command view</b> — the busiest, most-used screen, today split across eight tabs. It's the best single test of the direction. The same nav, search palette, scout panel, and picklist patterns carry to Home, Teams, Skills, and Insights.</div>
+</div>
+</body>
+</html>

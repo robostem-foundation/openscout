@@ -9,7 +9,7 @@ import { scrapeEventInfo } from "./eventInfoScraper.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const app = express();
-const port = Number(process.env.PORT ?? 5173);
+const port = Number(process.env.PORT ?? 5175);
 
 if (!process.env.RSE_API_KEY) {
   throw new Error("Missing RSE_API_KEY in .env");
@@ -77,5 +77,5 @@ if (process.env.NODE_ENV === "production") {
 }
 
 app.listen(port, () => {
-  console.log(`VEX Alliance running at http://localhost:${port}`);
+  console.log(`OpenScout running at http://localhost:${port}`);
 });

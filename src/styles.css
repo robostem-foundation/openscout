@@ -1,33 +1,36 @@
 :root {
+  /* === Geist (Vercel) design tokens — LIGHT ===
+     Re-pointed to the official Geist Gray scale + a cyan accent (#0891b2). Variable
+     NAMES are unchanged so the whole stylesheet adopts the Geist look for free. */
   /* surfaces */
-  --bg: #fff; /* page background */
-  --surface: #fff; /* panels, cards, dropdowns, inputs, table cells */
-  --surface-2: #f5f5f5; /* panel/section header bars, toolbars, hover rows */
-  --surface-3: #eee; /* subtle insets / dividers fill */
+  --bg: #ffffff; /* page background */
+  --surface: #ffffff; /* panels, cards, dropdowns, inputs, table cells */
+  --surface-2: #fafafa; /* panel/section header bars, toolbars, hover rows */
+  --surface-3: #f2f2f2; /* subtle insets / dividers fill / hover */
   /* text */
-  --text: #333;
-  --text-2: #555;
-  --text-muted: #777;
-  --text-faint: #999;
-  /* borders */
-  --border: #ddd;
-  --border-soft: #eee;
-  --border-strong: #ccc;
-  --border-e3: #e3e3e3;
-  /* accent / links */
-  --link: #337ab7;
-  --link-hover: #23527c;
-  --accent: #337ab7;
-  --accent-hover: #2e6da4;
-  --on-accent: #fff; /* white foreground on dark/colored chrome (topbar, badges) */
-  --accent-ink: #fff; /* foreground specifically on an --accent fill (buttons) */
-  /* topbar (already dark in light mode) */
-  --topbar-bg: #2c3e50;
-  --topbar-text: #fff;
+  --text: #171717;
+  --text-2: #404040;
+  --text-muted: #666666;
+  --text-faint: #8f8f8f;
+  /* borders — Geist hairline */
+  --border: #eaeaea;
+  --border-soft: #f2f2f2;
+  --border-strong: #d4d4d4;
+  --border-e3: #ededed;
+  /* accent / links — cyan (cyan-600; deepened just enough to read on white) */
+  --link: #0891b2;
+  --link-hover: #0e7490;
+  --accent: #0891b2;
+  --accent-hover: #0e7490;
+  --on-accent: #ffffff; /* white foreground on dark/colored chrome (badges) */
+  --accent-ink: #ffffff; /* foreground specifically on an --accent fill (buttons) */
+  /* topbar — now a white tinted-glass floating island (see .topbar) */
+  --topbar-bg: rgba(255, 255, 255, 0.72);
+  --topbar-text: #171717;
   /* states */
-  --danger: #d9534f;
-  --danger-strong: #c9302c;
-  --success: #3c763d;
+  --danger: #e5484d;
+  --danger-strong: #cb2b31;
+  --success: #45a557;
   /* award / highlight banner (Excellence, Champions, …) — warm amber */
   --award-bg: #fcf8e3;
   --award-border: #f3d69c;
@@ -35,21 +38,24 @@
   --award-inset: rgba(255, 255, 255, 0.65);
   /* text on light-colored solid badges (cyan/amber meta pills). White in light
      mode keeps the original look; dark mode swaps to dark ink for contrast. */
-  --badge-ink: #fff;
-  /* team-number links inside result/alliance cells */
-  --team-link: #4968c8;
-  /* effects */
-  --shadow-sm: 0 1px 1px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.18);
-  --overlay: rgba(0, 0, 0, 0.55);
-  --focus-ring: rgba(102, 175, 233, 0.3);
-  /* shape — the dominant component corner. The Modern UI skin softens this. */
-  --radius: 4px;
+  --badge-ink: #ffffff;
+  /* team-number links inside result/alliance cells — accent (cyan) */
+  --team-link: var(--link);
+  /* Blue Alliance score badge — a true blue, not the cyan accent */
+  --score-blue: #2563eb;
+  /* effects — soft, diffuse Geist shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.12);
+  --overlay: rgba(0, 0, 0, 0.45);
+  --focus-ring: rgba(8, 145, 178, 0.35);
+  /* shape — the dominant component corner (Geist 8px). */
+  --radius: 8px;
 
   color-scheme: light;
   color: var(--text);
   background: var(--bg);
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.42857143;
   font-synthesis: none;
@@ -57,148 +63,45 @@
 }
 
 :root[data-theme="dark"] {
+  /* === Geist (Vercel) design tokens — DARK === */
   color-scheme: dark;
-  --bg: #14202b;
-  --surface: #1b2733;
-  --surface-2: #243441;
-  --surface-3: #2b3a47;
-  --text: #e6edf3;
-  --text-2: #c3ccd5;
-  --text-muted: #9aa7b3;
-  --text-faint: #7c8995;
-  --border: #32434f;
-  --border-soft: #283642;
-  --border-strong: #3b4c59;
-  --border-e3: #2e3d49;
-  --link: #6aa9e0;
-  --link-hover: #94c4f0;
-  --accent: #3d86c6;
-  --accent-hover: #4f97d6;
-  --on-accent: #fff;
-  --topbar-bg: #16222e;
-  --topbar-text: #fff;
-  --danger: #e06c68;
-  --danger-strong: #e06c68;
-  --success: #7bc47f;
-  /* award banner — translucent amber reads on both navy and black dark surfaces */
+  --bg: #0a0a0a;
+  --surface: #0a0a0a;
+  --surface-2: #1a1a1a;
+  --surface-3: #1f1f1f;
+  --text: #ededed;
+  --text-2: #c9ccd2;
+  --text-muted: #a1a1a1;
+  --text-faint: #7d7d7d;
+  --border: #2e2e2e;
+  --border-soft: #1f1f1f;
+  --border-strong: #3b3b3b;
+  --border-e3: #292929;
+  --link: #22d3ee;
+  --link-hover: #67e8f9;
+  --accent: #0e7490;
+  --accent-hover: #0891b2;
+  --on-accent: #ffffff;
+  --accent-ink: #ffffff;
+  --topbar-bg: rgba(10, 10, 10, 0.72);
+  --topbar-text: #ededed;
+  --danger: #ff6166;
+  --danger-strong: #ff6166;
+  --success: #62c073;
+  /* award banner — translucent amber reads on the near-black dark surface */
   --award-bg: rgba(234, 179, 8, 0.1);
   --award-border: rgba(234, 179, 8, 0.32);
   --award-text: #e8c971;
   --award-inset: transparent;
   /* dark ink on the light cyan/amber badges so their text is legible on dark */
   --badge-ink: #06232b;
-  /* brighter team links so numbers stay legible over the dark row tints */
-  --team-link: #7fb4e6;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.6);
-  --overlay: rgba(0, 0, 0, 0.65);
-  --focus-ring: rgba(106, 169, 224, 0.4);
-}
-
-/* ===========================================================================
-   Modern UI skin — a second "look" the user can pick in Settings → Appearance.
-   It is ORTHOGONAL to light/dark: it only re-points the existing design tokens
-   (colors, radius, font), so every page inherits it for free without changing
-   any structure, spacing, or font sizes. Inspired by Vercel's Geist system —
-   off-white/black surfaces, hairline borders, a single blue accent, softer
-   corners, and a system-ui typeface.
-
-   The topbar deliberately stays near-black in both modern modes: its nav links,
-   brand, and sign-in button assume a dark bar (white text, translucent-white
-   borders), and a black bar over an off-white page is itself the Geist look.
-   --------------------------------------------------------------------------- */
-:root[data-ui="modern"] {
-  /* surfaces */
-  --bg: #fafafa;
-  --surface: #ffffff;
-  --surface-2: #fafafa;
-  --surface-3: #f2f2f2;
-  /* text */
-  --text: #0a0a0a;
-  --text-2: #404040;
-  --text-muted: #666666;
-  --text-faint: #8f8f8f;
-  /* borders */
-  --border: #eaeaea;
-  --border-soft: #f2f2f2;
-  --border-strong: #d4d4d4;
-  --border-e3: #ededed;
-  /* accent / links — bright cyan (#51CDEA). Cyan fills take dark ink, not white,
-     so accent buttons stay legible; links use a deeper cyan that reads on white. */
-  --link: #0e94b8;
-  --link-hover: #0b7896;
-  --accent: #51cdea;
-  --accent-hover: #2fbede;
-  --on-accent: #ffffff;
-  --accent-ink: #06232b;
-  --team-link: #0e94b8;
-  /* topbar — near-black Geist nav */
-  --topbar-bg: #0a0a0a;
-  --topbar-text: #ffffff;
-  /* states */
-  --danger: #e5484d;
-  --danger-strong: #cb2b31;
-  --success: #45a557;
-  /* effects — softer, more diffuse */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.12);
-  --overlay: rgba(0, 0, 0, 0.45);
-  --focus-ring: rgba(0, 112, 243, 0.35);
-  /* shape — softer corners than the classic 4px */
-  --radius: 8px;
-  /* a cleaner, more modern system typeface (keeps the same metrics/sizes) */
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-}
-
-:root[data-ui="modern"][data-theme="dark"] {
-  /* surfaces — cool slate with a navy lean: softer than pure black and a bit
-     greyer/bluer, but still lighter & less saturated than the Default navy */
-  --bg: #0f131b;
-  --surface: #161b25;
-  --surface-2: #1e242f;
-  --surface-3: #28303c;
-  /* text */
-  --text: #ededed;
-  --text-2: #c9ccd2;
-  --text-muted: #939aa4;
-  --text-faint: #6f7783;
-  /* borders */
-  --border: #2e3744;
-  --border-soft: #20262f;
-  --border-strong: #3b4654;
-  --border-e3: #2a313b;
-  /* accent / links — cyan reads cleanly on black, so links use it directly */
-  --link: #51cdea;
-  --link-hover: #8ee0f2;
-  --accent: #51cdea;
-  --accent-hover: #6ed8f0;
-  --on-accent: #ffffff;
-  --accent-ink: #06232b;
-  --team-link: #51cdea;
-  /* topbar */
-  --topbar-bg: #121722;
-  --topbar-text: #ededed;
-  /* states */
-  --danger: #ff6166;
-  --danger-strong: #ff6166;
-  --success: #62c073;
-  /* effects */
+  /* team numbers in accent (cyan), bright for the dark row tints */
+  --team-link: var(--link);
+  --score-blue: #3b82f6;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
   --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.7);
   --overlay: rgba(0, 0, 0, 0.7);
-  --focus-ring: rgba(50, 145, 255, 0.5);
-}
-
-/* A few topbar details hardcode the classic navy bar; retune them for the
-   near-black Geist nav so the divider and link hover read correctly. */
-:root[data-ui="modern"] .topbar {
-  border-bottom: 1px solid #000;
-}
-:root[data-ui="modern"] nav a:hover,
-:root[data-ui="modern"] nav a:focus,
-:root[data-ui="modern"] nav a.active {
-  background: rgba(255, 255, 255, 0.08);
+  --focus-ring: rgba(34, 211, 238, 0.5);
 }
 
 * {
@@ -250,92 +153,145 @@ button {
   cursor: pointer;
 }
 
+/* Floating tinted-glass header "island" — Geist style. */
 .topbar {
-  min-height: 50px;
-  margin-bottom: 20px;
+  /* backdrop-filter makes this a stacking context, so the account dropdown's
+     own z-index can't escape it — lift the whole island above page content
+     (kept below modal overlays at 500+) so the dropdown lands on top. */
+  position: relative;
+  z-index: 400;
+  width: min(1170px, calc(100% - 24px));
+  margin: 12px auto 24px;
+  min-height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
   background: var(--topbar-bg);
-  border: 0;
-  border-bottom: 1px solid #080808;
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  backdrop-filter: saturate(140%) blur(14px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   color: var(--topbar-text);
+}
+
+:root[data-theme="dark"] .topbar {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .topbar-inner {
   display: flex;
   align-items: center;
-  width: min(1170px, calc(100% - 30px));
-  min-height: 50px;
-  margin: 0 auto;
+  gap: 8px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 16px;
+  margin: 0;
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 50px;
-  margin-right: 18px;
-  color: var(--on-accent);
-  font-size: 18px;
-  font-weight: 500;
+  gap: 9px;
+  min-height: 56px;
+  margin-right: 12px;
+  color: var(--text);
   white-space: nowrap;
 }
 
 .brand:hover,
 .brand:focus {
-  color: var(--on-accent);
+  color: var(--text);
   text-decoration: none;
 }
 
-.brand-mark {
-  display: inline-grid;
-  width: 30px;
+.brand-logo {
+  display: block;
+  box-sizing: border-box;
   height: 30px;
-  place-items: center;
-  background: var(--accent);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 3px;
-  color: var(--accent-ink);
+  width: 30px;
+  padding: 0;
+  background: transparent;
+  border-radius: 8px;
 }
 
-.brand-mark svg {
-  width: 19px;
-  height: 19px;
+.brand-word {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 nav {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 2px;
   min-width: 0;
   overflow-x: auto;
+}
+
+/* Right-side cluster: search + theme toggle + auth, pinned to the right edge as
+   one group. margin-left:auto here is the ONLY flex spacer, so it stays right-
+   aligned regardless of whether nav is present (nav is hidden on mobile). */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto;
 }
 
 nav a {
   display: inline-flex;
   align-items: center;
-  min-height: 50px;
-  padding: 15px;
-  color: var(--text-faint);
-  font-weight: 400;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-weight: 500;
   white-space: nowrap;
 }
 
 nav a:hover,
 nav a:focus,
 nav a.active {
-  background: #080808;
-  color: var(--on-accent);
+  background: var(--surface-3);
+  color: var(--text);
   text-decoration: none;
 }
 
 .topbar-search {
-  width: min(360px, 34vw);
-  max-width: 360px;
-  margin: 0 0 0 auto;
+  width: min(320px, 32vw);
+  max-width: 320px;
+  margin: 0;
+}
+
+/* Header light/dark switch — sits between the search box and the auth slot. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.theme-toggle:hover,
+.theme-toggle:focus-visible {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--border-strong);
 }
 
 .topbar-search .global-search-input {
-  height: 30px;
+  height: 34px;
   padding-left: 32px;
-  border-color: rgba(0, 0, 0, 0.28);
+  border-color: var(--border);
   font-size: 13px;
   box-shadow: none;
 }
@@ -422,7 +378,7 @@ main {
   border-color: var(--accent);
   box-shadow:
     inset 0 1px 1px rgba(0, 0, 0, 0.075),
-    0 0 8px rgba(102, 175, 233, 0.6);
+    0 0 0 3px var(--focus-ring);
 }
 
 .global-search button,
@@ -495,33 +451,72 @@ main {
   padding: 12px;
 }
 
-.home-event-tabs {
+/* Home events panel header: program multi-toggle + event-filter toggle + the
+   "See all events" link, all on one row in place of the old title text. */
+.home-events-header {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
 }
 
-.home-event-tabs button {
-  min-height: 30px;
-  padding: 5px 10px;
+/* Let the title span fill the header so the row can spread across full width. */
+.panel h2:has(.home-events-header) .panel-heading-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.home-events-header .season-toolbar {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* The event toggle has no overflow at 4 items — drop the edge fade mask. */
+.home-events-header .season-scroll-view {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.home-events-seeall {
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Program multi-select toggle (V5 / IQ / …). Multiple may be active at once. */
+.home-prog-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--surface);
-  color: var(--link);
-  line-height: 1.2;
 }
 
-.home-event-tabs button:hover,
-.home-event-tabs button:focus {
-  border-color: var(--border-strong);
-  background: var(--surface-2);
+.home-prog-toggle button {
+  height: 26px;
+  min-width: 34px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
 }
 
-.home-event-tabs button.active {
-  border-color: var(--accent-hover);
+.home-prog-toggle button:hover {
+  color: var(--text);
+}
+
+.home-prog-toggle button.active {
   background: var(--accent);
   color: var(--accent-ink);
 }
@@ -561,9 +556,9 @@ main {
   width: 100%;
   margin: 0;
   font-size: 40px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.12;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   color: var(--link);
   white-space: nowrap;
 }
@@ -613,7 +608,7 @@ main {
 
 .home-name-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(102, 175, 233, 0.3);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .home-name-save {
@@ -648,15 +643,16 @@ main {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 54px;
+  height: 50px;
   padding: 0 18px;
-  border: 1px solid var(--border);
-  border-radius: 27px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
   background: var(--surface);
   color: var(--text-2);
   font-size: 15px;
   font-weight: 500;
   white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .home-hero-btn:hover {
@@ -667,7 +663,7 @@ main {
 }
 
 .home-hero-btn-icon {
-  width: 54px;
+  width: 50px;
   padding: 0;
   justify-content: center;
 }
@@ -678,11 +674,12 @@ main {
 }
 
 .home-hero-global-search .global-search-input {
-  height: 54px;
-  padding: 6px 20px 6px 46px;
-  font-size: 17px;
-  border-radius: 28px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.09);
+  height: 50px;
+  padding: 6px 20px 6px 44px;
+  font-size: 16px;
+  border-radius: 12px;
+  border-color: var(--border-strong);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .home-hero-global-search .global-search-icon {
@@ -694,8 +691,8 @@ main {
 .home-hero-global-search .global-search-input:focus {
   border-color: var(--accent);
   box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.09),
-    0 0 0 3px rgba(102, 175, 233, 0.32);
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 0 0 3px var(--focus-ring);
 }
 
 .home-hero-global-search .global-search-dropdown {
@@ -793,8 +790,55 @@ main {
   flex: 0 0 300px;
   width: 300px;
   max-width: 300px;
-  margin: 0 0 0 auto;
+  margin: 0;
   align-self: center;
+}
+
+/* Collapsed (narrow header): the wrap shrinks to just the trigger icon and the
+   search becomes a popup, so the header never wraps to two rows. */
+.global-search-wrap.topbar-search.is-compact {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
+}
+.global-search-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.global-search-trigger:hover,
+.global-search-trigger:focus-visible {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.global-search-popup {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 200;
+  width: min(320px, calc(100vw - 32px));
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+/* Inside the popup the results stack below the input (not as a floating layer). */
+.global-search-popup .global-search-dropdown {
+  position: static;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  box-shadow: none;
 }
 
 .home-global-search {
@@ -832,7 +876,7 @@ main {
 
 .global-search-input:focus {
   border-color: var(--accent);
-  box-shadow: inset 0 1px 1px rgba(0,0,0,0.075), 0 0 8px rgba(102,175,233,0.6);
+  box-shadow: inset 0 1px 1px rgba(0,0,0,0.075), 0 0 0 3px var(--focus-ring);
 }
 
 .global-search-dropdown {
@@ -923,16 +967,48 @@ main {
   padding: 12px;
 }
 
+/* Internal shortcut row — opens the in-app Skills page instead of vex.com. */
+.skills-lb-openscout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin-bottom: 4px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--accent);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.skills-lb-openscout svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.skills-lb-openscout .arrow {
+  margin-left: auto;
+}
+
+.skills-lb-openscout:hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  text-decoration: none;
+}
+
 .skills-lb-btn {
-  --skill-color: #337ab7;
+  --skill-color: #c9302c;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   min-height: 34px;
   padding: 7px 10px 7px 12px;
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--skill-color);
+  border: 1px solid var(--skill-color);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
@@ -954,7 +1030,19 @@ main {
 }
 
 .skills-lb-btn.vexu {
-  --skill-color: #222;
+  --skill-color: #555;
+}
+
+/* Brighten the outline colors so the thin border stays legible on the near-black
+   dark surface. */
+[data-theme="dark"] .skills-lb-btn.v5 {
+  --skill-color: #ef4444;
+}
+[data-theme="dark"] .skills-lb-btn.iq {
+  --skill-color: #3b82f6;
+}
+[data-theme="dark"] .skills-lb-btn.vexu {
+  --skill-color: #a1a1a1;
 }
 
 .skills-lb-btn svg {
@@ -964,7 +1052,7 @@ main {
 
 .skills-lb-btn:hover {
   border-color: var(--skill-color);
-  background: color-mix(in srgb, var(--skill-color) 8%, white);
+  background: color-mix(in srgb, var(--skill-color) 8%, var(--surface));
   color: var(--text);
   text-decoration: none;
 }
@@ -1188,6 +1276,26 @@ main {
   align-items: start;
 }
 
+/* ── Events page: full-width "workspace" layout (v3) ──
+   The floating header caps page width at ~1170px; for the events workspace we
+   intentionally break out of that so the filter rail + event list fill the
+   viewport. The filter card keeps its rounded corners (it's a card, not a
+   flush rail) and the list sits in the wide right column. */
+.page.events-page-wide {
+  width: min(1640px, calc(100% - 48px));
+}
+.events-page-wide .events-layout {
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 18px;
+}
+/* Filter card on the LEFT (DOM order keeps the list first for a11y) */
+.events-page-wide .event-filter-sidebar {
+  order: -1;
+  position: sticky;
+  top: 16px;
+  align-self: start;
+}
+
 .event-filter-sidebar,
 .event-toolbar {
   margin-bottom: 15px;
@@ -1259,6 +1367,78 @@ main {
   color: var(--accent-ink);
 }
 
+/* Program / Grade live together under one "Program & Grade" title; the grade
+   row sits tucked just under the program row. */
+.program-grade {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* Horizontal toggle — styled like the season picker: a muted track with a
+   white "lifted" active segment. Spans the full width of its column; the
+   segments flex to share the row edge-to-edge. */
+.seg-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  width: 100%;
+  padding: 3px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-e3);
+  border-radius: 9px;
+}
+.seg-toggle button {
+  flex: 1 1 auto;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+.seg-toggle button:hover {
+  color: var(--text);
+}
+.seg-toggle button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+/* The "…" more-button stays compact instead of flexing to a full segment. */
+.seg-toggle-more {
+  flex: 0 0 auto;
+  min-width: 34px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+/* Non-interactive grade display (VURC = single grade, VAIRC = N/A) —
+   matches the muted track and spans the full width too. */
+.grade-static {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 14px;
+  border: 1px solid var(--border-e3);
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+.grade-static.grade-na {
+  color: var(--text-faint);
+}
+
 .event-filter-fields {
   display: grid;
   gap: 8px;
@@ -1272,7 +1452,14 @@ main {
 .event-filter-sidebar .quick-filters,
 .event-filter-sidebar .event-filter-fields {
   display: grid;
-  grid-template-columns: 1fr;
+  /* minmax(0,1fr) — NOT plain 1fr — so the season picker's intrinsic (w-max)
+     width can't propagate as min-content and blow the sidebar past its column.
+     Paired with min-width:0 on the items so overflow clips/scrolls instead. */
+  grid-template-columns: minmax(0, 1fr);
+}
+.event-filter-sidebar .filter-section,
+.event-filter-sidebar .filter-field {
+  min-width: 0;
 }
 
 .filter-field,
@@ -1364,12 +1551,14 @@ main {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
 }
 
+/* Filters now live on the LEFT, so flyout menus open to the RIGHT of the
+   sidebar (top-aligned with their trigger) instead of to the left. */
 .event-filter-sidebar .picker-menu-list {
-  top: auto;
-  bottom: 0;
-  left: auto;
-  right: calc(100% + 8px);
-  width: 100%;
+  top: 0;
+  bottom: auto;
+  left: calc(100% + 8px);
+  right: auto;
+  width: min(320px, 80vw);
   margin-top: 0;
 }
 
@@ -1498,73 +1687,88 @@ main {
   gap: 1px;
 }
 
+/* Event List search row: a clean search input + a live result count. The
+   search live-filters the list below (no results dropdown). */
 .event-quick-search {
-  position: relative;
-  padding: 10px 15px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 15px;
   border-bottom: 1px solid var(--border);
 }
 
-.event-quick-search .search-field {
-  max-width: 520px;
+.event-search-field {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 560px;
+  min-width: 0;
 }
-
-.event-quick-search input {
-  width: 100%;
-  height: 34px;
-  padding: 6px 12px 6px 32px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text-2);
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-  outline: 0;
-}
-
-.quick-search-results {
+/* Override the shared .search-field icon offset — here the icon is absolute. */
+.event-search-field .event-search-icon {
   position: absolute;
-  z-index: 8;
-  width: min(520px, calc(100% - 30px));
-  margin-top: 4px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  left: 12px;
+  top: 50%;
+  width: 16px;
+  margin: 0;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
 }
-
-.quick-search-results button,
-.quick-search-empty {
-  display: grid;
+.event-search-field input {
   width: 100%;
-  gap: 2px;
-  padding: 8px 10px;
-  border: 0;
-  border-bottom: 1px solid var(--border-soft);
+  height: 38px;
+  padding: 6px 38px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
   background: var(--surface);
   color: var(--text);
-  text-align: left;
+  font-size: 14px;
+  outline: 0;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
-
-.quick-search-results button.active,
-.quick-search-results button:hover {
-  background: var(--surface-2);
+.event-search-field input::placeholder {
+  color: var(--text-faint);
 }
-
-.quick-search-results small,
-.quick-search-empty {
+.event-search-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.event-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.event-search-clear:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.event-search-count {
+  flex: 0 0 auto;
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  white-space: nowrap;
 }
 
-/* Bolded substring that matches the search query in quick-search results. */
+/* Bolded substring that matches the search query (shared highlight helper). */
 .search-highlight {
   font-weight: 700;
   color: inherit;
-}
-
-.quick-search-results .show-more-results {
-  display: block;
-  color: var(--link);
-  text-align: center;
 }
 
 .filters {
@@ -1580,11 +1784,12 @@ main {
 }
 
 .team-filters {
-  display: grid;
-  grid-template-columns: minmax(360px, 520px) 170px 240px 180px;
-  align-items: start;
-  justify-content: start;
-  margin: 0 0 10px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 14px 0;
 }
 
 .filters label {
@@ -1700,10 +1905,101 @@ main {
   flex-basis: 150px;
 }
 
-.team-filters > select,
-.team-region-filter {
-  width: 100%;
+/* New full-width toolbar: search grows, the rest size to content. */
+.team-search-wrap {
+  flex: 1 1 280px;
+}
+
+.team-filters > select {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 132px;
+  padding-right: 30px;
+}
+
+.team-filters .team-region-filter {
+  flex: 0 0 auto;
+  width: auto;
   min-width: 0;
+}
+
+.team-filters .team-region-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: auto;
+  min-width: 140px;
+  padding-left: 12px;
+  padding-right: 30px;
+}
+
+.team-region-trigger svg {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.team-region-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Program segmented control (All / V5RC / VIQRC / VURC / VAIRC). */
+.team-prog-seg {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.team-prog-seg button {
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.team-prog-seg button:hover {
+  color: var(--text);
+}
+
+.team-prog-seg button.active {
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 500;
+}
+
+/* "/" keyboard hint inside the search field. */
+.team-search-kbd {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  pointer-events: none;
 }
 
 .filters label svg {
@@ -1732,7 +2028,8 @@ main {
 }
 
 .team-search-wrap input {
-  border-radius: 4px 0 0 4px;
+  border-radius: var(--radius);
+  padding-right: 34px;
 }
 
 .team-region-menu-list {
@@ -1769,6 +2066,11 @@ main {
   font-size: 12px;
 }
 
+/* Tables follow the shadcn/Geist Table aesthetic: no zebra striping, a single
+   1px row separator (border-bottom), medium-weight headers, and a subtle muted
+   row hover. This shared block gives every table in the app the shadcn look
+   without per-table markup changes; specialized tables layer column widths,
+   sticky columns, and alliance colors on top. */
 table {
   width: 100%;
   max-width: 100%;
@@ -1781,22 +2083,31 @@ table {
 th,
 td {
   padding: 8px;
-  border-top: 1px solid var(--border);
-  line-height: 1.42857143;
+  line-height: 1.43;
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 thead th {
-  border-bottom: 2px solid var(--border);
+  height: 40px;
   color: var(--text);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 500;
   text-transform: none;
+  white-space: nowrap;
 }
 
-tbody tr:nth-of-type(odd) {
-  background: var(--surface-2);
+thead tr,
+tbody tr {
+  border-bottom: 1px solid var(--border);
+}
+
+tbody tr:last-child {
+  border-bottom: 0;
+}
+
+tbody tr {
+  transition: background-color 0.15s ease;
 }
 
 tbody tr:hover {
@@ -1854,12 +2165,239 @@ tbody tr:hover {
   width: 8%;
 }
 
+/* Directory variant (/teams list): name split into its own column + a Skills
+   column. Columns: 1 Team · 2 Name · 3 Program · 4 Level · 5 Org · 6 Location ·
+   7 Skills · 8 Status · 9 quick-look · 10 compare. */
+.team-table-dir th:nth-child(1),
+.team-table-dir td:nth-child(1) {
+  width: 9%;
+}
+.team-table-dir th:nth-child(2),
+.team-table-dir td:nth-child(2) {
+  width: 19%;
+}
+.team-table-dir th:nth-child(3),
+.team-table-dir td:nth-child(3),
+.team-table-dir th:nth-child(4),
+.team-table-dir td:nth-child(4) {
+  width: 7%;
+}
+.team-table-dir th:nth-child(5),
+.team-table-dir td:nth-child(5) {
+  width: 21%;
+}
+.team-table-dir th:nth-child(6),
+.team-table-dir td:nth-child(6) {
+  width: 15%;
+}
+.team-table-dir th:nth-child(7),
+.team-table-dir td:nth-child(7) {
+  width: 8%;
+}
+.team-table-dir th:nth-child(8),
+.team-table-dir td:nth-child(8) {
+  width: 9%;
+}
+
+.team-name-cell {
+  color: var(--text-2);
+}
+
+.team-skills-col {
+  white-space: nowrap;
+}
+
+.team-skills-score {
+  font-family: var(--font-geist-mono), monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--text);
+}
+
 .team-row {
   cursor: pointer;
 }
 
 .team-row td {
   vertical-align: middle;
+}
+
+/* ── Team list view toggle (grid / list) ──────────────────────────────────── */
+.teams-list-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.team-view-toggle {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.team-view-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.team-view-toggle button:hover {
+  color: var(--text);
+}
+
+.team-view-toggle button.active {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+/* Keep the toggle icons visible (override `.panel h2 svg { display:none }`). */
+.panel h2 .team-view-toggle svg {
+  display: inline-block;
+}
+
+/* ── Team grid (card view) ────────────────────────────────────────────────── */
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  padding: 15px;
+}
+
+.team-grid-empty {
+  padding: 15px;
+}
+
+.team-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.team-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.team-card.compare-pick-card {
+  cursor: default;
+}
+
+.team-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.team-card-num {
+  flex: 0 0 auto;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--team-link);
+}
+
+a.team-card-num:hover {
+  text-decoration: underline;
+}
+
+.team-card-id {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: 1px;
+}
+
+.team-card-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.team-card-org {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Reveal the compare button on hover, when active, or when the team is queued. */
+.team-card-compare {
+  flex: 0 0 auto;
+  margin: -2px -2px 0 0;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.team-card:hover .team-card-compare,
+.team-card .team-card-compare:has(.in-tray),
+.compare-pick-card .team-card-compare {
+  opacity: 1;
+}
+
+.team-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-card-loc {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.team-card-status {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.team-card-status.ok {
+  background: var(--success);
+}
+
+.team-card-skeleton {
+  cursor: default;
+}
+
+.team-card-skeleton:hover {
+  border-color: var(--border);
+  box-shadow: none;
 }
 
 .truncate-cell {
@@ -1936,21 +2474,47 @@ tbody tr:hover {
   background: #999;
 }
 
+/* Inside the team-card match tables, render team numbers as plain links (like
+   the event view) rather than solid chips — the gray/teal fills muddy in dark
+   mode. The page's own team stays bold so it's still easy to spot per row. */
+.team-match-table .team-chip,
+.team-event-match-preview .team-chip {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--team-link);
+  font-size: inherit;
+  font-weight: 500;
+}
+.team-match-table .team-chip:hover,
+.team-match-table .team-chip:focus,
+.team-event-match-preview .team-chip:hover,
+.team-event-match-preview .team-chip:focus {
+  background: transparent;
+  text-decoration: underline;
+}
+.team-match-table .team-chip-focus,
+.team-event-match-preview .team-chip-focus {
+  font-weight: 700;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
   min-height: 18px;
   padding: 0.2em 0.6em 0.3em;
-  border-radius: 0.25em;
-  background: #777;
-  color: var(--on-accent);
+  border-radius: 0.4em;
+  background: var(--surface-3);
+  color: var(--text-2);
   font-size: 75%;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   text-align: center;
   white-space: nowrap;
 }
 
+/* Event-level badge: soft pastel pill (washed background + saturated ink +
+   hairline), uppercase with wide tracking. Replaces the old solid color bars. */
 .event-priority {
   display: inline-flex;
   align-items: center;
@@ -1985,20 +2549,28 @@ tbody tr:hover {
   background: #777;
 }
 
+/* Team #events cards: keep the level tag compact (no 88px min-width) while
+   using the same solid style as everywhere else. */
+.event-card-info .event-priority {
+  min-width: 0;
+  padding: 0.15em 0.5em 0.2em;
+  font-size: 10px;
+}
+
 .notice,
 .empty {
   margin: 15px;
   padding: 15px;
-  background: #d9edf7;
-  border: 1px solid #bce8f1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  color: #31708f;
+  color: var(--text-muted);
 }
 
 .notice.error {
-  background: #f2dede;
-  border-color: #ebccd1;
-  color: #a94442;
+  background: rgba(229, 72, 77, 0.08);
+  border-color: rgba(229, 72, 77, 0.28);
+  color: var(--danger-strong);
 }
 
 .notice.subtle {
@@ -2127,6 +2699,18 @@ tbody tr:hover {
   min-width: 0;
   min-height: 18px;
   padding: 0.2em 0.45em 0.3em;
+}
+
+/* Program badge (shadcn <Badge>) in the event header defaults to a full pill —
+   square it to match the solid tags beside it (date / season / level). */
+.meta-line [data-slot="badge"] {
+  border-radius: 0.25em;
+  background: #5bc0de;
+  color: var(--badge-ink);
+  min-height: 18px;
+  padding: 0.2em 0.6em 0.3em;
+  font-size: 75%;
+  font-weight: 700;
 }
 
 .date-range {
@@ -2621,46 +3205,56 @@ tbody tr:hover {
   margin-top: 4px;
 }
 
+/* Resting state: a neutral grey tag. Turns its alliance color once the team
+   number is typed into the note (.mentioned). */
 .note-team-chip {
   display: inline-flex;
   align-items: center;
   padding: 3px 9px;
   border-radius: var(--radius);
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   text-decoration: none;
   letter-spacing: 0.01em;
-  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
-  opacity: 0.65;
-  color: var(--link);
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  color: var(--text-muted);
 }
-.note-team-chip:hover,
-.note-team-chip.mentioned {
-  opacity: 1;
+.note-team-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 
-/* Red alliance tint */
-.note-team-chip.note-team-chip-red {
-  background: rgba(217, 83, 79, 0.1);
-  border-color: rgba(217, 83, 79, 0.28);
-}
-.note-team-chip.note-team-chip-red:hover,
+/* Red alliance — colored only when mentioned */
 .note-team-chip.note-team-chip-red.mentioned {
-  background: rgba(217, 83, 79, 0.2);
+  background: rgba(217, 83, 79, 0.16);
   border-color: rgba(217, 83, 79, 0.5);
+  color: #c0392b;
+}
+.note-team-chip.note-team-chip-red.mentioned:hover {
+  background: rgba(217, 83, 79, 0.26);
 }
 
-/* Blue alliance tint */
-.note-team-chip.note-team-chip-blue {
-  background: rgba(51, 122, 183, 0.1);
-  border-color: rgba(51, 122, 183, 0.28);
-}
-.note-team-chip.note-team-chip-blue:hover,
+/* Blue alliance — colored only when mentioned */
 .note-team-chip.note-team-chip-blue.mentioned {
-  background: rgba(51, 122, 183, 0.2);
+  background: rgba(51, 122, 183, 0.16);
   border-color: rgba(51, 122, 183, 0.5);
+  color: #2c6da3;
+}
+.note-team-chip.note-team-chip-blue.mentioned:hover {
+  background: rgba(51, 122, 183, 0.26);
+}
+
+/* Event team not in this match — accent tag when mentioned */
+.note-team-chip.note-team-chip-accent.mentioned {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
+}
+.note-team-chip.note-team-chip-accent.mentioned:hover {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
 }
 
 /* ── Char counter ── */
@@ -3194,6 +3788,20 @@ tbody tr:hover {
   flex-direction: column;
 }
 
+/* Each tier renders its own <table>; with auto layout the Event column sizes to
+   each tier's own content, so "World Championships" (short names) ends up
+   narrower than the rest. Force a fixed layout with shared column widths so
+   every tier's columns line up — the Event column is identical across tiers. */
+.past-season-view .event-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.past-season-view .event-table .event-col-program { width: 84px; }
+.past-season-view .event-table .grade-col { width: 60px; }
+.past-season-view .event-table .event-col-season { width: 108px; }
+.past-season-view .event-table .event-col-dates { width: 132px; }
+.past-season-view .event-table .event-col-level { width: 116px; }
+
 .tier-section {
   margin-bottom: 4px;
 }
@@ -3359,34 +3967,44 @@ tbody tr:hover {
 .segmented {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
-  margin: 0 0 15px;
+  gap: 4px;
+  margin: 0 0 16px;
   padding-left: 0;
   border-bottom: 1px solid var(--border);
 }
 
+/* Geist/Vercel tab bar — underline-on-active, no boxes. */
 .tabs button,
 .segmented button {
   position: relative;
   align-items: center;
-  gap: 5px;
-  min-height: 42px;
+  gap: 6px;
+  min-height: 40px;
   margin-bottom: -1px;
-  padding: 10px 15px;
-  border: 1px solid transparent;
-  border-radius: 4px 4px 0 0;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
-  color: var(--link);
-  font-weight: 400;
-  line-height: 1.42857143;
+  color: var(--text-muted);
+  font-weight: 500;
+  line-height: 1.4;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.tabs button:hover,
+.segmented button:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
 }
 
 .tabs button.active,
 .segmented button.active {
-  border: 1px solid var(--border);
-  border-bottom-color: var(--surface);
-  background: var(--surface);
-  color: var(--text-2);
+  border: 0;
+  border-bottom: 2px solid var(--text);
+  background: transparent;
+  color: var(--text);
 }
 
 .division-tabs {
@@ -3448,93 +4066,240 @@ tbody tr:hover {
   font-weight: 700;
 }
 
-.season-toolbar select {
-  width: min(420px, 100%);
-  height: 34px;
-  padding: 6px 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
+/* Labelless variant (events filter sidebar): drop the boxed chrome so the
+   scrollable picker sits flush under its "Season" section title. */
+.season-toolbar-nolabel {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+/* Soften the right edge so the overflowing seasons fade out instead of being
+   cut off hard — just a hair of fade. */
+.season-toolbar-nolabel .season-scroll-view {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 10px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 10px), transparent 100%);
+}
+/* No scroll chevron in the sidebar variant — the fade alone signals overflow. */
+.season-toolbar-nolabel .season-fade {
+  display: none;
+}
+
+/* Section title that also carries an inline action (e.g. "Back to <season>"). */
+.filter-section-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Season strip: takes remaining width, hides its scrollbar, and reveals a
+   right-edge fade + chevron affordance only when it overflows. */
+.season-scroll {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.season-scroll-view {
+  overflow-x: auto;
+}
+
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
+}
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none; /* Chrome / Safari */
+}
+
+.season-fade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 104px;
+  padding-right: 2px;
+  z-index: 20; /* above the ToggleGroup's z-10 so the fade/chip cover the labels */
+  pointer-events: none; /* let scroll pass through; the button re-enables itself */
+}
+
+/* Solid right-edge fade: the trailing seasons dissolve into the toolbar
+   background before the chevron, so the white chevron chip never overlaps
+   readable text. (backdrop-filter blur can't sample a native scroll
+   container's content in Chrome, so we use an opaque color fade instead.) */
+.season-fade::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--surface-2) 45%,
+    var(--surface-2) 100%
+  );
+}
+
+.season-more {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
   color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.season-more:hover {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+/* Segmented control: muted track with a white "lifted" active segment — matches
+   the season strip's pill aesthetic instead of the old bright-teal buttons. */
+.date-direction-toggle .seg-track {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-e3);
+  border-radius: 9px;
 }
 
 .date-direction-toggle button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
-  padding: 5px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--link);
-  line-height: 1.42857143;
+  min-height: 28px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, box-shadow 0.12s;
 }
 
-.date-direction-toggle button.active,
 .date-direction-toggle button:hover {
-  border-color: var(--accent-hover);
-  background: var(--accent);
-  color: var(--accent-ink);
+  color: var(--text);
+}
+
+.date-direction-toggle button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .event-groups {
   display: grid;
-  gap: 10px;
-  padding: 10px 12px 12px;
+  gap: 8px;
+  padding: 2px 0 14px;
 }
 
+/* One card per event. Flat white surface, hairline border, 12px radius to match
+   the About-tab cards. Hover lifts the border; expanding adds an ultra-subtle
+   shadow and a hairline under the header. */
 .event-group {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 12px;
+  background: var(--surface);
   overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.event-group:hover {
+  border-color: var(--border-strong);
+}
+
+.event-group[open] {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .event-group summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 9px 13px;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
+  gap: 16px;
+  padding: 13px 16px;
+  background: transparent;
   cursor: pointer;
-  font-weight: 700;
   list-style: none;
 }
 .event-group summary::-webkit-details-marker { display: none; }
 
-.event-group summary:hover {
-  background: var(--surface-3, var(--surface-2));
+.event-group[open] summary {
+  border-bottom: 1px solid var(--border-soft);
 }
 
-.event-group summary span:first-child {
+/* Left side: event name + SKU stacked. Flexes to fill, lets the name wrap. */
+.event-group-head-main {
   display: grid;
-  gap: 1px;
+  gap: 2px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .event-group summary small {
-  color: var(--text-muted);
-  font-size: 12px;
+  color: var(--text-faint);
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 11px;
   font-weight: 400;
+  letter-spacing: 0.02em;
 }
 
 .event-group-meta {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 400;
   white-space: nowrap;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Right side of TeamEventCards summary — program badge + location + dates + level */
+/* Chevron affordance — rotates when the card is open. */
+.event-group-chevron {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: transform 0.18s ease, color 0.15s ease;
+}
+.event-group:hover .event-group-chevron {
+  color: var(--text-muted);
+}
+.event-group[open] .event-group-chevron {
+  transform: rotate(180deg);
+}
+
+/* Right side of TeamEventCards summary — program badge + location + dates on the
+   top row, level tag right-aligned beneath them. */
 .event-card-info {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 7px;
-  flex-wrap: wrap;
   flex-shrink: 0;
+}
+.event-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .event-card-location {
   font-size: 12px;
@@ -3559,49 +4324,72 @@ tbody tr:hover {
 .team-event-detail {
   display: grid;
   gap: 6px;
-  padding: 8px 10px 10px;
+  padding: 14px 16px 12px;
   border-top: 1px solid var(--border-soft);
 }
 
+/* Awards on the left, ranking + skills on the right, split by a hairline. */
 .team-event-summary-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(390px, 1.2fr);
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 0 22px;
+  align-items: stretch;
+  padding-bottom: 4px;
 }
 
 .team-event-awards,
 .team-event-metrics {
   display: grid;
-  gap: 5px;
+  gap: 9px;
+  align-content: start;
   min-width: 0;
+}
+
+.team-event-metrics {
+  border-left: 1px solid var(--border-soft);
+  padding-left: 22px;
 }
 
 .team-event-awards-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
+/* Section labels: mono uppercase eyebrow, matching the About-tab stat labels. */
 .team-event-awards > strong,
 .metric-line > strong {
-  color: var(--link);
-  font-size: 12px;
+  flex: 0 0 58px;
+  color: var(--text-faint);
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
 }
 
 .metric-line {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 9px;
+  align-items: baseline;
+  gap: 6px 18px;
   min-width: 0;
-  color: var(--text-2);
-  font-size: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
+/* Label sits muted, value is the emphasized tabular figure. */
 .metric-line b {
   color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-line i {
+  font-style: normal;
+  color: var(--text-faint);
+  font-size: 11px;
 }
 
 .metric-line span {
@@ -3610,19 +4398,53 @@ tbody tr:hover {
 
 .team-elim-seed {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 20px;
-  padding: 2px 7px;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 9px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 9999px;
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 11.5px;
+  font-weight: 500;
 }
 
 .team-elim-seed span {
   color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* Award pills under the Awards label: soft rounded chips. */
+.team-event-awards .winner-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+}
+.team-event-awards .winner-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.team-event-awards .winner-row .muted {
+  font-size: 12.5px;
+}
+
+@media (max-width: 720px) {
+  .team-event-summary-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .team-event-metrics {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--border-soft);
+    padding-top: 12px;
+  }
 }
 
 .team-event-match-preview {
@@ -3912,7 +4734,7 @@ tbody tr:hover {
 }
 
 .score.blue {
-  background: var(--accent);
+  background: var(--score-blue);
 }
 
 .score.red.score-loser {
@@ -3923,8 +4745,8 @@ tbody tr:hover {
 
 .score.blue.score-loser {
   background: var(--surface);
-  border-color: var(--accent);
-  color: var(--link);
+  border-color: var(--score-blue);
+  color: var(--score-blue);
 }
 
 .capitalize {
@@ -4091,40 +4913,43 @@ footer {
   text-align: center;
 }
 
+.footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.footer-copy {
+  white-space: nowrap;
+}
+
 .footer-links {
   display: inline-flex;
-  gap: 8px;
-  margin-top: 8px;
+  flex-wrap: wrap;
+  gap: 8px 14px;
 }
 
 @media (max-width: 900px) {
-  .topbar-inner {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 0;
-  }
-
-  .global-search-wrap.topbar-search {
-    flex-basis: auto;
-    width: 100%;
-    max-width: none;
-    margin: 6px 0 10px;
-  }
-
-  nav a {
-    min-height: 40px;
-    padding: 10px 12px;
-  }
-
+  /* Topbar stays a single row at all widths — the search collapses to an icon
+     (see .is-compact) instead of stacking the header into multiple rows. */
   .home-grid,
   .home-dashboard,
   .two-column,
   .events-layout,
+  .events-page-wide .events-layout,
   .stats-row {
     grid-template-columns: 1fr;
   }
 
-  .event-filter-sidebar {
+  /* Wide events page collapses back to the normal centered width on mobile */
+  .page.events-page-wide {
+    width: calc(100% - 30px);
+  }
+
+  .event-filter-sidebar,
+  .events-page-wide .event-filter-sidebar {
     position: static;
     order: -1;
   }
@@ -4498,7 +5323,10 @@ td.grade-col {
   background: none;
   color: var(--link);
   font: inherit;
-  font-weight: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
   cursor: pointer;
   text-align: left;
 }
@@ -4672,74 +5500,6 @@ td.quick-look-col {
 }
 
 /* ---------------------------------------------------------------------------
-   Beta disclaimer overlay
-   --------------------------------------------------------------------------- */
-
-.beta-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: var(--overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  backdrop-filter: blur(3px);
-}
-
-.beta-modal {
-  background: var(--surface);
-  border-radius: 10px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
-  max-width: 460px;
-  width: 100%;
-  padding: 36px 32px 28px;
-  text-align: center;
-}
-
-.beta-modal-icon {
-  font-size: 36px;
-  margin-bottom: 12px;
-}
-
-.beta-modal-title {
-  font-size: 20px;
-  font-weight: 700;
-  margin: 0 0 14px;
-  color: var(--text);
-}
-
-.beta-modal-body {
-  font-size: 14px;
-  color: var(--text-2);
-  line-height: 1.55;
-  margin: 0 0 12px;
-}
-
-.beta-modal-legal {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin: 0 0 24px;
-}
-
-.beta-modal-btn {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border: none;
-  border-radius: 5px;
-  padding: 10px 28px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.beta-modal-btn:hover {
-  background: #23527c;
-}
-
-/* ---------------------------------------------------------------------------
    Terms & Conditions page
    --------------------------------------------------------------------------- */
 
@@ -4785,10 +5545,12 @@ td.quick-look-col {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 10px 32px;
+  gap: 10px 28px;
   margin: 0;
-  padding: 10px 15px 12px;
+  padding: 13px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
 
 .about-panel-body {
@@ -4840,47 +5602,58 @@ td.quick-look-col {
   color: var(--text-faint);
 }
 
+/* One unified card divided by hairline rules: a 1px grid gap reveals the
+   container's border-colored background as dividers, which works for any column
+   count (3-up here, 2-up in the quick-view) without per-cell border math. */
 .about-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .about-stat {
-  padding: 12px 15px;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
 }
 
 .about-stat-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-muted);
-  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.06em;
 }
 
-.about-stat-label svg {
-  color: var(--text-faint);
+/* Value + sub sit on one baseline row so each cell is two lines tall, not three
+   — the sub fills the horizontal whitespace beside the big figure. */
+.about-stat-figure {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 9px;
 }
 
 .about-stat-value {
-  display: block;
-  margin-top: 4px;
-  font-size: 22px;
-  font-weight: 500;
-  line-height: 1.15;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
   color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .about-stat-sub {
-  display: block;
-  margin-top: 2px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: 12px;
+  line-height: 1.3;
 }
 
 .about-charts {
@@ -5085,16 +5858,41 @@ td.quick-look-col {
   line-height: 0;
 }
 
+/* Compact account circle shown when signed out — mirrors the theme toggle, but
+   round, so it reads as an "account" affordance next to the avatar's circle. */
+.auth-circle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.auth-circle-btn:hover,
+.auth-circle-btn:focus-visible {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
 .auth-avatar-img,
 .auth-avatar-fallback {
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--border);
 }
 
 .auth-avatar-btn:hover .auth-avatar-img,
 .auth-avatar-btn:hover .auth-avatar-fallback {
-  border-color: var(--on-accent);
+  border-color: var(--border-strong);
 }
 
 .auth-avatar-fallback {
@@ -5118,6 +5916,9 @@ td.quick-look-col {
   border-radius: 8px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
   color: var(--text);
+  /* Reset the nowrap inherited from .auth-slot so the legal text wraps
+     instead of overflowing the panel. */
+  white-space: normal;
 }
 
 .auth-dropdown-title {
@@ -5146,6 +5947,19 @@ td.quick-look-col {
   color: var(--text-muted);
   font-size: 12px;
   text-align: center;
+}
+
+.auth-legal {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.auth-legal a {
+  color: inherit;
+  text-decoration: underline;
 }
 
 .auth-btn {
@@ -5275,6 +6089,57 @@ td.quick-look-col {
   color: var(--accent-ink);
 }
 
+/* Org preview list in the account menu */
+.auth-menu-orgs {
+  margin: 4px 0 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+.auth-menu-section-label {
+  padding: 0 8px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.auth-menu-org { gap: 9px; }
+.auth-menu-org-badge {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.auth-menu-org-id {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.auth-menu-org-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.auth-menu-org-role {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+.auth-menu-org-go { flex-shrink: 0; color: var(--text-faint); }
+
 /* Home sign-in card */
 .auth-card-body {
   padding: 11px 13px 13px;
@@ -5288,86 +6153,6 @@ td.quick-look-col {
 }
 
 /* Onboarding / profile modal */
-.auth-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9990;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: var(--overlay);
-  backdrop-filter: blur(3px);
-}
-
-.auth-modal {
-  width: 100%;
-  max-width: 480px;
-  padding: 28px 28px 22px;
-  background: var(--surface);
-  border-radius: 10px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
-}
-
-.onboard-title {
-  margin: 0 0 6px;
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.onboard-sub {
-  margin: 0 0 22px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text-2);
-}
-
-.onboard-grid {
-  display: grid;
-  grid-template-columns: 1fr 110px 110px;
-  gap: 12px;
-}
-
-.onboard-field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-}
-
-.onboard-field input,
-.onboard-field select {
-  height: 36px;
-  padding: 4px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  font-size: 14px;
-  font-weight: 400;
-  background: var(--surface);
-  outline: 0;
-}
-
-.onboard-field input:focus,
-.onboard-field select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(102, 175, 233, 0.3);
-}
-
-.onboard-prefs {
-  margin-top: 22px;
-}
-
-.onboard-prefs-label {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-}
-
 .theme-picker {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -5467,58 +6252,7 @@ td.quick-look-col {
   color: var(--text-faint);
 }
 
-.onboard-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
-}
-
-.onboard-skip {
-  border: 0;
-  background: none;
-  color: var(--text-muted);
-  font-size: 13px;
-  padding: 8px 6px;
-}
-
-.onboard-skip:hover {
-  color: var(--text-2);
-  text-decoration: underline;
-}
-
-.onboard-finish {
-  height: 38px;
-  padding: 0 22px;
-  border: 1px solid var(--accent-hover);
-  border-radius: 5px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 14px;
-  font-weight: 600;
-  transition: background 0.15s;
-}
-
-.onboard-finish:hover {
-  background: #23527c;
-}
-
-.onboard-finish:disabled,
-.onboard-skip:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
 @media (max-width: 480px) {
-  .onboard-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .onboard-field:first-child {
-    grid-column: 1 / -1;
-  }
-
   .auth-dropdown {
     width: 260px;
   }
@@ -5557,15 +6291,17 @@ td.quick-look-col {
   border: 0;
   border-bottom: 1px solid var(--border-soft);
   background: var(--surface);
-  color: var(--link);
+  color: var(--text-2);
   font-size: 14px;
-  font-weight: 400;
+  font-weight: 500;
   text-align: left;
   transition: background 0.12s, color 0.12s;
 }
 
 .settings-tab svg {
   flex: 0 0 auto;
+  color: var(--text-faint);
+  transition: color 0.12s;
 }
 
 .settings-tab:last-child {
@@ -5574,12 +6310,18 @@ td.quick-look-col {
 
 .settings-tab:hover {
   background: var(--surface-2);
-  color: var(--link-hover);
+  color: var(--text);
+}
+
+.settings-tab:hover svg,
+.settings-tab.active svg {
+  color: var(--text);
 }
 
 .settings-tab.active {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--surface-3);
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* Content cards — mirror .panel */
@@ -5760,15 +6502,6 @@ td.quick-look-col {
   color: var(--text-muted);
 }
 
-.settings-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 130px 130px;
-  gap: 14px;
-}
-
-.settings-field-name {
-  min-width: 0;
-}
 
 /* A labeled sub-section inside a settings card (e.g. the tab-orientation choice). */
 .settings-field {
@@ -5887,121 +6620,11 @@ td.quick-look-col {
   opacity: 0.55;
 }
 
-/* Interface-style picker — wireframe tiles mirroring the theme picker. Each tile
-   is a tiny mock app (top bar + a card) whose corner radius, accent, and surfaces
-   are the defining traits of that skin. Colors are intentionally hardcoded — like
-   the light/dark theme tiles, these are fixed previews, not themed chrome. */
-.ui-wire {
-  display: flex;
-  flex-direction: column;
-  height: 96px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.ui-wire .uw-bar {
-  flex: 0 0 auto;
-  height: 20px;
-}
-
-.ui-wire .uw-body {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  justify-content: center;
-  gap: 6px;
-  padding: 11px;
-}
-
-.ui-wire .uw-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 9px;
-  border: 1px solid var(--border);
-}
-
-.ui-wire .uw-line {
-  height: 6px;
-  background: var(--surface-3);
-}
-
-.ui-wire .uw-line.short {
-  width: 52%;
-}
-
-.ui-wire .uw-pill {
-  width: 38%;
-  height: 9px;
-}
-
-/* Classic: navy bar, square-ish corners, the classic blue accent. */
-.ui-wire-classic {
-  border-radius: 6px;
-}
-.ui-wire-classic .uw-bar {
-  background: #2c3e50;
-}
-.ui-wire-classic .uw-card {
-  border-radius: 3px;
-  background: #fff;
-  border-color: #e3e3e3;
-}
-.ui-wire-classic .uw-line {
-  background: #eee;
-}
-.ui-wire-classic .uw-pill {
-  border-radius: 3px;
-  background: #337ab7;
-}
-
-/* Modern: near-black Geist bar, soft corners, blue accent, off-white field. */
-.ui-wire-modern {
-  border-radius: 10px;
-}
-.ui-wire-modern .uw-bar {
-  background: #0a0a0a;
-}
-.ui-wire-modern .uw-card {
-  border-radius: 8px;
-  background: #fafafa;
-  border-color: #eaeaea;
-}
-.ui-wire-modern .uw-line {
-  background: #ededed;
-}
-.ui-wire-modern .uw-pill {
-  border-radius: 7px;
-  background: #51cdea;
-}
-
 .settings-actions {
   display: flex;
   align-items: center;
   gap: 14px;
   margin-top: 20px;
-}
-
-.settings-save {
-  height: 38px;
-  padding: 0 22px;
-  border: 1px solid var(--accent-hover);
-  border-radius: 5px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 14px;
-  font-weight: 600;
-  transition: background 0.15s;
-}
-
-.settings-save:hover:not(:disabled) {
-  background: #23527c;
-}
-
-.settings-save:disabled {
-  opacity: 0.6;
-  cursor: default;
 }
 
 .settings-saved {
@@ -6011,27 +6634,6 @@ td.quick-look-col {
   font-size: 13px;
   font-weight: 600;
   color: var(--success);
-}
-
-.settings-signout {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  padding: 6px 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--danger-strong);
-  font-size: 13px;
-  font-weight: 400;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-
-.settings-signout:hover {
-  background: var(--surface-2);
-  border-color: var(--danger-strong);
-  color: var(--danger-strong);
 }
 
 @media (max-width: 720px) {
@@ -6066,18 +6668,6 @@ td.quick-look-col {
 
   .settings-hero {
     flex-wrap: wrap;
-  }
-
-  .settings-signout {
-    margin-left: auto;
-  }
-
-  .settings-fields {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .settings-field-name {
-    grid-column: 1 / -1;
   }
 }
 
@@ -6185,36 +6775,6 @@ td.quick-look-col {
   gap: 14px;
   max-width: 420px;
 }
-.org-settings-field label {
-  display: block;
-  font-size: 13px;
-  color: var(--text-2);
-  margin-bottom: 4px;
-  font-weight: 500;
-}
-.org-settings-field input,
-.org-settings-field select {
-  width: 100%;
-  height: 34px;
-  padding: 6px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 14px;
-  box-sizing: border-box;
-}
-.org-settings-field input:focus,
-.org-settings-field select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-.org-settings-row {
-  display: flex;
-  gap: 10px;
-}
-.org-settings-row .org-settings-field { flex: 1; min-width: 0; }
-
 .danger-zone {
   margin-top: 28px;
   padding: 14px 16px;
@@ -6302,6 +6862,280 @@ td.quick-look-col {
   font-size: 11px;
   color: var(--text-faint);
   white-space: nowrap;
+}
+
+/* ── Org Workspace (dashboard / notes / picklists / activity / export) ─────── */
+.org-ws-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Dashboard stat tiles — flat cards, no shadow, tabular figures */
+.org-ws-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.org-ws-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+}
+.org-ws-stat--btn {
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.org-ws-stat--btn:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.org-ws-stat-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+.org-ws-stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+.org-ws-stat-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* Generic block (e.g. recent-activity card on the dashboard) */
+.org-ws-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 4px 16px 8px;
+}
+.org-ws-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0 6px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 4px;
+}
+.org-ws-block-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.org-ws-empty,
+.org-ws-help {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.org-ws-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.org-ws-search { flex: 1; min-width: 180px; }
+
+/* Flat count badge (not a pill) */
+.org-ws-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  background: var(--surface-3);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Activity feed */
+.org-activity-list { display: flex; flex-direction: column; }
+.org-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+.org-activity-row:last-child { border-bottom: none; }
+a.org-activity-row:hover { color: var(--text); }
+a.org-activity-row:hover .org-activity-text { color: var(--accent); }
+.org-activity-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-activity-text strong { color: var(--text); font-weight: 600; }
+.org-activity-event { color: var(--text-muted); }
+.org-activity-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Notes hub — grouped by event */
+.org-notes-group { display: flex; flex-direction: column; }
+.org-notes-group + .org-notes-group { margin-top: 8px; }
+.org-notes-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.org-notes-group-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-note-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-top: none;
+  color: var(--text-2);
+  text-decoration: none;
+}
+.org-note-row:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+a.org-note-row:hover { background: var(--surface-2); }
+.org-note-body {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.org-note-go { flex-shrink: 0; color: var(--text-faint); }
+
+/* Picklists overview */
+.org-picklist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.org-picklist-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.org-picklist-card:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.org-picklist-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.org-picklist-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-picklist-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.org-picklist-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.org-picklist-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-3);
+  border-radius: var(--radius);
+}
+.org-picklist-more { font-size: 11.5px; color: var(--text-faint); align-self: center; }
+
+/* Settings section (stacked Overview / Members / Invites) */
+.org-ws-subsection {
+  padding-top: 18px;
+  border-top: 1px solid var(--border-soft);
+}
+.org-ws-subhead {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Export actions */
+.org-ws-export-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Print-only export view — hidden on screen, isolated for print */
+.org-print-root { display: none; }
+@media print {
+  body * { visibility: hidden; }
+  .org-print-root, .org-print-root * { visibility: visible; }
+  .org-print-root {
+    display: block;
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    color: #000;
+    font-size: 12px;
+  }
+  .org-print-root h1 { font-size: 20px; margin: 0 0 12px; }
+  .org-print-root h2 { font-size: 15px; margin: 16px 0 8px; }
+  .org-print-root h3 { font-size: 13px; margin: 10px 0 4px; }
+  .org-print-section { break-inside: avoid; }
+  .org-print-block, .org-print-note { break-inside: avoid; margin-bottom: 8px; }
+  .org-print-block ol { margin: 0; padding-left: 20px; }
+  .org-print-note p { margin: 2px 0 0; }
 }
 
 /* Note scope toggle (popover + video panel) */
@@ -6596,13 +7430,13 @@ td.quick-look-col {
 /* Extra right padding so typed text doesn't overlap the hint */
 .global-search-input { padding-right: 58px; }
 
-/* Pill-shaped ⌘K hint for the large home-hero search bar */
+/* ⌘K hint for the large home-hero search bar */
 .home-hero-global-search .gs-kbd-hint {
   right: 12px;
-  border-radius: 999px;
-  padding: 2px 9px;
+  border-radius: 5px;
+  padding: 2px 8px;
   font-size: 12px;
-  border-color: var(--border-soft);
+  border-color: var(--border);
 }
 
 /* ── Panel action link (used by RecentlyViewedPanel clear button) ────────── */
@@ -6876,15 +7710,14 @@ td.quick-look-col {
   gap: 12px;
 }
 /* Header already shows program/location/grade/status — hide the duplicate profile. */
-.quick-view-panel .about-wrap > .panel:first-child {
+.quick-view-panel .about-profile {
   display: none;
 }
 .quick-view-panel .about-stats {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
 }
 .quick-view-panel .about-stat {
-  padding: 8px 10px;
+  padding: 10px 12px;
 }
 .quick-view-panel .about-stat-label {
   font-size: 10px;
@@ -6892,8 +7725,10 @@ td.quick-look-col {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.quick-view-panel .about-stat-figure {
+  margin-top: 4px;
+}
 .quick-view-panel .about-stat-value {
-  margin-top: 2px;
   font-size: 17px;
 }
 /* Drop the sub-text so each card is a tidy label + value, much shorter. */
@@ -7554,15 +8389,36 @@ td.quick-look-col {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 9px 15px;
-  font-size: 13px;
+  padding: 10px 14px;
+  font-size: 12.5px;
   color: var(--link);
   text-decoration: none;
   border-bottom: 1px solid var(--border);
-  background: var(--surface-2);
+  background: transparent;
 }
 .event-info-open-link:hover {
   text-decoration: underline;
+}
+
+/* Minimalist panel chrome for the Event Info tab — flat hairline cards with
+   mono eyebrow titles instead of the default filled gray header bar (matches
+   the About-tab language). Scoped so panels elsewhere are untouched. */
+.event-info-tab .panel,
+.event-stats-grid .panel {
+  border-radius: 12px;
+  box-shadow: none;
+}
+.event-info-tab .panel > h2,
+.event-stats-grid .panel > h2 {
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 15px 10px;
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
 }
 
 /* Two-column grid: info left, agenda right.
@@ -7594,12 +8450,7 @@ td.quick-look-col {
   flex: 0 0 auto;
 }
 
-/* Calendar link inside the info panel */
-.event-info-calendar-row {
-  padding: 8px 15px 10px;
-  border-top: 1px solid var(--border);
-  margin-top: 4px;
-}
+/* Calendar link — lives in the panel header's top-right action slot */
 .event-info-calendar-link {
   display: inline-flex;
   align-items: center;
@@ -7630,6 +8481,7 @@ td.quick-look-col {
   color: var(--text-2);
   margin-bottom: 8px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 .event-info-webcast-links {
   display: flex;
@@ -7654,6 +8506,34 @@ td.quick-look-col {
 }
 .event-info-webcast-link svg:last-child {
   opacity: 0.4;
+}
+
+/* Multiple webcast links — plain clickable URLs with an open-in-new-tab icon */
+.event-info-webcast-urls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.event-info-webcast-url {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--link);
+  text-decoration: none;
+}
+.event-info-webcast-url-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.event-info-webcast-url:hover .event-info-webcast-url-text {
+  text-decoration: underline;
+}
+.event-info-webcast-url svg {
+  flex: 0 0 auto;
+  opacity: 0.55;
 }
 
 /* Agenda: fills remaining height of the panel, scrolls if content overflows */
@@ -7724,7 +8604,11 @@ td.quick-look-col {
    are unaffected. */
 .event-info-tab .about-profile {
   display: block;
-  padding: 6px 0 4px;
+  padding: 6px 0 8px;
+  /* Flush inside the panel — no nested bordered card. */
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .event-info-tab .about-profile-row {
   display: grid;
@@ -7734,12 +8618,18 @@ td.quick-look-col {
   align-items: baseline;
 }
 .event-info-tab .about-profile-row dt {
-  font-size: 12px;
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
   white-space: nowrap;
 }
 .event-info-tab .about-profile-row dd {
   text-align: left;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Responsive: stack columns on narrow viewports */
@@ -7761,25 +8651,48 @@ td.quick-look-col {
 @media (max-width: 700px) {
   .event-stats-grid { grid-template-columns: 1fr; }
 }
-.event-stat-card {
+/* Stat rows — label left, value right, hairline-split list (original layout)
+   with the mono eyebrow label + tabular value styling kept. */
+.event-stat-cells {
+  display: block;
+  margin: 6px 0 8px;
+}
+.event-stat-card--wide { /* no-op in the row layout */ }
+.event-stats-grid .event-stat-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 7px 15px;
+  gap: 12px;
+  padding: 9px 16px;
+  background: var(--surface);
+  border: 0;
   border-bottom: 1px solid var(--border-soft);
 }
-.event-stat-card:last-child { border-bottom: 0; }
-.event-stat-section .event-stat-card:last-child { border-bottom: 0; }
-.event-stat-label { font-size: 12px; color: var(--text-muted); }
-.event-stat-value { font-size: 20px; font-weight: 600; color: var(--text); line-height: 1; }
+.event-stat-cells .event-stat-card:last-child { border-bottom: 0; }
+.event-stats-grid .event-stat-label {
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.event-stats-grid .event-stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 /* World Skills group — rows fill the full panel width;
-   bracket + label float OUTSIDE the panel's right border. */
+   bracket + vertical label float OUTSIDE the panel's right border. */
 .event-stat-world-group {
   position: relative;
   border-top: 1px solid var(--border-soft);
 }
-/* ] bracket spanning all four world-skills rows */
+/* ] bracket spanning all the world-skills rows */
 .event-stat-world-group::after {
   content: "";
   position: absolute;
@@ -7804,6 +8717,13 @@ td.quick-look-col {
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Loading / empty state for the stat panels */
+.event-stat-empty {
+  padding: 14px 15px 16px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 
@@ -8267,6 +9187,11 @@ td.quick-look-col {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   margin-bottom: 0;
+  /* Contain the wide skills table here instead of letting it overflow the
+     page — page-level horizontal overflow shifts the fixed mobile tab bar
+     off-screen on iOS Safari. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .ws-table {
   width: 100%;
@@ -8367,5 +9292,554 @@ td.quick-look-col {
 @media (max-width: 768px) {
   .ws-toolbar-actions { margin-left: 0; }
   .ws-where-panel { gap: 8px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE — app-like bottom navigation + slim header + polish
+   Placed last so the single-row topbar overrides the ≤900px stacked layout.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Bottom tab bar is mobile-only; hidden on desktop. */
+.mobile-tabbar {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  /* True phones only: nav moves to the bottom tab bar; keep it in the header
+     above this width (it fits fine alongside the collapsed search icon). */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 80;
+    margin-bottom: 14px;
+  }
+  .topbar-inner {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    min-height: 54px;
+  }
+  /* Primary nav moves to the bottom tab bar on mobile. */
+  .topbar-inner > nav {
+    display: none;
+  }
+  .brand {
+    margin-right: 0;
+    min-height: 54px;
+  }
+  .topbar-actions {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    margin-left: auto;
+  }
+  .global-search-wrap.topbar-search {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    margin: 0 0 0 auto;
+  }
+  /* Bigger primary search: comfortable tap target, prevents iOS focus-zoom.
+     min-width:0 lets the input shrink in the flex row instead of shoving the
+     account control off-screen. */
+  .topbar-search .global-search-input-row,
+  .topbar-search .global-search-input {
+    min-width: 0;
+  }
+  .topbar-search .global-search-input {
+    height: 38px;
+    font-size: 16px;
+  }
+
+  /* ── Floating frosted nav island ──
+     A small, centered, pill-shaped island that hovers above the content with an
+     Apple-style frosted backdrop. Icon-only: the four sections are self-evident,
+     so dropping labels keeps the island compact and unobtrusive. Reuses the
+     Geist glass token (--topbar-bg) so it tracks light/dark automatically. */
+  .mobile-tabbar {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 5px;
+    background: rgba(255, 255, 255, 0.6);
+    -webkit-backdrop-filter: saturate(180%) blur(24px);
+    backdrop-filter: saturate(180%) blur(24px);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+  :root[data-theme="dark"] .mobile-tabbar {
+    background: rgba(20, 20, 20, 0.55);
+  }
+  .mobile-tab {
+    position: relative;
+    flex: 1 1 0;
+    display: grid;
+    place-items: center;
+    height: 44px;
+    border-radius: 999px;
+    color: var(--text-muted);
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+  }
+  .mobile-tab:hover,
+  .mobile-tab:focus-visible {
+    color: var(--text-2);
+    text-decoration: none;
+  }
+  .mobile-tab:active {
+    transform: scale(0.92);
+  }
+  /* Active tab: accent-tinted icon over a soft circular wash — quiet, no labels. */
+  .mobile-tab.active {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
+  /* Reserve space so the floating island never hides the footer / last content. */
+  body {
+    padding-bottom: calc(78px + env(safe-area-inset-bottom));
+  }
+
+  /* Float the compare tray above the nav island instead of behind it. */
+  .compare-tray {
+    bottom: calc(78px + env(safe-area-inset-bottom));
+  }
+
+  /* Smooth momentum scrolling for horizontally-scrollable table panels. */
+  .panel {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Larger touch targets for cramped inline controls. */
+  .picklist-row-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* Sign-in button collapses to an icon-only pill to save header width. */
+  .auth-signin-label {
+    display: none;
+  }
+  .auth-signin-btn {
+    gap: 0;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 50%;
+  }
+
+  /* Keep the account dropdown fully on-screen (it anchors to the far-right
+     button; cap width to the viewport so it never clips past the edge). */
+  .auth-dropdown {
+    width: min(300px, calc(100vw - 20px));
+    right: 0;
+  }
+
+  /* Keyboard shortcut hints are pointless on touch devices. */
+  .gs-kbd-hint,
+  .esc-hint {
+    display: none;
+  }
+
+  /* The home sign-in card is desktop-only; mobile users use the header
+     account button. */
+  .home-signin-card {
+    display: none;
+  }
+
+  /* Drop the events sidebar/inline filter-layout toggle on mobile. */
+  .event-filter-layout-toggle {
+    display: none;
+  }
+}
+
+/* ═══ Mobile: event tables become stacked cards (no horizontal scroll) ═══
+   Event name on its own line (2-line clamp), tags wrap below it, date sits at
+   the end of the tag row and wraps instead of truncating. */
+@media (max-width: 760px) {
+  .event-table {
+    min-width: 0;
+  }
+  .event-table thead {
+    display: none;
+  }
+  .event-table,
+  .event-table tbody,
+  .event-table tr,
+  .event-table td {
+    display: block;
+  }
+  .event-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 5px;
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .event-table td {
+    padding: 0;
+    border: none;
+  }
+  .event-table .event-name-cell {
+    flex-basis: 100%;
+  }
+  /* Keep all tag chips grouped on one line; date trails at the far right
+     (order:99 places it after the level/category chip in source order). */
+  .event-table .event-date-cell {
+    order: 99;
+  }
+  .event-table .event-name-link {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .event-table .event-sku-line {
+    font-size: 11px;
+    margin-top: 2px;
+  }
+  /* Date trails the tag row, right-aligned, wraps cleanly. */
+  .event-table .event-date-cell {
+    margin-left: auto;
+  }
+  .event-table .date-range {
+    max-width: none;
+    white-space: nowrap;
+    text-align: right;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+}
+
+/* ═══ Mobile: World Skills leaderboard becomes a compact dense list ═══
+   One row per team: rank · centered team# (linked) · score (accent) ·
+   auto/driver stacked small. Max scores, timestamps, name, region, country
+   hidden. Rows divided inside the bordered container. */
+@media (max-width: 760px) {
+  .ws-table-wrap {
+    overflow-x: visible;
+  }
+  .ws-table {
+    min-width: 0;
+  }
+  .ws-table thead {
+    display: none;
+  }
+  .ws-table,
+  .ws-table tbody,
+  .ws-table tr {
+    display: block;
+  }
+  .ws-table .ws-hide-mobile,
+  .ws-table .ws-m-name {
+    display: none;
+  }
+  .ws-table tr {
+    display: grid;
+    grid-template-columns: 36px 1fr auto 34px;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 0;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .ws-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .ws-table td {
+    padding: 0;
+    border: 0;
+  }
+  .ws-m-rank {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  .ws-m-rank::before {
+    content: "#";
+    opacity: 0.55;
+  }
+  .ws-m-rank strong {
+    font-weight: 500;
+  }
+  .ws-m-team {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    text-align: center;
+    font-size: 16px;
+  }
+  .ws-m-team a {
+    color: var(--text);
+    font-weight: 600;
+  }
+  /* Score: prominent, accent-coloured, spans both rows. */
+  .ws-m-stat[data-label="Score"] {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    justify-self: end;
+    min-width: 40px;
+    text-align: right;
+  }
+  .ws-m-stat[data-label="Score"] strong {
+    color: var(--link);
+    font-size: 18px;
+    font-weight: 700;
+  }
+  /* Auto over Driver, small and muted, stacked in the last column. */
+  .ws-m-stat[data-label="Auto"],
+  .ws-m-stat[data-label="Driver"] {
+    grid-column: 4;
+    justify-self: end;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  .ws-m-stat[data-label="Auto"] {
+    grid-row: 1;
+    align-self: end;
+  }
+  .ws-m-stat[data-label="Driver"] {
+    grid-row: 2;
+    align-self: start;
+  }
+  .ws-m-stat[data-label="Auto"] strong,
+  .ws-m-stat[data-label="Driver"] strong {
+    font-weight: 500;
+  }
+}
+
+/* ═══ Mobile: selection menus open straight down under their trigger ═══
+   The base picker menu already opens downward; only the event-filter sidebar
+   variant opens up-and-to-the-side (to fit the desktop rail), so flip just that
+   one down. Keep a comfortable width so option labels aren't truncated. */
+@media (max-width: 760px) {
+  .event-filter-sidebar .picker-menu {
+    display: block;
+  }
+  .event-filter-sidebar .picker-menu-list {
+    top: calc(100% + 4px);
+    bottom: auto;
+    left: 0;
+    right: 0;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    margin-top: 0;
+  }
+  .ws-filter-dropdown {
+    max-width: calc(100vw - 24px);
+  }
+}
+
+/* Very small screens: drop the wordmark (logo chip carries the brand) and
+   tighten oversized headings so they don't dominate the viewport. */
+@media (max-width: 430px) {
+  .brand-word {
+    display: none;
+  }
+  .hero h2,
+  .page-title h1,
+  .profile-header h1 {
+    font-size: 22px;
+  }
+  .home-greeting {
+    font-size: 23px;
+  }
+}
+
+/* Events filters: on desktop the toggle is hidden and filters always show.
+   On mobile the sidebar (which sits above the list) collapses to a tappable
+   "Filters" bar so results are visible immediately. */
+.event-filter-mobile-toggle {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .event-filter-sidebar-title {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 0;
+  }
+  .event-filter-title-text {
+    display: none;
+  }
+  .event-filter-mobile-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .event-filter-mobile-toggle .event-filter-chevron {
+    margin-left: auto;
+    transition: transform 0.18s ease;
+  }
+  .event-filter-sidebar.mobile-open .event-filter-chevron {
+    transform: rotate(180deg);
+  }
+  /* Collapsed: hide the filter controls and the reset link until opened. */
+  .event-filter-sidebar:not(.mobile-open) .event-filter-body,
+  .event-filter-sidebar:not(.mobile-open) .reset-filters-btn {
+    display: none;
+  }
+  .event-filter-sidebar.mobile-open .event-filter-body {
+    margin-top: 12px;
+  }
+}
+
+/* ── My Team tab ─────────────────────────────────────────────────────────── */
+.myteam-page { display: flex; flex-direction: column; }
+
+.live-dot { display: inline-flex; align-items: center; gap: 6px; color: var(--danger-strong); font-weight: 600; }
+.live-dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); animation: myteam-pulse 1.5s infinite; }
+@keyframes myteam-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* team header */
+.myteam-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; padding: 4px 2px 20px; }
+.myteam-num { font-family: var(--font-geist-mono); font-weight: 700; font-size: 28px; letter-spacing: -0.02em; color: var(--link); background: var(--surface-3); padding: 7px 14px; border-radius: 9px; }
+.myteam-head h1 { margin: 0; font-size: 25px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.15; }
+.myteam-meta { display: flex; gap: 12px; align-items: center; color: var(--text-muted); font-size: 13px; margin-top: 6px; flex-wrap: wrap; }
+.myteam-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.button-link.sm { min-height: 30px; padding: 4px 10px; font-size: 13px; }
+
+.myteam-act { font-size: 13px; font-weight: 400; color: var(--link); }
+.myteam-act.muted-act { color: var(--text-muted); }
+.myteam-evname { margin-left: 11px; padding-left: 11px; border-left: 1px solid var(--border-strong); font-weight: 600; color: var(--text); }
+
+/* live band */
+.myteam-live-body { display: grid; grid-template-columns: 1.6fr 1.1fr 0.9fr; }
+.myteam-seg { padding: 15px 18px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 13px; }
+.myteam-seg:last-child { border-right: none; }
+.myteam-seg-lab { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-faint); font-weight: 600; display: flex; align-items: center; gap: 9px; }
+.myteam-seg-lab .q { text-transform: none; letter-spacing: 0; color: var(--text-muted); font-weight: 500; }
+.myteam-seg-empty { color: var(--text-muted); font-size: 13px; }
+.myteam-seg-rank { display: flex; align-items: baseline; gap: 9px; }
+.myteam-seg-rank .n { font-family: var(--font-geist-mono); font-weight: 700; font-size: 27px; letter-spacing: -0.02em; line-height: 1; }
+.myteam-seg-rank .of { color: var(--text-muted); font-size: 13px; }
+.myteam-deck { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.myteam-mname { font-family: var(--font-geist-mono); font-weight: 700; font-size: 20px; }
+.myteam-deck .alliance-cell { text-align: left !important; padding: 2px 8px; border-radius: 5px; }
+.myteam-vs { color: var(--text-faint); font-size: 13px; }
+.myteam-kvrow { display: flex; gap: 22px; flex-wrap: wrap; }
+.myteam-kv { display: flex; flex-direction: column; gap: 3px; }
+.myteam-kv .kl { font-size: 11px; color: var(--text-faint); }
+.myteam-kv .kv-v { font-family: var(--font-geist-mono); font-weight: 600; font-size: 14px; color: var(--text); }
+
+/* stat strip */
+.myteam-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }
+.myteam-stat { border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 14px; background: var(--surface); box-shadow: 0 1px 1px rgba(0, 0, 0, 0.05); }
+.myteam-stat .k { font-size: 11.5px; color: var(--text-muted); }
+.myteam-stat .v { font-weight: 600; font-size: 20px; letter-spacing: -0.01em; margin-top: 5px; font-variant-numeric: tabular-nums; }
+.myteam-stat .v small { font-size: 12px; color: var(--text-faint); font-weight: 500; }
+.myteam-stat .sub { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+
+/* up-next panel */
+.myteam-upnext { display: grid; grid-template-columns: auto 1fr auto; gap: 22px; align-items: center; padding: 16px 18px; }
+.myteam-cal { text-align: center; border: 1px solid var(--border); border-radius: 10px; padding: 9px 0 10px; width: 84px; background: var(--surface-2); }
+.myteam-cal .mo { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); font-weight: 600; }
+.myteam-cal .day { font-family: var(--font-geist-mono); font-weight: 700; font-size: 30px; line-height: 1.05; }
+.myteam-upnext .info .nm { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.myteam-upnext .info .sub { color: var(--text-muted); font-size: 13px; margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.myteam-upnext .right { display: flex; align-items: center; gap: 18px; }
+.myteam-upnext .count { text-align: right; }
+.myteam-upnext .count .n { font-family: var(--font-geist-mono); font-weight: 700; font-size: 26px; letter-spacing: -0.02em; }
+.myteam-upnext .count .l { font-size: 12px; color: var(--text-muted); }
+.myteam-upnext-empty { padding: 16px 18px; color: var(--text-muted); }
+
+/* lower grid: matches + timeline */
+.myteam-lower { display: grid; grid-template-columns: 1.45fr 1fr; gap: 20px; align-items: start; }
+.myteam-matches-panel, .myteam-tl-panel { margin: 0; }
+.myteam-matches-panel .results-match-table { margin: 0; }
+.myteam-next-row > td { background: var(--surface-2); }
+.myteam-nextpill { display: inline-flex; align-items: center; height: 20px; padding: 0 9px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+
+/* timeline (single-sided, scrollable) */
+.myteam-tl-panel { display: flex; flex-direction: column; overflow: hidden; }
+.myteam-tl-panel > h2 { flex: 0 0 auto; }
+.myteam-tl-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.myteam-timeline { position: relative; padding: 6px 15px 6px 40px; }
+.myteam-timeline::before { content: ""; position: absolute; left: 21px; top: 14px; bottom: 14px; width: 2px; background: var(--border); }
+.myteam-node { position: relative; padding: 10px 0; }
+.myteam-node::before { content: ""; position: absolute; left: -25px; top: 14px; width: 11px; height: 11px; border-radius: 50%; background: var(--surface); border: 2px solid var(--border-strong); }
+.myteam-node.live::before { border-color: var(--danger); background: var(--danger); box-shadow: 0 0 0 4px rgba(229, 72, 77, 0.15); }
+.myteam-node.done::before { border-color: var(--success); background: var(--success); }
+
+/* timeline (two-sided, full width) */
+.myteam-timeline2 { position: relative; padding: 20px 0 10px; }
+.myteam-timeline2::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: var(--border); transform: translateX(-50%); }
+.myteam-tnode { position: relative; width: 50%; box-sizing: border-box; padding: 9px 36px 9px 0; }
+.myteam-tnode.left { left: 0; text-align: right; }
+.myteam-tnode.right { left: 50%; text-align: left; padding: 9px 0 9px 36px; }
+.myteam-tnode::before { content: ""; position: absolute; top: 17px; width: 13px; height: 13px; border-radius: 50%; background: var(--surface); border: 2px solid var(--border-strong); z-index: 1; }
+.myteam-tnode.left::before { right: -7px; }
+.myteam-tnode.right::before { left: -7px; }
+.myteam-tnode.done::before { border-color: var(--success); background: var(--success); }
+.myteam-tnode.up.next::before { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 4px var(--focus-ring); }
+.myteam-tcard { display: inline-block; max-width: 360px; text-align: left; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 10px 13px; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04); }
+.myteam-tnode.up.next .myteam-tcard { border-color: var(--accent); }
+
+/* timeline node content (shared) */
+.myteam-node .row, .myteam-tcard .row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+.myteam-node .nm, .myteam-tcard .nm { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.myteam-node .dt, .myteam-tcard .dt { font-family: var(--font-geist-mono); font-size: 11.5px; color: var(--text-faint); white-space: nowrap; }
+.myteam-evmeta { display: flex; align-items: center; gap: 9px; margin-top: 4px; flex-wrap: wrap; }
+.myteam-evmeta .loc { color: var(--text-muted); font-size: 12.5px; }
+.myteam-resline { display: flex; flex-wrap: wrap; align-items: center; margin-top: 7px; row-gap: 4px; }
+.myteam-rp { font-size: 12.5px; color: var(--text-muted); }
+.myteam-rp b { color: var(--text); font-family: var(--font-geist-mono); font-weight: 600; }
+.myteam-rp.lead { color: var(--text); font-weight: 600; }
+.myteam-rp + .myteam-rp { margin-left: 10px; padding-left: 10px; border-left: 1px solid var(--border); }
+
+.myteam-tl-legend { display: flex; gap: 16px; padding: 9px 15px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); flex: 0 0 auto; }
+.myteam-tl-legend.center { justify-content: center; gap: 18px; padding: 12px 15px; }
+.myteam-tl-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.myteam-tl-legend i { width: 9px; height: 9px; border-radius: 50%; }
+.myteam-tl-legend i.live { background: var(--danger); }
+.myteam-tl-legend i.done { background: var(--success); }
+.myteam-tl-legend i.up { background: var(--surface); border: 2px solid var(--border-strong); }
+.myteam-tl-legend i.nextpt { background: var(--accent); }
+
+/* empty / not-set state */
+.myteam-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 48px 24px; color: var(--text-muted); }
+.myteam-empty h2 { margin: 4px 0 0; font-size: 20px; font-weight: 600; color: var(--text); }
+.myteam-empty p { margin: 0; max-width: 46ch; }
+.myteam-empty .button-link { margin-top: 8px; }
+
+/* share card (hidden by default) */
+.myteam-share-svg { display: block; width: 100%; height: auto; border-radius: 14px; }
+
+@media (max-width: 880px) {
+  .myteam-live-body { grid-template-columns: 1fr; }
+  .myteam-seg { border-right: none; border-bottom: 1px solid var(--border); }
+  .myteam-seg:last-child { border-bottom: none; }
+  .myteam-stats { grid-template-columns: repeat(2, 1fr); }
+  .myteam-lower { grid-template-columns: 1fr; }
+  .myteam-upnext { grid-template-columns: 1fr; text-align: left; }
+}
+@media (max-width: 680px) {
+  .myteam-timeline2::before { left: 20px; }
+  .myteam-tnode, .myteam-tnode.left, .myteam-tnode.right { width: 100%; left: 0; text-align: left; padding: 8px 0 8px 42px; }
+  .myteam-tnode.left::before, .myteam-tnode.right::before { left: 13px; right: auto; }
+  .myteam-tcard { display: block; max-width: none; }
 }
 

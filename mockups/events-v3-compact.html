@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OpenScout — Events (V3 · Compact / Left Rail)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --canvas:#F7F6F3; --surface:#FFFFFF; --surface-2:#FBFBFA; --surface-3:#F1F0EE;
+    --border:#E7E6E2; --border-soft:rgba(0,0,0,.05);
+    --ink:#1C1C1A; --text:#33322E; --muted:#787774; --faint:#A3A29D;
+    --link-ink:#1F6C9F;
+    --sig-bg:#FBF3DB; --sig-ink:#876100;
+    --world-bg:#FDEBEC; --world-ink:#9F2F2D;
+    --champ-bg:#E1F3FE; --champ-ink:#1F6C9F;
+    --other-bg:#EFEEEB; --other-ink:#6B6A66;
+    --sans:'Geist',-apple-system,'Helvetica Neue',Arial,sans-serif;
+    --mono:'Geist Mono','SF Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{background:var(--canvas);color:var(--text);font-family:var(--sans);font-size:13.5px;line-height:1.5;-webkit-font-smoothing:antialiased;}
+  a{color:inherit;text-decoration:none;}
+
+  /* Top bar — full width, hairline bottom */
+  .topbar{display:flex;align-items:center;gap:20px;padding:11px 22px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;letter-spacing:-.01em;color:var(--ink);}
+  .brand .mark{width:21px;height:21px;border-radius:6px;background:conic-gradient(from 210deg,#7c5cff,#23a6d5,#ff5c8a);}
+  .nav{display:flex;gap:2px;margin-left:6px;}
+  .nav a{padding:5px 10px;border-radius:6px;font-size:13px;color:var(--muted);}
+  .nav a.active{background:var(--surface-3);color:var(--ink);font-weight:500;}
+  .spacer{flex:1;}
+  .search{display:flex;align-items:center;gap:8px;width:260px;padding:7px 11px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--faint);font-size:12.5px;}
+  .search .kbd{margin-left:auto;font-family:var(--mono);font-size:10.5px;border:1px solid var(--border);border-radius:4px;padding:1px 5px;}
+  .icon-btn{width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--muted);}
+  .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#c8b6ff,#8ad0e6);border:1px solid var(--border);}
+
+  /* Workspace: left rail + main */
+  .work{display:grid;grid-template-columns:248px 1fr;min-height:calc(100vh - 55px);}
+  .rail{border-right:1px solid var(--border);background:var(--surface-2);padding:22px 18px;position:sticky;top:55px;align-self:start;height:calc(100vh - 55px);overflow:auto;}
+  .rail-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px;}
+  .rail-head h2{margin:0;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink);}
+  .rail-head a{font-size:11px;color:var(--link-ink);}
+  .fg{margin-bottom:20px;}
+  .fg .lab{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px;}
+  .stack{display:flex;flex-direction:column;}
+  .stack button{appearance:none;text-align:left;border:0;border-bottom:1px solid var(--border-soft);background:transparent;padding:8px 4px;font-family:var(--sans);font-size:13px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:8px;transition:.1s;}
+  .stack button:last-child{border-bottom:0;}
+  .stack button:hover{color:var(--ink);}
+  .stack button.active{color:var(--ink);font-weight:500;}
+  .stack button .tick{width:5px;height:5px;border-radius:50%;background:transparent;}
+  .stack button.active .tick{background:var(--ink);}
+  .select{position:relative;}
+  .select select{appearance:none;width:100%;padding:8px 28px 8px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);font-family:var(--sans);font-size:12.5px;color:var(--text);cursor:pointer;}
+  .select::after{content:"";position:absolute;right:11px;top:50%;width:6px;height:6px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:translateY(-65%) rotate(45deg);pointer-events:none;}
+  .check{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text);cursor:pointer;}
+  .check .box{width:15px;height:15px;border-radius:4px;background:var(--ink);display:grid;place-items:center;}
+  .check .box svg{width:9px;height:9px;}
+
+  /* Main */
+  .main{padding:24px 28px 80px;}
+  .mhead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;}
+  .mhead h1{margin:0;font-size:26px;font-weight:600;letter-spacing:-.02em;color:var(--ink);}
+  .mhead .cnt{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.05em;}
+  .qsearch{display:flex;align-items:center;gap:9px;margin:16px 0 10px;padding:9px 12px;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--faint);font-size:13px;}
+
+  .table{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+  .thead,.trow{display:grid;grid-template-columns:1fr 96px 64px 46px 92px;gap:14px;align-items:center;}
+  .thead{padding:10px 16px;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);border-bottom:1px solid var(--border);background:var(--surface-2);}
+  .trow{padding:11px 16px;border-bottom:1px solid var(--border-soft);transition:background .1s;}
+  .trow:last-child{border-bottom:0;}
+  .trow:hover{background:var(--surface-2);}
+  .nm{font-size:13.5px;font-weight:500;color:var(--link-ink);line-height:1.35;}
+  .nm:hover{text-decoration:underline;}
+  .sku{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:2px;letter-spacing:.02em;}
+  .pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:9999px;font-family:var(--mono);font-size:9.5px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;}
+  .pill.sig{background:var(--sig-bg);color:var(--sig-ink);}
+  .pill.other{background:var(--other-bg);color:var(--other-ink);}
+  .mono{font-family:var(--mono);font-size:11.5px;color:var(--text);}
+  .gr{font-family:var(--mono);font-size:10.5px;color:var(--muted);}
+  .gr.tag{display:inline-block;padding:1px 6px;background:var(--surface-3);border-radius:4px;}
+  .dt{font-size:12px;color:var(--text);font-variant-numeric:tabular-nums;}
+
+  @media(max-width:820px){.work{grid-template-columns:1fr;}.rail{position:static;height:auto;border-right:0;border-bottom:1px solid var(--border);}}
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark"></span>OpenScout</div>
+    <nav class="nav"><a class="active">Events</a><a>Teams</a><a>Skills</a></nav>
+    <span class="spacer"></span>
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      Search teams or events…<span class="kbd">⌘K</span>
+    </div>
+    <button class="icon-btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+    <div class="avatar"></div>
+  </header>
+
+  <div class="work">
+    <!-- Left filter rail -->
+    <aside class="rail">
+      <div class="rail-head"><h2>Filters</h2><a>Reset</a></div>
+
+      <div class="fg">
+        <div class="lab">Time</div>
+        <div class="stack">
+          <button class="active"><span class="tick"></span>Near today</button>
+          <button><span class="tick"></span>Upcoming</button>
+          <button><span class="tick"></span>All</button>
+        </div>
+      </div>
+
+      <div class="fg">
+        <div class="lab">Type</div>
+        <div class="stack">
+          <button class="active"><span class="tick"></span>All</button>
+          <button><span class="tick"></span>Worlds</button>
+          <button><span class="tick"></span>Signature</button>
+          <button><span class="tick"></span>Championships</button>
+          <button><span class="tick"></span>Other</button>
+        </div>
+      </div>
+
+      <div class="fg">
+        <div class="lab">Seasons</div>
+        <div class="select"><select><option>Override</option><option>Push Back</option></select></div>
+      </div>
+      <div class="fg">
+        <div class="lab">Programs</div>
+        <div class="select"><select><option>V5RC</option><option>VIQRC</option></select></div>
+      </div>
+      <div class="fg">
+        <div class="lab">Grade</div>
+        <div class="select"><select><option>All grades</option><option>HS</option><option>MS</option></select></div>
+      </div>
+      <div class="fg">
+        <div class="lab">Region</div>
+        <div class="select"><select><option>All regions</option><option>Minnesota</option></select></div>
+      </div>
+      <div class="fg">
+        <div class="lab">Sort</div>
+        <div class="select"><select><option>Smart Sort</option><option>Date ↑</option></select></div>
+      </div>
+      <label class="check"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5"><path d="M5 13l4 4L19 7"/></svg></span>Hide canceled</label>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <div class="mhead">
+        <h1>Events</h1>
+        <span class="cnt">642 RESULTS · OVERRIDE</span>
+      </div>
+      <div class="qsearch">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        Quick search event name
+      </div>
+
+      <div class="table">
+        <div class="thead"><span>Event</span><span>Priority</span><span>Program</span><span>Grade</span><span>Dates</span></div>
+
+        <div class="trow">
+          <div><a class="nm">The Silk Road Link: VEX V5 Robotics Competition Override™ (HS)</a><div class="sku">RE-V5RC-26-4392</div></div>
+          <div><span class="pill sig">Signature</span></div>
+          <div class="mono">V5RC</div><div><span class="gr">All</span></div><div class="dt">Aug 2–5, 2026</div>
+        </div>
+        <div class="trow">
+          <div><a class="nm">The Silk Road Link: VEX V5 Robotics Competition Override™ (MS)</a><div class="sku">RE-V5RC-26-4393</div></div>
+          <div><span class="pill sig">Signature</span></div>
+          <div class="mono">V5RC</div><div><span class="gr">All</span></div><div class="dt">Aug 2–5, 2026</div>
+        </div>
+        <div class="trow">
+          <div><a class="nm">University of North Dakota Signature at the Mall of America: High School Presented by the College of Engineering and Mines</a><div class="sku">RE-V5RC-26-4244</div></div>
+          <div><span class="pill sig">Signature</span></div>
+          <div class="mono">V5RC</div><div><span class="gr tag">HS</span></div><div class="dt">Aug 5–7, 2026</div>
+        </div>
+        <div class="trow">
+          <div><a class="nm">Speedway: Override™ V5RC Blended Signature Event, Presented by the Chrysalis Global Foundation</a><div class="sku">RE-V5RC-26-4359</div></div>
+          <div><span class="pill sig">Signature</span></div>
+          <div class="mono">V5RC</div><div><span class="gr">All</span></div><div class="dt">Sep 17–19, 2026</div>
+        </div>
+        <div class="trow">
+          <div><a class="nm">The Highlander Summit 2026: VEX V5 Robotics Competition High School Override™</a><div class="sku">RE-V5RC-26-4246</div></div>
+          <div><span class="pill sig">Signature</span></div>
+          <div class="mono">V5RC</div><div><span class="gr tag">HS</span></div><div class="dt">Sep 24–26, 2026</div>
+        </div>
+        <div class="trow">
+          <div><a class="nm">VIC | VEX V5 Robotics Competition™ (Blended): Override™ Tournament @ Templestowe College — Season Opener</a><div class="sku">RE-V5RC-26-4228</div></div>
+          <div><span class="pill other">Other</span></div>
+          <div class="mono">V5RC</div><div><span class="gr">All</span></div><div class="dt">Jun 21, 2026</div>
+        </div>
+        <div class="trow">
+          <div><a class="nm">Auckland | VEX V5 Robotics Competition™ (Blended): Override™ Scrimmage #1 @ Glenfield College</a><div class="sku">RE-V5RC-26-4486</div></div>
+          <div><span class="pill other">Other</span></div>
+          <div class="mono">V5RC</div><div><span class="gr">All</span></div><div class="dt">Jun 26, 2026</div>
+        </div>
+        <div class="trow">
+          <div><a class="nm">Palmerston North VEX V5 Robotics Competition™ Tournament 1: Override™ @ Palmerston North Boys' High School</a><div class="sku">RE-V5RC-26-4606</div></div>
+          <div><span class="pill other">Other</span></div>
+          <div class="mono">V5RC</div><div><span class="gr tag">HS</span></div><div class="dt">Jun 26, 2026</div>
+        </div>
+        <div class="trow">
+          <div><a class="nm">2026-2027赛季VEX机器人公开赛北京城市赛 V5RC_HS</a><div class="sku">RE-V5RC-26-4551</div></div>
+          <div><span class="pill other">Other</span></div>
+          <div class="mono">V5RC</div><div><span class="gr">All</span></div><div class="dt">Jul 18–19, 2026</div>
+        </div>
+        <div class="trow">
+          <div><a class="nm">SA | VEX V5 Robotics Competition™ (Blended) Flinders NVI Open: Override™ Tournament @ Flinders University</a><div class="sku">RE-V5RC-26-4409</div></div>
+          <div><span class="pill other">Other</span></div>
+          <div class="mono">V5RC</div><div><span class="gr">All</span></div><div class="dt">Jul 22, 2026</div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
