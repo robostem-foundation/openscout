@@ -13,18 +13,22 @@ import {
   ChevronsRight,
   CornerDownLeft,
   ExternalLink,
+  Eye,
   FilePlus2,
   Gamepad2,
   Info,
   LayoutDashboard,
+  LayoutGrid,
   Link2,
   GripVertical,
+  List,
   ListFilter,
   ListOrdered,
   Link as LinkIcon,
   MinusCircle,
   LogIn,
   LogOut,
+  MapPin,
   Medal,
   Palette,
   PanelRight,
@@ -53,7 +57,7 @@ import {
 import { createContext, Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Dispatch, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
-import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
+import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -131,6 +135,13 @@ const GRADES_BY_PROGRAM: Record<string, string[]> = {
 function gradeShortLabel(code: string): string {
   return code === "HS" ? "HS" : code === "MS" ? "MS" : code === "ES" ? "ES" : code === "U" ? "U" : code;
 }
+// World Skills `grade_level` query values, keyed by the program grade codes above.
+const GRADE_CODE_TO_FULL: Record<string, string> = {
+  HS: "High School",
+  MS: "Middle School",
+  ES: "Elementary",
+  U: "College",
+};
 
 const today = new Date();
 const oneDay = 24 * 60 * 60 * 1000;
@@ -147,7 +158,7 @@ type EventFilterLayout = "sidebar" | "inline";
 type RegionOptionKind = "country" | "subdivision" | "vex-region";
 type DateDirection = "asc" | "desc";
 type TeamDataKind = "matches" | "rankings" | "skills" | "awards";
-type HomeEventTab = "popular" | "upcoming" | "today" | "signatures" | "near";
+type HomeEventTab = "upcoming" | "today" | "signatures" | "near";
 type AsyncBucket<T> = {
   data: T[];
   loading: boolean;
@@ -2226,11 +2237,14 @@ function PicklistTab({ event, orgId }: { event: { id: number; name: string }; or
 // mirroring the primary desktop nav for one-tap access. Each tab carries an
 // aria-label/title since there's no visible text.
 function MobileTabBar({ path }: { path: string }) {
+  const { profile } = useAuth();
+  const hasMyTeam = !!(profile?.team_number && profile?.team_program);
   const tabs: Array<{ href: string; label: string; Icon: typeof House; active: boolean }> = [
     { href: "/", label: "Home", Icon: House, active: path === "/" },
     { href: "/events", label: "Events", Icon: CalendarDays, active: path === "/events" || path.startsWith("/event") },
     { href: "/teams", label: "Teams", Icon: Users, active: path === "/teams" || path.startsWith("/team") },
     { href: "/skills", label: "Skills", Icon: Trophy, active: path === "/skills" },
+    ...(hasMyTeam ? [{ href: "/my-team", label: "My Team", Icon: Star, active: path === "/my-team" }] : []),
   ];
   return (
     <nav className="mobile-tabbar" aria-label="Primary">
@@ -2293,12 +2307,15 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
   // settings epoch is folded in so settings changes that remount page content
   // (synced filters/preferences) also get the subtle fade.
   const settingsEpoch = useSettingsEpoch();
+  const { profile } = useAuth();
+  const hasMyTeam = !!(profile?.team_number && profile?.team_program);
   const routeKey = `${path.split("?")[0].split("#")[0]}:${settingsEpoch}`;
   const nav = [
     ["/", "OpenScout"],
     ["/events", "Events"],
     ["/teams", "Teams"],
     ["/skills", "Skills"],
+    ...(hasMyTeam ? [["/my-team", "My Team"]] : []),
   ];
 
   return (
@@ -2373,81 +2390,45 @@ const skillsLeaderboards = [
 ];
 
 const homeEventTabs: Array<{ label: string; value: HomeEventTab }> = [
-  { label: "Popular", value: "popular" },
   { label: "Upcoming", value: "upcoming" },
   { label: "Today's Events", value: "today" },
   { label: "Signatures", value: "signatures" },
   { label: "Near Today", value: "near" },
 ];
 
-function ProgramPicker({
-  selectedProgramIds,
-  onChange,
-  triggerLabel = "Change program",
-}: {
-  selectedProgramIds: string[];
-  onChange: (ids: string[]) => void;
-  triggerLabel?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [multi, setMulti] = useState(selectedProgramIds.length !== 1);
-  const options = programOptions.filter((option) => option.value);
+// Home events program filter — a compact multi-select toggle. "…" groups every
+// non-V5/IQ program (VEX U + VEX AI) under one button.
+const HOME_PROGRAM_GROUPS: Array<{ key: string; label: string; title: string; ids: string[] }> = [
+  { key: "v5", label: "V5", title: "VEX V5 Robotics Competition", ids: ["1"] },
+  { key: "iq", label: "IQ", title: "VEX IQ Robotics Competition", ids: ["41"] },
+  { key: "other", label: "…", title: "Other events (VEX U, VEX AI)", ids: ["4", "57"] },
+];
 
-  const toggle = (id: string) => {
-    if (!multi) {
-      onChange([id]);
-      setOpen(false);
-    } else {
-      onChange(selectedProgramIds.includes(id) ? selectedProgramIds.filter((value) => value !== id) : [...selectedProgramIds, id]);
-    }
-  };
-
+function HomeProgramToggle({ selected, onChange }: { selected: string[]; onChange: (ids: string[]) => void }) {
   return (
-    <span className="home-program-picker">
-      <button type="button" className="change-program-btn" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-        {triggerLabel}
-      </button>
-      {open && (
-        <div className="picker-menu-list" style={{ zIndex: 20 }}>
-          <div className="picker-multi-row">
-            <label className="picker-multi-toggle">
-              <input
-                type="checkbox"
-                checked={multi}
-                onChange={(event) => {
-                  setMulti(event.target.checked);
-                  if (!event.target.checked && selectedProgramIds.length !== 1) {
-                    onChange(selectedProgramIds.length ? selectedProgramIds.slice(0, 1) : [options[0].value]);
-                  }
-                }}
-              />
-              <span>Select multiple</span>
-            </label>
-            <button type="button" className="picker-menu-close" onClick={() => setOpen(false)} aria-label="Close">
-              &times;
-            </button>
-          </div>
-          {multi && (
-            <div className="picker-menu-actions">
-              <button type="button" onClick={() => onChange(options.map((option) => option.value))}>All</button>
-              <button type="button" onClick={() => onChange([])}>Clear</button>
-            </div>
-          )}
-          {options.map((option) =>
-            multi ? (
-              <label key={option.value}>
-                <input type="checkbox" checked={selectedProgramIds.includes(option.value)} onChange={() => toggle(option.value)} />
-                <span>{option.label}</span>
-              </label>
-            ) : (
-              <button key={option.value} type="button" className={selectedProgramIds.includes(option.value) ? "active" : ""} onClick={() => toggle(option.value)}>
-                <span>{option.label}</span>
-              </button>
-            ),
-          )}
-        </div>
-      )}
-    </span>
+    <div className="home-prog-toggle" role="group" aria-label="Programs">
+      {HOME_PROGRAM_GROUPS.map((group) => {
+        const active = group.ids.every((id) => selected.includes(id));
+        return (
+          <button
+            key={group.key}
+            type="button"
+            className={active ? "active" : ""}
+            aria-pressed={active}
+            title={group.title}
+            onClick={() =>
+              onChange(
+                active
+                  ? selected.filter((id) => !group.ids.includes(id))
+                  : [...selected.filter((id) => !group.ids.includes(id)), ...group.ids],
+              )
+            }
+          >
+            {group.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -2636,7 +2617,6 @@ function Home() {
     [events, selectedProgramIds],
   );
   const homeEvents = useMemo(() => {
-    if (homeEventTab === "popular") return [];
     if (homeEventTab === "today") {
       return baseHomeEvents
         .filter((event) => {
@@ -2696,8 +2676,13 @@ function Home() {
           <FavoritesPanel />
           <OrgPanel />
 
-          <Panel title="Skills Leaderboards" icon={<Trophy />}>
+          <Panel title="VEX Skill Leaderboards" icon={<Trophy />}>
             <div className="skills-leaderboard-list">
+              <Link href="/skills" className="skills-lb-openscout">
+                <BarChart3 size={14} />
+                <span>View leaderboards on OpenScout</span>
+                <ChevronRight size={14} className="arrow" />
+              </Link>
               {skillsLeaderboards.map((lb) => (
                 <a
                   key={lb.url}
@@ -2716,26 +2701,21 @@ function Home() {
 
         <Panel
           title={
-            <>
-              VEX Robotics Competition Events
-              <ProgramPicker selectedProgramIds={selectedProgramIds} onChange={setSelectedProgramIds} />
-            </>
+            <div className="home-events-header">
+              <HomeProgramToggle selected={selectedProgramIds} onChange={setSelectedProgramIds} />
+              <SeasonSelector
+                seasons={homeEventTabs.map((tab, index) => ({ id: index, label: tab.label }))}
+                selectedSeasonId={homeEventTabs.findIndex((tab) => tab.value === homeEventTab)}
+                onChange={(index) => setHomeEventTab(homeEventTabs[index].value)}
+                loading={false}
+                hideCount
+                hideLabel
+              />
+              <Link href="/events" className="home-events-seeall">See all events</Link>
+            </div>
           }
           icon={<CalendarDays />}
-          action={<Link href="/events">See all events</Link>}
         >
-          <div className="home-event-tabs">
-            {homeEventTabs.map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                className={homeEventTab === tab.value ? "active" : ""}
-                onClick={() => setHomeEventTab(tab.value)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
           <Status loading={eventsLoading} error={eventsError} />
           <EventTable events={homeEvents} loading={eventsLoading} compact showPriority showProgram />
         </Panel>
@@ -3598,6 +3578,22 @@ function TeamsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [teamView, setTeamView] = useState<"grid" | "list">(() => {
+    if (typeof localStorage === "undefined") return "grid";
+    return localStorage.getItem("teamsView") === "list" ? "list" : "grid";
+  });
+  const [skillsByTeam, setSkillsByTeam] = useState<Map<number, number>>(new Map());
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const seasonsAsync = useAsync(() => api.robotEventsSeasons({ per_page: 250 }), []);
+  const programSeasonId = useMemo(() => {
+    const pid = Number(program);
+    if (!pid) return null;
+    return (
+      (seasonsAsync.data?.data ?? [])
+        .filter((season) => season.program?.id === pid)
+        .sort((a, b) => b.id - a.id)[0]?.id ?? null
+    );
+  }, [seasonsAsync.data, program]);
   const reloadTeamsRef = useRef<() => void>(() => {});
   const cacheKey = cachedTeamsKey(program, registered);
   const committedSearch = submittedSearch.trim();
@@ -3815,6 +3811,45 @@ function TeamsPage() {
   }, [search]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem("teamsView", teamView);
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+  }, [teamView]);
+
+  // World Skills scores load in the background after the team list, keyed by the
+  // current program's season + grade levels. The table shows a skeleton until the
+  // map arrives. Results are session-cached (loadWorldSkills) so this is cheap.
+  useEffect(() => {
+    const grades = (GRADES_BY_PROGRAM[program] ?? []).map((code) => GRADE_CODE_TO_FULL[code]).filter(Boolean);
+    if (!programSeasonId || !grades.length) {
+      setSkillsByTeam(new Map());
+      setSkillsLoading(false);
+      return;
+    }
+    let live = true;
+    setSkillsLoading(true);
+    Promise.all(grades.map((grade) => loadWorldSkills(programSeasonId, grade).catch(() => [] as WorldSkillsEntry[])))
+      .then((lists) => {
+        if (!live) return;
+        const map = new Map<number, number>();
+        for (const list of lists) {
+          for (const entry of list) {
+            if (entry.team?.id != null) map.set(entry.team.id, entry.scores?.score ?? 0);
+          }
+        }
+        setSkillsByTeam(map);
+      })
+      .finally(() => {
+        if (live) setSkillsLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [programSeasonId, program]);
+
+  useEffect(() => {
     let live = true;
     const needle = debouncedQuickSearch.trim();
     if (!needle) {
@@ -3862,7 +3897,7 @@ function TeamsPage() {
 
   return (
     <section className="page">
-      <PageTitle icon={<Users />} title="Teams" subtitle="Search team numbers, names, regions, programs, grade levels, and registration status." />
+      <PageTitle icon={<Users />} title="Teams" />
       <SearchFilters
         search={search}
         setSearch={(value) => {
@@ -3885,8 +3920,9 @@ function TeamsPage() {
         }}
         regionControl={
           <div className="team-region-filter picker-menu">
-            <button type="button" onClick={() => setRegionMenuOpen((open) => !open)} aria-expanded={regionMenuOpen}>
-              {regionButtonLabel}
+            <button type="button" className="team-region-trigger" onClick={() => setRegionMenuOpen((open) => !open)} aria-expanded={regionMenuOpen}>
+              <MapPin size={14} />
+              <span>{regionButtonLabel}</span>
             </button>
             {regionMenuOpen && (
               <div className="picker-menu-list region-menu-list team-region-menu-list">
@@ -3938,39 +3974,79 @@ function TeamsPage() {
         title="Team List"
         icon={<Users />}
         action={
-          !isSearchingTeams && (
-            <span className="teams-cache-controls">
-              {lastUpdated && <span className="teams-cache-time">Updated {formatRelativeTime(lastUpdated)}</span>}
-              <CompareModeButton />
+          <span className="teams-list-controls">
+            <div className="team-view-toggle" role="group" aria-label="Team list view">
               <button
                 type="button"
-                className="teams-reload-btn"
-                onClick={() => reloadTeamsRef.current()}
-                disabled={refreshing}
-                title="Reload team list now"
+                className={teamView === "grid" ? "active" : ""}
+                onClick={() => setTeamView("grid")}
+                title="Grid view"
+                aria-label="Grid view"
+                aria-pressed={teamView === "grid"}
               >
-                <RotateCw size={13} className={refreshing ? "spin" : ""} />
-                {refreshing ? "Reloading..." : "Reload"}
+                <LayoutGrid size={14} />
               </button>
-            </span>
-          )
+              <button
+                type="button"
+                className={teamView === "list" ? "active" : ""}
+                onClick={() => setTeamView("list")}
+                title="List view"
+                aria-label="List view"
+                aria-pressed={teamView === "list"}
+              >
+                <List size={14} />
+              </button>
+            </div>
+            {!isSearchingTeams && (
+              <span className="teams-cache-controls">
+                {lastUpdated && <span className="teams-cache-time">Updated {formatRelativeTime(lastUpdated)}</span>}
+                <CompareModeButton />
+                <button
+                  type="button"
+                  className="teams-reload-btn"
+                  onClick={() => reloadTeamsRef.current()}
+                  disabled={refreshing}
+                  title="Reload team list now"
+                >
+                  <RotateCw size={13} className={refreshing ? "spin" : ""} />
+                  {refreshing ? "Reloading..." : "Reload"}
+                </button>
+              </span>
+            )}
+          </span>
         }
       >
         <Status loading={loading} error={error} />
         {refreshing && !loading && <div className="notice subtle">Updating cached teams...</div>}
-        <TeamTable teams={tableTeams} loading={loading} localPageSize={50} />
+        {teamView === "grid" ? (
+          <TeamGrid teams={tableTeams} loading={loading} localPageSize={50} />
+        ) : (
+          <TeamTable
+            teams={tableTeams}
+            loading={loading}
+            localPageSize={50}
+            splitName
+            skills={{
+              scoreByTeam: skillsByTeam,
+              // Show the skeleton while seasons resolve and skills fetch, but only
+              // for programs that actually have a World Skills leaderboard.
+              loading: (GRADES_BY_PROGRAM[program] ?? []).length > 0 && (seasonsAsync.loading || skillsLoading),
+            }}
+          />
+        )}
       </Panel>
     </section>
   );
 }
 
-function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number; divisionMap?: Map<number, string> | null }) {
+function TeamTable({ teams, loading, localPageSize, eventId, divisionMap, splitName = false, skills }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number; divisionMap?: Map<number, string> | null; splitName?: boolean; skills?: { scoreByTeam: Map<number, number>; loading: boolean } }) {
   const [page, setPage] = useState(1);
   const [expandedTeamId, setExpandedTeamId] = useState<number | null>(null);
   const compareMode = useComparePickMode();
   const quickViewFirst = useQuickViewFirst();
   const totalPages = localPageSize ? Math.max(1, Math.ceil(teams.length / localPageSize)) : 1;
   const visibleTeams = localPageSize ? teams.slice((page - 1) * localPageSize, page * localPageSize) : teams;
+  const colCount = 8 + (splitName ? 1 : 0) + (skills ? 1 : 0);
 
   useEffect(() => {
     setPage(1);
@@ -3980,14 +4056,16 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
   return (
     <>
       <ComparePickHint />
-      <table className="team-table">
+      <table className={`team-table${splitName || skills ? " team-table-dir" : ""}`}>
         <thead>
           <tr>
             <th>Team</th>
+            {splitName && <th>Name</th>}
             <th>Program</th>
             <th>Level</th>
             <th>Organization</th>
             <th>Location</th>
+            {skills && <th className="team-skills-col">Skills</th>}
             <th>
               {divisionMap
                 ? "Division"
@@ -3999,7 +4077,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
           </tr>
         </thead>
         {loading ? (
-          <LoadingTable columns={8} />
+          <LoadingTable columns={colCount} />
         ) : (
           <tbody>
             {visibleTeams.map((team) => {
@@ -4023,8 +4101,9 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
                         teamName={team.team_name}
                         className="team-number"
                       />
-                      {team.team_name && <span>{team.team_name}</span>}
+                      {!splitName && team.team_name && <span>{team.team_name}</span>}
                     </td>
+                    {splitName && <td className="truncate-cell team-name-cell">{team.team_name || "—"}</td>}
                     <td>
                       <ProgramBadge program={team.program} />
                     </td>
@@ -4033,6 +4112,17 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
                     </td>
                     <td className="truncate-cell">{team.organization || "-"}</td>
                     <td className="truncate-cell">{locationLine(team)}</td>
+                    {skills && (
+                      <td className="team-skills-col">
+                        {skills.loading ? (
+                          <Skeleton className="h-3.5 w-9" />
+                        ) : skills.scoreByTeam.has(team.id) ? (
+                          <span className="team-skills-score">{skills.scoreByTeam.get(team.id)}</span>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                    )}
                     <td>{divisionMap ? (divisionMap.get(team.id) ?? "—") : (team.registered ? "Registered" : "Inactive")}</td>
                     <td
                       className="quick-look-col"
@@ -4042,7 +4132,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
                       }}
                     >
                       <button type="button" className={`quick-look-btn${expanded ? " active" : ""}`} title="Quick look" aria-label={`Quick look for ${team.number}`}>
-                        <PanelRight size={14} />
+                        <Eye size={14} />
                       </button>
                     </td>
                     <td className="compare-col" onClick={(e) => e.stopPropagation()}>
@@ -4056,7 +4146,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
                   </tr>
                   {expanded && (
                     <tr key={`${team.id}-details`} className="team-detail-row">
-                      <td colSpan={8}>
+                      <td colSpan={colCount}>
                         <div className="team-detail-content">
                           <div className="team-detail-top">
                             <div>
@@ -4081,7 +4171,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
             })}
             {!teams.length && (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={colCount}>
                   <Empty />
                 </td>
               </tr>
@@ -4096,6 +4186,101 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
         </div>
       )}
     </>
+  );
+}
+
+function TeamGrid({ teams, loading, localPageSize }: { teams: Team[]; loading: boolean; localPageSize?: number }) {
+  const [page, setPage] = useState(1);
+  const compareMode = useComparePickMode();
+  const totalPages = localPageSize ? Math.max(1, Math.ceil(teams.length / localPageSize)) : 1;
+  const visibleTeams = localPageSize ? teams.slice((page - 1) * localPageSize, page * localPageSize) : teams;
+
+  useEffect(() => {
+    setPage(1);
+  }, [teams, localPageSize]);
+
+  return (
+    <>
+      <ComparePickHint />
+      {loading ? (
+        <div className="team-grid">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} className="team-card team-card-skeleton">
+              <div className="team-card-top">
+                <Skeleton className="h-6 w-16" />
+                <div className="team-card-id">
+                  <Skeleton className="h-3.5 w-32" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+              </div>
+              <Skeleton className="h-3 w-full" />
+            </div>
+          ))}
+        </div>
+      ) : !teams.length ? (
+        <div className="team-grid-empty">
+          <Empty />
+        </div>
+      ) : (
+        <div className="team-grid">
+          {visibleTeams.map((team) => (
+            <TeamCard key={team.id} team={team} compareMode={compareMode} />
+          ))}
+        </div>
+      )}
+      {!loading && localPageSize && (
+        <div className="pager-with-total">
+          <span>{teams.length.toLocaleString()} teams loaded</span>
+          <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
+        </div>
+      )}
+    </>
+  );
+}
+
+function TeamCard({ team, compareMode }: { team: Team; compareMode: boolean }) {
+  const programCode = programSlug(team.program);
+  return (
+    <div
+      className={`team-card${compareMode ? " compare-pick-card" : ""}`}
+      onClick={() => {
+        if (compareMode) return;
+        navigate(teamPath(team));
+      }}
+    >
+      <div className="team-card-top">
+        <CompareTeamLink
+          teamId={team.id}
+          teamNumber={team.number}
+          programCode={programCode}
+          teamName={team.team_name}
+          className="team-card-num"
+        />
+        <div className="team-card-id">
+          {team.team_name && <span className="team-card-name">{team.team_name}</span>}
+          <span className="team-card-org">{team.organization || "No organization listed"}</span>
+        </div>
+        <span className="team-card-compare" onClick={(e) => e.stopPropagation()}>
+          <CompareRowBtn
+            teamId={team.id}
+            teamNumber={team.number}
+            programCode={programCode}
+            teamName={team.team_name ?? undefined}
+          />
+        </span>
+      </div>
+      <div className="team-card-foot">
+        <span className="team-card-loc" title={locationLine(team)}>
+          {locationLine(team)}
+          {team.grade ? ` · ${gradeCode(team.grade)}` : ""}
+        </span>
+        <span
+          className={`team-card-status${team.registered ? " ok" : ""}`}
+          title={team.registered ? "Registered" : "Inactive"}
+        />
+        <ProgramBadge program={team.program} />
+      </div>
+    </div>
   );
 }
 
@@ -4185,11 +4370,26 @@ function SearchFilters({
 }) {
   const [visibleCount, setVisibleCount] = useState(20);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Reset visible count when the result set changes (new search query)
   useEffect(() => {
     setVisibleCount(20);
   }, [quickResults]);
+
+  // "/" focuses the team search (mirrors the kbd hint), unless already typing.
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const el = document.activeElement;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement | null)?.isContentEditable) return;
+      event.preventDefault();
+      inputRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const handleQuickScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -4214,6 +4414,7 @@ function SearchFilters({
         <label>
           <Search size={16} />
           <input
+            ref={inputRef}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             onFocus={onFocus}
@@ -4229,10 +4430,10 @@ function SearchFilters({
             }}
             placeholder={placeholder}
           />
+          {!search && (
+            <kbd className="team-search-kbd" aria-hidden="true">/</kbd>
+          )}
         </label>
-        <button type="submit" className="team-search-submit" aria-label="Search teams">
-          <Search size={16} />
-        </button>
         {quickOpen && !!search.trim() && (
           <div className="team-quick-results">
             <div
@@ -4260,13 +4461,19 @@ function SearchFilters({
           </div>
         )}
       </div>
-      <select value={program} onChange={(event) => setProgram(event.target.value)}>
+      <div className="team-prog-seg" role="group" aria-label="Program">
         {programOptions.map((option) => (
-          <option key={option.value || "all"} value={option.value}>
-            {option.label}
-          </option>
+          <button
+            key={option.value || "all"}
+            type="button"
+            className={program === option.value ? "active" : ""}
+            aria-pressed={program === option.value}
+            onClick={() => setProgram(option.value)}
+          >
+            {option.value === "" ? "All" : option.label}
+          </button>
         ))}
-      </select>
+      </div>
       {regionControl}
       {children}
     </form>
@@ -12249,12 +12456,515 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   );
 }
 
+// The Apple-style shareable team card is kept here but not surfaced yet.
+const SHOW_TEAM_SHARE_CARD = false;
+
+function myTeamDateLabel(iso?: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", year: "numeric" }).format(d);
+}
+
+type MyTeamTimelineRow = {
+  event: Event;
+  state: "live" | "up" | "done";
+  start: number;
+  isNext: boolean;
+  awardTitle: string | null;
+  rank: number | null;
+  record: string | null;
+  skills: number | null;
+  days: number | null;
+  nextMatch: string | null;
+};
+
+function MyTeamPage() {
+  const { profile, ready } = useAuth();
+  const teamNumber = profile?.team_number?.trim() ?? "";
+  const teamProgramId = profile?.team_program ? Number(profile.team_program) : null;
+  const [playback, setPlayback] = useState<MatchPlayback | null>(null);
+
+  // Resolve the team object from the signed-in user's profile team.
+  const lookup = useAsync(async () => {
+    if (!teamNumber || !teamProgramId) return null;
+    const res = await api.robotEventsTeams({ number: teamNumber.toUpperCase(), "program[]": [teamProgramId], per_page: 50 });
+    return res.data[0] ?? null;
+  }, [teamNumber, teamProgramId]);
+  const team = lookup.data ?? null;
+  const id = team ? String(team.id) : "";
+  const isIq = isIqProgramInfo(team?.program);
+
+  // All events → most-recent season.
+  const events = useAsync(async () => {
+    if (!team) return null;
+    return collectAllPages<Event>((page) => api.teamEvents(id, { per_page: 250, page }));
+  }, [id]);
+  const teamEvents = useMemo(() => events.data?.data ?? [], [events.data]);
+  const eventIndex = useMemo(() => makeEventIndex(teamEvents), [teamEvents]);
+  const season = useMemo(() => {
+    let best: { id: number; name: string; latest: number } | null = null;
+    for (const e of teamEvents) {
+      const t = new Date(e.start ?? 0).getTime();
+      if (!best || t > best.latest) best = { id: e.season.id, name: e.season.name, latest: t };
+    }
+    return best;
+  }, [teamEvents]);
+  const seasonId = season?.id ?? null;
+  const liveRefresh = teamEvents.some(eventIsLive) ? liveEventRefreshMs : 0;
+
+  // Season data buckets.
+  const matches = useAsync(async () => {
+    if (!team || !seasonId) return null;
+    return collectAllPages<Match>((page) => api.teamMatches(id, { "season[]": [seasonId], per_page: 250, page }));
+  }, [id, seasonId], 0, liveRefresh);
+  const rankings = useAsync(async () => {
+    if (!team || !seasonId) return null;
+    return collectAllPages<Ranking>((page) => api.teamRankings(id, { "season[]": [seasonId], per_page: 250, page }));
+  }, [id, seasonId], 300, liveRefresh);
+  const skills = useAsync(async () => {
+    if (!team || !seasonId) return null;
+    return collectAllPages<Skill>((page) => api.teamSkills(id, { "season[]": [seasonId], per_page: 250, page }));
+  }, [id, seasonId], 600);
+  const awards = useAsync(async () => {
+    if (!team || !seasonId) return null;
+    return collectAllPages<Award>((page) => api.teamAwards(id, { "season[]": [seasonId], per_page: 250, page }));
+  }, [id, seasonId], 900);
+
+  const grade = team?.grade ?? "";
+  const worldSkills = useAsync(async () => {
+    if (!seasonId || !grade) return null;
+    return loadWorldSkills(seasonId, grade);
+  }, [seasonId, grade]);
+  const wsEntry = useMemo(() => {
+    if (!worldSkills.data || !team) return null;
+    return (
+      worldSkills.data.find((e) => e.team.id === team.id) ??
+      worldSkills.data.find((e) => e.team.team?.toUpperCase() === team.number.toUpperCase()) ??
+      null
+    );
+  }, [worldSkills.data, team]);
+
+  const seasonMatches = useMemo(() => matches.data?.data ?? [], [matches.data]);
+  const seasonRankings = useMemo(() => rankings.data?.data ?? [], [rankings.data]);
+  const seasonSkills = useMemo(() => skills.data?.data ?? [], [skills.data]);
+  const seasonAwards = useMemo(() => awards.data?.data ?? [], [awards.data]);
+
+  // Season record from real match results (qualification + elims), excluding practice/scrimmage.
+  const record = useMemo(() => {
+    let w = 0, l = 0, t = 0;
+    if (!isIq && team) {
+      for (const m of seasonMatches) {
+        if (/practice/i.test(m.name)) continue;
+        if (isScrimmageEvent(eventIndex.get(m.event.id))) continue;
+        const color = teamAllianceColor(m, team.id);
+        if (!color) continue;
+        const { winner } = matchWinner(m);
+        if (winner === "-") continue;
+        if (winner === "Tie") t += 1;
+        else if (winner.toLowerCase() === color.toLowerCase()) w += 1;
+        else l += 1;
+      }
+    }
+    return { w, l, t };
+  }, [seasonMatches, eventIndex, isIq, team]);
+  const totalGames = record.w + record.l + record.t;
+  const winPct = totalGames ? Math.round((record.w / totalGames) * 1000) / 10 : 0;
+  const seasonSkillsSummary = useMemo(() => skillSummary(seasonSkills), [seasonSkills]);
+
+  // Live event (running today) within the current season.
+  const seasonEvents = useMemo(() => teamEvents.filter((e) => !seasonId || e.season.id === seasonId), [teamEvents, seasonId]);
+  const liveEvent = useMemo(() => seasonEvents.find(eventIsLive) ?? null, [seasonEvents]);
+  const liveRanking = useMemo(() => (liveEvent ? seasonRankings.find((r) => r.event.id === liveEvent.id) ?? null : null), [liveEvent, seasonRankings]);
+  const liveSkills = useMemo(() => (liveEvent ? skillSummary(seasonSkills.filter((s) => s.event.id === liveEvent.id)) : null), [liveEvent, seasonSkills]);
+  const liveMatches = useMemo(
+    () => (liveEvent ? seasonMatches.filter((m) => m.event.id === liveEvent.id).slice().sort((a, b) => compareMatchesDisplay(a, b)) : []),
+    [liveEvent, seasonMatches],
+  );
+  const nextUp = useMemo(() => liveMatches.find((m) => !m.scored) ?? null, [liveMatches]);
+  const partner = useMemo(() => {
+    if (!nextUp || !team) return null;
+    for (const alliance of nextUp.alliances) {
+      const mine = alliance.teams.find((x) => x.team.id === team.id);
+      if (mine) return alliance.teams.map((x) => x.team).find((tm) => tm.id !== team.id) ?? null;
+    }
+    return null;
+  }, [nextUp, team]);
+
+  // Jumper livestream timestamps for the live event (drives the play button).
+  const preset = useAsync(async () => {
+    if (!liveEvent) return null;
+    return api.jumperPresetEventExists(liveEvent.sku);
+  }, [liveEvent?.sku]);
+  const matchTimestamps = useAsync(async () => {
+    if (!liveEvent || !preset.data?.exists) return null;
+    return api.jumperMatchTimestamps(liveEvent.sku, { offsetSeconds: -5 });
+  }, [liveEvent?.sku, preset.data?.exists]);
+  const timestampMap = useMemo(() => new Map((matchTimestamps.data ?? []).map((ts) => [ts.id, ts])), [matchTimestamps.data]);
+  const presetSupported = !!preset.data?.exists;
+
+  // Next upcoming event (any season) for the idle "Up next" panel.
+  const now = today.getTime();
+  const upcoming = useMemo(
+    () => teamEvents.filter((e) => new Date(e.start ?? 0).getTime() > now && !eventIsLive(e)).sort((a, b) => new Date(a.start ?? 0).getTime() - new Date(b.start ?? 0).getTime()),
+    [teamEvents, now],
+  );
+  const nextEvent = upcoming[0] ?? null;
+
+  // Season timeline rows (current season + any future events), ascending.
+  const timeline = useMemo<MyTeamTimelineRow[]>(() => {
+    const source = teamEvents.filter((e) => e.season.id === seasonId || new Date(e.start ?? 0).getTime() > now);
+    const rows = source.map((event) => {
+      const start = new Date(event.start ?? 0).getTime();
+      const live = eventIsLive(event);
+      const up = !live && start > now;
+      const state: MyTeamTimelineRow["state"] = live ? "live" : up ? "up" : "done";
+      const evAwards = seasonAwards.filter((a) => a.event.id === event.id).map((a) => a.title);
+      const awardTitle = evAwards.length ? evAwards.slice().sort((a, b) => awardPriority({ title: a } as Award) - awardPriority({ title: b } as Award))[0] : null;
+      const rk = seasonRankings.find((r) => r.event.id === event.id) ?? null;
+      const sk = skillSummary(seasonSkills.filter((s) => s.event.id === event.id));
+      return {
+        event,
+        state,
+        start,
+        isNext: false,
+        awardTitle,
+        rank: rk?.rank ?? null,
+        record: rk ? `${rk.wins ?? 0}–${rk.losses ?? 0}` : null,
+        skills: sk.combined ?? null,
+        days: up ? Math.max(0, Math.round((start - now) / oneDay)) : null,
+        nextMatch: live && nextUp ? shortMatchName(nextUp.name) : null,
+      };
+    });
+    rows.sort((a, b) => a.start - b.start);
+    const firstUp = rows.find((r) => r.state === "up");
+    if (firstUp) firstUp.isNext = true;
+    return rows;
+  }, [teamEvents, seasonId, seasonAwards, seasonRankings, seasonSkills, nextUp, now]);
+
+  // Height-match the live timeline to the matches panel and open scrolled to "now".
+  const matchesPanelRef = useRef<HTMLDivElement>(null);
+  const tlPanelRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!liveEvent) return;
+    const mp = matchesPanelRef.current, tp = tlPanelRef.current;
+    if (!mp || !tp) return;
+    if (window.matchMedia("(max-width:880px)").matches) { tp.style.height = ""; return; }
+    tp.style.height = `${mp.offsetHeight}px`;
+    const scroll = tp.querySelector<HTMLElement>(".myteam-tl-scroll");
+    const node = tp.querySelector<HTMLElement>(".myteam-node.live");
+    if (scroll && node) scroll.scrollTop = Math.max(0, node.offsetTop - 8);
+  }, [liveEvent, liveMatches.length, timeline.length]);
+
+  // ── states ──────────────────────────────────────────────────────────────
+  if (ready && (!teamNumber || !teamProgramId)) {
+    return (
+      <section className="page myteam-page">
+        <div className="panel myteam-empty">
+          <Star size={26} />
+          <h2>Set your team</h2>
+          <p>Add your team number and program to your profile to unlock the My Team tab — your live events, matches, and season at a glance.</p>
+          <Link href="/settings" className="button-link">Go to settings</Link>
+        </div>
+      </section>
+    );
+  }
+  if (lookup.loading || (!team && events.loading)) {
+    return <section className="page myteam-page"><Status loading={true} error={null} /></section>;
+  }
+  if (!team) {
+    return <section className="page myteam-page"><div className="panel myteam-empty"><h2>Team not found</h2><p>We couldn't find {programLabel(profile?.team_program)} {teamNumber}.</p><Link href="/settings" className="button-link">Update profile</Link></div></section>;
+  }
+
+  const renderPieces = (row: MyTeamTimelineRow) => {
+    const pieces: ReactNode[] = [];
+    if (row.state === "up") {
+      pieces.push("Registered");
+      if (row.days != null) pieces.push(<>in <b>{row.days}</b> days</>);
+    } else if (row.state === "live") {
+      if (row.rank != null) pieces.push(<>Rank <b>#{row.rank}</b></>);
+      if (row.record) pieces.push(<b>{row.record}</b>);
+      if (row.nextMatch) pieces.push(<>Next <b>{row.nextMatch}</b></>);
+      if (!pieces.length) pieces.push("In progress");
+    } else {
+      if (row.awardTitle) pieces.push(row.awardTitle);
+      if (row.record) pieces.push(<b>{row.record}</b>);
+      if (row.skills) pieces.push(<>Skills <b>{row.skills}</b></>);
+      if (!pieces.length) pieces.push("Played");
+    }
+    return pieces.map((p, i) => <span key={i} className={`myteam-rp${i === 0 ? " lead" : ""}`}>{p}</span>);
+  };
+
+  const liveAlliances = (m: Match) => {
+    const { red, blue } = matchWinner(m);
+    return { red, blue };
+  };
+
+  const header = (
+    <div className="myteam-head">
+      <span className="myteam-num">{team.number}</span>
+      <div>
+        <h1>{team.team_name || team.number}</h1>
+        <div className="myteam-meta">
+          {team.organization && <span>{team.organization}</span>}
+          <span>{locationLine(team)}</span>
+          <span className="badge">{programSlug(team.program)}</span>
+          {team.grade && <span className="badge">{team.grade}</span>}
+        </div>
+      </div>
+      <div className="myteam-actions">
+        <Link href="/settings" className="button-link secondary sm">Change team</Link>
+      </div>
+    </div>
+  );
+
+  const statStrip = (
+    <div className="myteam-stats">
+      <div className="myteam-stat"><div className="k">Record</div><div className="v">{record.w}–{record.l}{record.t ? `–${record.t}` : ""}</div><div className="sub">{totalGames} matches played</div></div>
+      <div className="myteam-stat"><div className="k">Win rate</div><div className="v">{winPct}<small>%</small></div><div className="sub">season to date</div></div>
+      <div className="myteam-stat"><div className="k">Skills score</div><div className="v">{seasonSkillsSummary.combined ?? "–"}</div><div className="sub">{seasonSkillsSummary.programming?.score ?? 0} auto / {seasonSkillsSummary.driver?.score ?? 0} driver</div></div>
+      <div className="myteam-stat"><div className="k">World skills rank</div><div className="v">{worldSkills.loading ? "…" : wsEntry ? `#${wsEntry.rank.toLocaleString()}` : "—"}</div><div className="sub">globally this season</div></div>
+      <div className="myteam-stat"><div className="k">Awards</div><div className="v">{seasonAwards.length}</div><div className="sub">this season</div></div>
+    </div>
+  );
+
+  const liveBand = liveEvent && (
+    <section className="panel myteam-live">
+      <h2>
+        <span className="ttl"><span className="live-dot">Competing now</span><span className="myteam-evname">{liveEvent.name}</span></span>
+        <Link className="myteam-act" href={eventPath(liveEvent)}>Event page →</Link>
+      </h2>
+      <div className="myteam-live-body">
+        <div className="myteam-seg">
+          <div className="myteam-seg-lab">Next up {nextUp && <span className="q">queuing</span>}</div>
+          {nextUp ? (
+            <>
+              <div className="myteam-deck">
+                <span className="myteam-mname">{shortMatchName(nextUp.name)}</span>
+                <span className="alliance-cell red-alliance-cell"><AllianceTeamLinks teams={liveAlliances(nextUp).red?.teams} focusTeamId={team.id} /></span>
+                <span className="myteam-vs">vs</span>
+                <span className="alliance-cell blue-alliance-cell"><AllianceTeamLinks teams={liveAlliances(nextUp).blue?.teams} focusTeamId={team.id} /></span>
+              </div>
+              <div className="myteam-kvrow">
+                {nextUp.field && <div className="myteam-kv"><span className="kl">Field</span><span className="kv-v">{nextUp.field}</span></div>}
+                {formatMatchClock(nextUp) && <div className="myteam-kv"><span className="kl">Est. time</span><span className="kv-v">{formatMatchClock(nextUp)}</span></div>}
+                {partner && <div className="myteam-kv"><span className="kl">Partner</span><span className="kv-v">{partner.name}</span></div>}
+              </div>
+            </>
+          ) : (
+            <div className="myteam-seg-empty">All qualification matches complete.</div>
+          )}
+        </div>
+        <div className="myteam-seg">
+          <div className="myteam-seg-lab">Qualification</div>
+          {liveRanking ? (
+            <>
+              <div className="myteam-seg-rank"><span className="n">#{liveRanking.rank}</span>{liveRanking.division?.name && <span className="of">{liveRanking.division.name}</span>}</div>
+              <div className="myteam-kvrow">
+                <div className="myteam-kv"><span className="kl">Record</span><span className="kv-v">{liveRanking.wins ?? 0}–{liveRanking.losses ?? 0}{liveRanking.ties ? `–${liveRanking.ties}` : ""}</span></div>
+                <div className="myteam-kv"><span className="kl">WP</span><span className="kv-v">{liveRanking.wp ?? 0}</span></div>
+                <div className="myteam-kv"><span className="kl">AP</span><span className="kv-v">{liveRanking.ap ?? 0}</span></div>
+                <div className="myteam-kv"><span className="kl">SP</span><span className="kv-v">{liveRanking.sp ?? 0}</span></div>
+              </div>
+            </>
+          ) : (
+            <div className="myteam-seg-empty">Rankings not posted yet.</div>
+          )}
+        </div>
+        <div className="myteam-seg">
+          <div className="myteam-seg-lab">Skills</div>
+          {liveSkills && liveSkills.combined != null ? (
+            <>
+              <div className="myteam-seg-rank"><span className="n">{liveSkills.rank ? `#${liveSkills.rank}` : "—"}</span><span className="of">{liveSkills.combined} pts</span></div>
+              <div className="myteam-kvrow">
+                <div className="myteam-kv"><span className="kl">Auto</span><span className="kv-v">{liveSkills.programming?.score ?? 0}</span></div>
+                <div className="myteam-kv"><span className="kl">Driver</span><span className="kv-v">{liveSkills.driver?.score ?? 0}</span></div>
+              </div>
+            </>
+          ) : (
+            <div className="myteam-seg-empty">No skills runs yet.</div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+
+  const upNextPanel = !liveEvent && (
+    <section className="panel myteam-upnext-panel">
+      <h2><span className="ttl">Up next</span><span className="myteam-act muted-act">Not currently at an event</span></h2>
+      {nextEvent ? (
+        <div className="myteam-upnext">
+          <div className="myteam-cal"><div className="mo">{new Intl.DateTimeFormat("en-US", { month: "short" }).format(new Date(nextEvent.start ?? 0))}</div><div className="day">{new Date(nextEvent.start ?? 0).getDate()}</div></div>
+          <div className="info">
+            <div className="nm">{nextEvent.name}</div>
+            <div className="sub"><span>{locationLine(nextEvent)}</span><span className={`event-priority priority-${eventCategory(nextEvent).rank}`}>{eventCategory(nextEvent).label}</span><span>{myTeamDateLabel(nextEvent.start)}</span></div>
+          </div>
+          <div className="right">
+            <div className="count"><div className="n">{Math.max(0, Math.round((new Date(nextEvent.start ?? 0).getTime() - now) / oneDay))}</div><div className="l">days away</div></div>
+            <Link className="button-link sm" href={eventPath(nextEvent)}>Event page →</Link>
+          </div>
+        </div>
+      ) : (
+        <div className="myteam-upnext-empty">No upcoming events on the calendar.</div>
+      )}
+    </section>
+  );
+
+  const matchesPanel = liveEvent && (
+    <div className="panel myteam-matches-panel" ref={matchesPanelRef}>
+      <h2><span className="ttl">Matches</span><span className="myteam-act muted-act">{liveEvent.name}</span></h2>
+      <table className="results-match-table">
+        <colgroup>
+          <col className="results-play-col" />
+          <col className="results-match-col" />
+          <col className="results-alliance-col" />
+          <col className="results-alliance-col" />
+          <col className="results-score-col" />
+        </colgroup>
+        <thead><tr><th aria-label="Play" /><th>Match</th><th>Red Alliance</th><th>Blue Alliance</th><th>Score</th></tr></thead>
+        <tbody>
+          {liveMatches.map((m) => {
+            const { red, blue, redScore, blueScore, winner } = matchWinner(m);
+            const hasScore = winner !== "-";
+            const ts = timestampMap.get(m.id);
+            const canPlay = presetSupported && ts && ts.timestamp !== null && ts.videoId;
+            const isNext = nextUp?.id === m.id;
+            const clock = formatMatchClock(m);
+            return (
+              <tr key={m.id} className={isNext ? "myteam-next-row" : ""}>
+                <td className="play-cell">
+                  {canPlay ? (
+                    <button className="play-dot active" onClick={() => onMyTeamOpenMatch(m, ts!, setPlayback)} title={`Play ${m.name}`} />
+                  ) : (
+                    <span className="play-dot disabled" />
+                  )}
+                </td>
+                <td className="result-match-name">
+                  <span className="result-match-line">
+                    <span className="result-match-label">{shortMatchName(m.name)}</span>
+                    {m.field && <span className="result-field-name">{m.field}</span>}
+                  </span>
+                </td>
+                <td className={`alliance-cell red-alliance-cell ${winner === "Red" ? "winning-alliance-cell" : ""}`}><AllianceTeamLinks teams={red?.teams} focusTeamId={team.id} /></td>
+                <td className={`alliance-cell blue-alliance-cell ${winner === "Blue" ? "winning-alliance-cell" : ""}`}><AllianceTeamLinks teams={blue?.teams} focusTeamId={team.id} /></td>
+                <td className="score-cell">
+                  {hasScore ? (
+                    <>
+                      <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore}</span>
+                      <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore}</span>
+                    </>
+                  ) : isNext ? (
+                    <span className="myteam-nextpill">Next up</span>
+                  ) : (
+                    <span className="result-match-time">{clock}</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+          {!liveMatches.length && <tr><td colSpan={5}><Empty>No matches posted yet.</Empty></td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const timelineNode = (row: MyTeamTimelineRow) => (
+    <>
+      <div className="row"><span className="nm">{row.event.name}</span><span className="dt">{myTeamDateLabel(row.event.start)}</span></div>
+      <div className="myteam-evmeta"><span className="loc">{locationLine(row.event)}</span><span className={`event-priority priority-${eventCategory(row.event).rank}`}>{eventCategory(row.event).label}</span></div>
+      <div className="myteam-resline">{renderPieces(row)}</div>
+    </>
+  );
+
+  const liveTimeline = liveEvent && (
+    <div className="panel myteam-tl-panel" ref={tlPanelRef}>
+      <h2><span className="ttl">Season timeline</span><span className="myteam-act muted-act">{timeline.length} events</span></h2>
+      <div className="myteam-tl-scroll">
+        <div className="myteam-timeline">
+          {timeline.map((row) => (
+            <div key={row.event.id} className={`myteam-node ${row.state}`}>{timelineNode(row)}</div>
+          ))}
+        </div>
+      </div>
+      <div className="myteam-tl-legend">
+        <span><i className="live" /> Live</span><span><i className="done" /> Completed</span><span><i className="up" /> Upcoming</span>
+      </div>
+    </div>
+  );
+
+  const fullTimeline = !liveEvent && (
+    <section className="panel myteam-tl2-panel">
+      <h2><span className="ttl">Season timeline</span><span className="myteam-act muted-act">{timeline.length} events</span></h2>
+      <div className="myteam-timeline2">
+        {timeline.map((row, i) => (
+          <div key={row.event.id} className={`myteam-tnode ${i % 2 ? "right" : "left"} ${row.state} ${row.isNext ? "next" : ""}`}>
+            <div className="myteam-tcard">{timelineNode(row)}</div>
+          </div>
+        ))}
+        {!timeline.length && <div className="myteam-upnext-empty">No events this season yet.</div>}
+      </div>
+      <div className="myteam-tl-legend center">
+        <span><i className="nextpt" /> Next up</span><span><i className="up" /> Upcoming</span><span><i className="done" /> Completed</span>
+      </div>
+    </section>
+  );
+
+  return (
+    <section className="page myteam-page">
+      {header}
+      {liveBand}
+      {upNextPanel}
+      {statStrip}
+      {liveEvent ? (
+        <div className="myteam-lower">{matchesPanel}{liveTimeline}</div>
+      ) : (
+        fullTimeline
+      )}
+      {SHOW_TEAM_SHARE_CARD && (
+        <TeamShareCard team={team} record={record} winPct={winPct} skills={seasonSkillsSummary.combined} worldRank={wsEntry?.rank ?? null} awards={seasonAwards.length} season={season?.name} />
+      )}
+      {playback && <MatchVideoOverlay playback={playback} onClose={() => setPlayback(null)} />}
+    </section>
+  );
+}
+
+function onMyTeamOpenMatch(match: Match, timestamp: MatchTimestamp, setPlayback: (p: MatchPlayback) => void) {
+  setPlayback({ match, timestamp });
+}
+
+// Apple-style shareable team card. Kept for later; gated behind SHOW_TEAM_SHARE_CARD.
+function TeamShareCard({ team, record, winPct, skills, worldRank, awards, season }: {
+  team: Team;
+  record: { w: number; l: number; t: number };
+  winPct: number;
+  skills: number | null;
+  worldRank: number | null;
+  awards: number;
+  season?: string;
+}) {
+  return (
+    <section className="panel myteam-share">
+      <svg viewBox="0 0 1600 900" className="myteam-share-svg" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="0" width="1600" height="900" rx="28" fill="#08090b" />
+        <text x="64" y="120" fill="#7fe9f7" fontFamily="var(--font-geist-mono)" fontSize="22" letterSpacing="6">MY TEAM {season ? `· ${season}` : ""}</text>
+        <text x="60" y="280" fill="#22d3ee" fontFamily="var(--font-geist-mono)" fontSize="130" fontWeight="700">{team.number}</text>
+        <text x="62" y="390" fill="#ffffff" fontSize="92" fontWeight="600">{team.team_name || team.number}</text>
+        <text x="64" y="520" fill="#c7cbd2" fontSize="40" fontWeight="600">{record.w}–{record.l}{record.t ? `–${record.t}` : ""} · {winPct}% win</text>
+        <text x="64" y="600" fill="#c7cbd2" fontSize="40" fontWeight="600">Skills {skills ?? "–"}{worldRank ? ` · #${worldRank} world` : ""}</text>
+        <text x="64" y="680" fill="#c7cbd2" fontSize="40" fontWeight="600">{awards} awards</text>
+        <text x="64" y="840" fill="#5a5e66" fontFamily="var(--font-geist-mono)" fontSize="20" letterSpacing="2">OPENSCOUT.APP</text>
+      </svg>
+    </section>
+  );
+}
+
 function route(path: string) {
   if (path === "/") return <Home />;
   if (path === "/settings") return <SettingsPage />;
   if (path === "/events") return <EventsPage />;
   if (path === "/teams") return <TeamsPage />;
   if (path === "/skills") return <WorldSkillsPage />;
+  if (path === "/my-team") return <MyTeamPage />;
   if (path === "/insights") return <InsightsPage />;
   if (path === "/terms") return <TermsPage />;
   if (path === "/privacy") return <PrivacyPage />;
