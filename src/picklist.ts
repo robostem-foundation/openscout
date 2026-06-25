@@ -353,6 +353,134 @@ export async function clearCrossedOut(orgId: string, eventId: string): Promise<v
   }
 }
 
+// ── Org-wide enumeration ────────────────────────────────────────────────────
+
+export type OrgPicklistSummary = {
+  eventId: string;
+  teamCount: number;
+  topTeams: { teamNumber: string; teamName?: string }[];
+};
+
+/**
+ * Enumerate every event this org has a picklist for, with a top-team preview.
+ * Unions Supabase rows (cross-device) with localStorage (offline / signed-out),
+ * deduping by (eventId, teamNumber). Used by the org workspace overview — there
+ * is no per-(org,event) cache to read from here, so this queries directly.
+ */
+export async function listOrgPicklistEvents(orgId: string, topN = 3): Promise<OrgPicklistSummary[]> {
+  type Row = { teamNumber: string; teamName?: string; sortOrder: number };
+  const byEvent = new Map<string, Row[]>();
+
+  const add = (eventId: string, row: Row) => {
+    const arr = byEvent.get(eventId) ?? [];
+    if (!arr.some((x) => x.teamNumber === row.teamNumber)) arr.push(row);
+    byEvent.set(eventId, arr);
+  };
+
+  // 1. localStorage scan — primary store, always present for offline/signed-out
+  try {
+    const prefix = `picklist:${orgId}:`;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(prefix)) continue;
+      const eventId = key.slice(prefix.length);
+      for (const e of readLS(orgId, eventId)) {
+        add(eventId, { teamNumber: e.teamNumber, teamName: e.teamName, sortOrder: e.sortOrder });
+      }
+    }
+  } catch { /* ignore */ }
+
+  // 2. Supabase — cross-device sync layer
+  const sb = supabase;
+  if (sb) {
+    try {
+      const { data, error } = await sb
+        .from("org_picklists")
+        .select("event_id, team_number, team_name, sort_order")
+        .eq("org_id", orgId)
+        .order("sort_order", { ascending: true });
+      if (!error && data) {
+        for (const row of data as Array<{ event_id: string; team_number: string; team_name: string | null; sort_order: number }>) {
+          add(row.event_id, { teamNumber: row.team_number, teamName: row.team_name ?? undefined, sortOrder: row.sort_order });
+        }
+      }
+    } catch (err) {
+      console.warn("[picklist] listOrgPicklistEvents sync failed (localStorage only):", err);
+    }
+  }
+
+  const out: OrgPicklistSummary[] = [];
+  for (const [eventId, rows] of byEvent) {
+    const sorted = [...rows].sort((a, b) => a.sortOrder - b.sortOrder);
+    out.push({
+      eventId,
+      teamCount: sorted.length,
+      topTeams: sorted.slice(0, topN).map((e) => ({ teamNumber: e.teamNumber, teamName: e.teamName })),
+    });
+  }
+  out.sort((a, b) => b.teamCount - a.teamCount);
+  return out;
+}
+
+/**
+ * Full picklist entries for every event the org has a picklist for, grouped by
+ * event. Unions localStorage + Supabase (deduped by teamId, Supabase fields win).
+ * Used by the workspace Export tab where the complete rows (notes, crossedOut)
+ * are needed, not just a preview.
+ */
+export async function loadOrgPicklistEntries(orgId: string): Promise<Array<{ eventId: string; entries: PicklistEntry[] }>> {
+  const byEvent = new Map<string, Map<string, PicklistEntry>>();
+  const slot = (eventId: string) => {
+    let m = byEvent.get(eventId);
+    if (!m) { m = new Map(); byEvent.set(eventId, m); }
+    return m;
+  };
+
+  // 1. localStorage (primary)
+  try {
+    const prefix = `picklist:${orgId}:`;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(prefix)) continue;
+      const eventId = key.slice(prefix.length);
+      const m = slot(eventId);
+      for (const e of readLS(orgId, eventId)) m.set(e.teamId, e);
+    }
+  } catch { /* ignore */ }
+
+  // 2. Supabase (server fields win)
+  const sb = supabase;
+  if (sb) {
+    try {
+      const { data, error } = await sb
+        .from("org_picklists")
+        .select("id, event_id, team_id, team_number, team_name, sort_order, notes, crossed_out")
+        .eq("org_id", orgId)
+        .order("sort_order", { ascending: true });
+      if (!error && data) {
+        for (const row of data as Array<{ id: string; event_id: string; team_id: string; team_number: string; team_name: string | null; sort_order: number; notes: string | null; crossed_out: boolean }>) {
+          slot(row.event_id).set(row.team_id, {
+            id: row.id,
+            teamId: row.team_id,
+            teamNumber: row.team_number,
+            teamName: row.team_name ?? undefined,
+            sortOrder: row.sort_order,
+            notes: row.notes ?? "",
+            crossedOut: row.crossed_out,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("[picklist] loadOrgPicklistEntries sync failed (localStorage only):", err);
+    }
+  }
+
+  return [...byEvent.entries()].map(([eventId, m]) => ({
+    eventId,
+    entries: [...m.values()].sort((a, b) => a.sortOrder - b.sortOrder),
+  }));
+}
+
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 
 /** Returns the picklist state for an org+event. Triggers lazy load on first call. */

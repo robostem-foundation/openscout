@@ -3,17 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>stemScout</title>
+    <link rel="icon" type="image/png" href="/openscout-mark.png" />
+    <link rel="apple-touch-icon" href="/openscout-mark.png" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="description" content="OpenScout — scouting and analytics for VEX Robotics events." />
+    <meta property="og:title" content="OpenScout" />
+    <meta property="og:description" content="Scouting and analytics for VEX Robotics events." />
+    <meta property="og:image" content="/openscout-mark.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="OpenScout" />
+    <meta name="twitter:description" content="Scouting and analytics for VEX Robotics events." />
+    <title>OpenScout</title>
     <script>
-      // Apply the saved theme + UI skin before first paint to avoid a flash.
+      // Apply the saved theme before first paint to avoid a flash.
       try {
         var t = localStorage.getItem('vex-theme') || 'system';
         if (t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches))
           document.documentElement.setAttribute('data-theme', 'dark');
-        // vex-ui-style is JSON-stringified ("modern" / "classic"); substring test
-        // tolerates the surrounding quotes.
-        var u = localStorage.getItem('vex-ui-style');
-        if (u && u.indexOf('modern') !== -1) document.documentElement.setAttribute('data-ui', 'modern');
       } catch (e) {}
     </script>
   </head>

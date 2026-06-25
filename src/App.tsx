@@ -3,32 +3,39 @@ import {
   Award as AwardIcon,
   BarChart3,
   CalendarDays,
+  House,
   Check,
   ChevronDown,
   Download,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  ChevronsRight,
+  CornerDownLeft,
   ExternalLink,
+  Eye,
   FilePlus2,
   Gamepad2,
   Info,
+  LayoutDashboard,
+  LayoutGrid,
   Link2,
   GripVertical,
+  List,
   ListFilter,
   ListOrdered,
   Link as LinkIcon,
   MinusCircle,
   LogIn,
   LogOut,
+  MapPin,
   Medal,
   Palette,
-  PanelLeft,
   PanelRight,
   Pause,
   Plus,
-  Rows3,
   Play,
+  Printer,
   RotateCw,
   Scale,
   Search,
@@ -47,16 +54,32 @@ import {
   Youtube,
   Zap,
 } from "lucide-react";
-import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Dispatch, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
-import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
+import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
-import { useOrgMatchNote, setOrgMatchNote, useHasAnyOrgNote } from "./org-notes";
+import { useOrgMatchNote, setOrgMatchNote, useHasAnyOrgNote, useOrgNotesList } from "./org-notes";
+import type { OrgNoteListItem } from "./org-notes";
 import { useOrgFavorites, useIsOrgFavorite, toggleOrgFavorite } from "./org-favorites";
+import { useEventNames, useOrgPicklistEvents, loadOrgActivity } from "./org-aggregate";
+import type { ActivityItem } from "./org-aggregate";
+import { loadOrgPicklistEntries } from "./picklist";
+import type { OrgPicklistSummary, PicklistEntry } from "./picklist";
 import {
   createOrg,
   deleteOrg,
@@ -75,8 +98,8 @@ import {
 } from "./orgs";
 import type { OrgInvite, OrgMember, OrgMembership, OrgRole } from "./orgs";
 import { supabase } from "./supabase";
-import { setEventsSettings, setQuickViewExpandExtras, setQuickViewFirst, setTabLayout, setUiStyle, useQuickViewExpandExtras, useQuickViewFirst, useSettingsEpoch, useTabLayout, useUiStyle } from "./settings";
-import type { TabLayout, UiStyle } from "./settings";
+import { setEventsSettings, setQuickViewExpandExtras, setQuickViewFirst, useQuickViewExpandExtras, useQuickViewFirst, useSettingsEpoch } from "./settings";
+import type { TabLayout } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
 import { addToTray, canAddToTray, clearTray, closeCompareModal, getContextEventId, getContextSeasonId, getTrayEntries, isInTray, openCompareModal, removeFromTray, useCompareTray, useCompareModalOpen, useIsInTray } from "./compare";
@@ -92,10 +115,41 @@ const programOptions = [
   { label: "VAIRC", value: "57" },
 ];
 
+// Events filter — program toggle: V5RC / VIQRC up front, the rest behind a "…".
+const PROGRAM_TOGGLE_PRIMARY = [
+  { value: "1", label: "V5RC" },
+  { value: "41", label: "VIQRC" },
+];
+const PROGRAM_TOGGLE_MORE = [
+  { value: "4", label: "VURC" },
+  { value: "57", label: "VAIRC" },
+];
+// Grade codes available per program. Drives the dependent grade toggle:
+//   V5RC → HS/MS · VIQRC → MS/ES · VURC → U (single) · VAIRC → none (N/A)
+const GRADES_BY_PROGRAM: Record<string, string[]> = {
+  "1": ["HS", "MS"],
+  "41": ["MS", "ES"],
+  "4": ["U"],
+  "57": [],
+};
+function gradeShortLabel(code: string): string {
+  return code === "HS" ? "HS" : code === "MS" ? "MS" : code === "ES" ? "ES" : code === "U" ? "U" : code;
+}
+// World Skills `grade_level` query values, keyed by the program grade codes above.
+const GRADE_CODE_TO_FULL: Record<string, string> = {
+  HS: "High School",
+  MS: "Middle School",
+  ES: "Elementary",
+  U: "College",
+};
+
 const today = new Date();
 const oneDay = 24 * 60 * 60 * 1000;
 const vexProgramIds = [1, 4, 41, 57];
 const teamCacheRefreshMs = 24 * 60 * 60 * 1000;
+// How often to re-poll match/ranking/skills data while an event is live.
+// Matches the proxy's ~60s upstream cache, so faster would just return cached bytes.
+const liveEventRefreshMs = 30 * 1000;
 const globalEventSearchCacheMs = 5 * 60 * 1000;
 type EventCategory = "Worlds" | "Signature" | "Championship" | "Other";
 type EventSort = "smart" | "date" | "type" | "name" | "program" | "location" | "past-season";
@@ -104,7 +158,7 @@ type EventFilterLayout = "sidebar" | "inline";
 type RegionOptionKind = "country" | "subdivision" | "vex-region";
 type DateDirection = "asc" | "desc";
 type TeamDataKind = "matches" | "rankings" | "skills" | "awards";
-type HomeEventTab = "popular" | "upcoming" | "today" | "signatures" | "near";
+type HomeEventTab = "upcoming" | "today" | "signatures" | "near";
 type AsyncBucket<T> = {
   data: T[];
   loading: boolean;
@@ -391,10 +445,19 @@ function CloseButton({ onClose, label = "Close" }: { onClose: () => void; label?
 // `delayMs` defers the loader so lower-priority requests don't all fire at once
 // on mount — keeps `loading` true while waiting so callers don't flash an empty
 // state. Used to stagger an event page's many parallel fetches.
-function useAsync<T>(loader: () => Promise<T>, deps: unknown[], delayMs = 0) {
+// `refetchMs > 0` enables silent background polling: data is re-fetched on an
+// interval without toggling `loading` or clearing the current data, so live
+// events update in place. Polling pauses while the tab is hidden.
+function useAsync<T>(loader: () => Promise<T>, deps: unknown[], delayMs = 0, refetchMs = 0) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Keep the latest closure (captures current id/division) so the polling effect
+  // can call it without restarting on every render.
+  const loaderRef = useRef(loader);
+  useEffect(() => {
+    loaderRef.current = loader;
+  });
 
   useEffect(() => {
     let live = true;
@@ -423,6 +486,26 @@ function useAsync<T>(loader: () => Promise<T>, deps: unknown[], delayMs = 0) {
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, deps);
+
+  // Silent background polling — never flips `loading`, keeps the last good data
+  // on error, and skips ticks while the tab is hidden to save requests/battery.
+  useEffect(() => {
+    if (refetchMs <= 0) return;
+    let active = true;
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      loaderRef.current()
+        .then((value) => {
+          if (active) setData(value);
+        })
+        .catch(() => {});
+    };
+    const interval = window.setInterval(tick, refetchMs);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [refetchMs, ...deps]);
 
   return { data, error, loading };
 }
@@ -538,6 +621,12 @@ function GlobalSearch({ className = "" }: { className?: string }) {
   const [query, setQuery] = useState("");
   const debounced = useDebouncedValue(query.trim(), 220);
   const [open, setOpen] = useState(false);
+  // When the header gets too narrow to hold the full search bar, collapse it to
+  // an icon that opens the search as a popup. Only applies in the topbar.
+  const collapsible = className.includes("topbar-search");
+  const [compact, setCompact] = useState(() => collapsible && typeof matchMedia === "function" && matchMedia("(max-width: 820px)").matches);
+  const [compactOpen, setCompactOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Teams results
   const [teams, setTeams] = useState<Team[]>([]);
@@ -585,10 +674,25 @@ function GlobalSearch({ className = "" }: { className?: string }) {
     return () => { live = false; };
   }, [debounced]);
 
+  // Track the narrow-header breakpoint (topbar only).
+  useEffect(() => {
+    if (!collapsible || typeof matchMedia !== "function") return;
+    const mq = matchMedia("(max-width: 820px)");
+    const onChange = () => { setCompact(mq.matches); if (!mq.matches) setCompactOpen(false); };
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [collapsible]);
+
+  // Focus the input when the compact search popup opens.
+  useEffect(() => {
+    if (compactOpen) inputRef.current?.focus();
+  }, [compactOpen]);
+
   // Close on outside click
   useEffect(() => {
     const handler = (e: globalThis.MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) { setOpen(false); setCompactOpen(false); }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -599,12 +703,13 @@ function GlobalSearch({ className = "" }: { className?: string }) {
 
   const handleSelect = useCallback((href: string) => {
     setOpen(false);
+    setCompactOpen(false);
     setQuery("");
     navigate(href);
   }, []);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") setOpen(false);
+    if (e.key === "Escape") { setOpen(false); setCompactOpen(false); }
     if (e.key === "Enter") {
       e.preventDefault();
       if (query.trim()) {
@@ -614,85 +719,113 @@ function GlobalSearch({ className = "" }: { className?: string }) {
     }
   };
 
+  const inputRow = (
+    <div className="global-search-input-row">
+      <Search size={16} className="global-search-icon" />
+      <input
+        ref={inputRef}
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={handleKeyDown}
+        placeholder="Search teams or events..."
+        className="global-search-input"
+      />
+      {!query && (
+        <span
+          className="gs-kbd-hint"
+          onClick={() => { setOpen(false); openSpotlight(); }}
+          aria-hidden="true"
+        >
+          {isMac ? "⌘K" : "Ctrl K"}
+        </span>
+      )}
+    </div>
+  );
+
+  const dropdown = showDropdown ? (
+    <div className="global-search-dropdown">
+      {/* Teams section */}
+      <div className="gs-section-label">Teams</div>
+      {teamsLoading && !teams.length && (
+        <div className="gs-loading">Loading...</div>
+      )}
+      {teams.map((team) => (
+        <button
+          key={team.id}
+          type="button"
+          className="gs-result"
+          onMouseDown={() => handleSelect(teamPath(team))}
+        >
+          <span className="gs-result-main">{team.number} - {team.team_name ?? "Unnamed Team"}</span>
+          <span className="gs-result-sub">{locationLine(team)}</span>
+        </button>
+      ))}
+      {!teamsLoading && !teams.length && (
+        <div className="gs-empty">No teams found.</div>
+      )}
+      <button
+        type="button"
+        className="gs-find-more"
+        onMouseDown={() => handleSelect(`/teams?search=${encodeURIComponent(searchTerm)}`)}
+      >
+        Find more teams...
+      </button>
+
+      {/* Events section */}
+      <div className="gs-section-label">Events</div>
+      {eventsLoading && !events.length && (
+        <div className="gs-loading">Loading...</div>
+      )}
+      {events.map((event) => (
+        <button
+          key={event.id}
+          type="button"
+          className="gs-result"
+          onMouseDown={() => handleSelect(eventPath(event))}
+        >
+          <span className="gs-result-main">{event.name}</span>
+          <span className="gs-result-sub">{event.sku} · {locationLine(event)}</span>
+        </button>
+      ))}
+      {!eventsLoading && !events.length && (
+        <div className="gs-empty">No events found.</div>
+      )}
+      <button
+        type="button"
+        className="gs-find-more"
+        onMouseDown={() => handleSelect(`/events?search=${encodeURIComponent(searchTerm)}`)}
+      >
+        Find more events...
+      </button>
+    </div>
+  ) : null;
+
   return (
-    <div className={`global-search-wrap ${className}`.trim()} ref={wrapRef}>
-      <div className="global-search-input-row">
-        <Search size={16} className="global-search-icon" />
-        <input
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={handleKeyDown}
-          placeholder="Search teams or events..."
-          className="global-search-input"
-        />
-        {!query && (
-          <span
-            className="gs-kbd-hint"
-            onClick={() => { setOpen(false); openSpotlight(); }}
-            aria-hidden="true"
-          >
-            {isMac ? "⌘K" : "Ctrl K"}
-          </span>
-        )}
-      </div>
-
-      {showDropdown && (
-        <div className="global-search-dropdown">
-          {/* Teams section */}
-          <div className="gs-section-label">Teams</div>
-          {teamsLoading && !teams.length && (
-            <div className="gs-loading">Loading...</div>
-          )}
-          {teams.map((team) => (
-            <button
-              key={team.id}
-              type="button"
-              className="gs-result"
-              onMouseDown={() => handleSelect(teamPath(team))}
-            >
-              <span className="gs-result-main">{team.number} - {team.team_name ?? "Unnamed Team"}</span>
-              <span className="gs-result-sub">{locationLine(team)}</span>
-            </button>
-          ))}
-          {!teamsLoading && !teams.length && (
-            <div className="gs-empty">No teams found.</div>
-          )}
+    <div className={`global-search-wrap ${className}${compact ? " is-compact" : ""}`.trim()} ref={wrapRef}>
+      {compact ? (
+        <>
           <button
             type="button"
-            className="gs-find-more"
-            onMouseDown={() => handleSelect(`/teams?search=${encodeURIComponent(searchTerm)}`)}
+            className="global-search-trigger"
+            aria-label="Search"
+            aria-expanded={compactOpen}
+            onClick={() => setCompactOpen((o) => !o)}
           >
-            Find more teams...
+            <Search size={18} />
           </button>
-
-          {/* Events section */}
-          <div className="gs-section-label">Events</div>
-          {eventsLoading && !events.length && (
-            <div className="gs-loading">Loading...</div>
+          {compactOpen && (
+            <div className="global-search-popup">
+              {inputRow}
+              {dropdown}
+            </div>
           )}
-          {events.map((event) => (
-            <button
-              key={event.id}
-              type="button"
-              className="gs-result"
-              onMouseDown={() => handleSelect(eventPath(event))}
-            >
-              <span className="gs-result-main">{event.name}</span>
-              <span className="gs-result-sub">{event.sku} · {locationLine(event)}</span>
-            </button>
-          ))}
-          {!eventsLoading && !events.length && (
-            <div className="gs-empty">No events found.</div>
-          )}
-          <button
-            type="button"
-            className="gs-find-more"
-            onMouseDown={() => handleSelect(`/events?search=${encodeURIComponent(searchTerm)}`)}
-          >
-            Find more events...
-          </button>
-        </div>
+        </>
+      ) : (
+        <>
+          {inputRow}
+          {dropdown}
+        </>
       )}
     </div>
   );
@@ -803,6 +936,24 @@ function formatEventDateRange(start?: string | null, end?: string | null) {
   return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
 }
 
+// Compact range that collapses the shared month/year, e.g. "Apr 20-23, 2026",
+// "Aug 30 - Sep 2, 2026", or "Dec 30, 2026 - Jan 2, 2027".
+function formatEventDateRangeShort(start?: string | null, end?: string | null) {
+  if (!start) return formatEventDateRange(start, end);
+  const fmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const parts = (d: Date) => {
+    const p = fmt.formatToParts(d);
+    const get = (t: string) => p.find((x) => x.type === t)?.value ?? "";
+    return { mo: get("month"), day: get("day"), yr: get("year") };
+  };
+  const s = parts(new Date(start));
+  const e = parts(new Date(end ?? start));
+  if (s.mo === e.mo && s.yr === e.yr && s.day === e.day) return `${s.mo} ${s.day}, ${s.yr}`;
+  if (s.mo === e.mo && s.yr === e.yr) return `${s.mo} ${s.day}-${e.day}, ${s.yr}`;
+  if (s.yr === e.yr) return `${s.mo} ${s.day} - ${e.mo} ${e.day}, ${s.yr}`;
+  return `${s.mo} ${s.day}, ${s.yr} - ${e.mo} ${e.day}, ${e.yr}`;
+}
+
 function formatNumber(value?: number | null, digits = 1) {
   if (value === undefined || value === null || Number.isNaN(value)) return "-";
   return value.toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -865,6 +1016,12 @@ function eventDistance(event: Event) {
   const now = today.getTime();
   if (start <= now && now <= end + oneDay) return 0;
   return Math.min(Math.abs(start - now), Math.abs(end - now));
+}
+
+// True while an event is running today (within its date window). Used to gate
+// live background polling so finished/future events never poll.
+function eventIsLive(event: Event) {
+  return eventDistance(event) === 0;
 }
 
 function compareEvents(a: Event, b: Event, sort: EventSort) {
@@ -1542,7 +1699,7 @@ function LoadingTable({ columns = 4 }: { columns?: number }) {
         <tr key={row}>
           {Array.from({ length: columns }).map((__, col) => (
             <td key={col}>
-              <span className="skeleton" />
+              <Skeleton className="h-3.5 w-[min(100%,180px)]" />
             </td>
           ))}
         </tr>
@@ -1552,8 +1709,18 @@ function LoadingTable({ columns = 4 }: { columns?: number }) {
 }
 
 function Status({ loading, error }: { loading: boolean; error: string | null }) {
-  if (loading) return <div className="notice">Loading competition data...</div>;
-  if (error) return <div className="notice error">API error: {error}</div>;
+  if (loading)
+    return (
+      <Alert className="m-4 w-auto">
+        <AlertDescription>Loading competition data…</AlertDescription>
+      </Alert>
+    );
+  if (error)
+    return (
+      <Alert variant="destructive" className="m-4 w-auto">
+        <AlertDescription>API error: {error}</AlertDescription>
+      </Alert>
+    );
   return null;
 }
 
@@ -1576,11 +1743,11 @@ function LocalPager({ page, totalPages, onPage }: { page: number; totalPages: nu
 }
 
 function ProgramBadge({ program }: { program?: { code?: string | null; name?: string } }) {
-  return <span className="badge">{program?.code ?? program?.name ?? "VEX"}</span>;
+  return <Badge variant="secondary">{program?.code ?? program?.name ?? "VEX"}</Badge>;
 }
 
 function GradeBadge({ grade }: { grade?: string | null }) {
-  return <span className="badge">{gradeCode(grade)}</span>;
+  return <Badge variant="secondary">{gradeCode(grade)}</Badge>;
 }
 
 function CompareModeButton() {
@@ -2064,13 +2231,91 @@ function PicklistTab({ event, orgId }: { event: { id: number; name: string }; or
   );
 }
 
+// App-like bottom navigation, shown only on mobile (see .mobile-tabbar in CSS).
+// A compact, frosted, rounded floating island — icon-only (labels are redundant
+// for four self-evident sections), so it stays small and out of the way while
+// mirroring the primary desktop nav for one-tap access. Each tab carries an
+// aria-label/title since there's no visible text.
+function MobileTabBar({ path }: { path: string }) {
+  const { profile } = useAuth();
+  const hasMyTeam = !!(profile?.team_number && profile?.team_program);
+  const tabs: Array<{ href: string; label: string; Icon: typeof House; active: boolean }> = [
+    { href: "/", label: "Home", Icon: House, active: path === "/" },
+    { href: "/events", label: "Events", Icon: CalendarDays, active: path === "/events" || path.startsWith("/event") },
+    { href: "/teams", label: "Teams", Icon: Users, active: path === "/teams" || path.startsWith("/team") },
+    { href: "/skills", label: "Skills", Icon: Trophy, active: path === "/skills" },
+    ...(hasMyTeam ? [{ href: "/my-team", label: "My Team", Icon: Star, active: path === "/my-team" }] : []),
+  ];
+  return (
+    <nav className="mobile-tabbar" aria-label="Primary">
+      {tabs.map(({ href, label, Icon, active }) => (
+        <Link
+          key={href}
+          href={href}
+          className={`mobile-tab ${active ? "active" : ""}`}
+          aria-label={label}
+          title={label}
+          aria-current={active ? "page" : undefined}
+        >
+          <Icon size={23} strokeWidth={active ? 2.4 : 2} />
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+// Compact light/dark switch for the header island. Reads the live theme pref and
+// flips to the opposite of whatever is currently showing (resolving "system").
+// Cross-fade content whenever `trigger` changes (season / filter / setting
+// re-render). Animates opacity only via the Web Animations API, so children
+// keep their state — no remount, no refetch. Skips the initial mount and
+// honors prefers-reduced-motion. `duration` defaults to a 200ms "Fast" fade;
+// route changes pass a shorter, more subtle value.
+function CrossFade({
+  trigger,
+  duration = 200,
+  className,
+  children,
+}: {
+  trigger: unknown;
+  duration?: number;
+  className?: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const prev = useRef(trigger);
+  // useLayoutEffect so opacity:0 is applied before the browser paints the new
+  // content — otherwise you'd see one frame at full opacity before the fade.
+  useLayoutEffect(() => {
+    if (Object.is(prev.current, trigger)) return;
+    prev.current = trigger;
+    const el = ref.current;
+    if (!el) return;
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    el.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease" });
+  }, [trigger, duration]);
+  return (
+    <div ref={ref} className={className}>
+      {children}
+    </div>
+  );
+}
+
 function Layout({ children, path }: { children: ReactNode; path: string }) {
+  // Route-change fade keys on the pathname only (ignore query/hash) so in-page
+  // filter changes that don't navigate never trigger the route fade. The
+  // settings epoch is folded in so settings changes that remount page content
+  // (synced filters/preferences) also get the subtle fade.
+  const settingsEpoch = useSettingsEpoch();
+  const { profile } = useAuth();
+  const hasMyTeam = !!(profile?.team_number && profile?.team_program);
+  const routeKey = `${path.split("?")[0].split("#")[0]}:${settingsEpoch}`;
   const nav = [
-    ["/", "stemScout"],
+    ["/", "OpenScout"],
     ["/events", "Events"],
     ["/teams", "Teams"],
     ["/skills", "Skills"],
-    ["/insights", "Insights"],
+    ...(hasMyTeam ? [["/my-team", "My Team"]] : []),
   ];
 
   return (
@@ -2078,10 +2323,8 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
       <header className="topbar">
         <div className="topbar-inner">
           <Link href="/" className="brand">
-            <span className="brand-mark">
-              <Shield size={25} />
-            </span>
-            <span>stemScout</span>
+            <img className="brand-logo" src="/openscout-mark-tight.png" alt="" />
+            <span className="brand-word">OpenScout</span>
           </Link>
           <nav>
             {nav.slice(1).map(([href, label]) => (
@@ -2090,21 +2333,30 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
               </Link>
             ))}
           </nav>
-          <GlobalSearch className="topbar-search" />
-          <AuthSlot />
+          <div className="topbar-actions">
+            <GlobalSearch className="topbar-search" />
+            <AuthSlot />
+          </div>
         </div>
       </header>
-      <main>{children}</main>
+      <main>
+        <CrossFade trigger={routeKey} duration={120}>
+          {children}
+        </CrossFade>
+      </main>
       <footer>
-        <div>Event data from RobotEvents. Team stats and SuperScore from RoboStem DB.</div>
-        <div className="footer-links">
-          <Link href="/events">Events</Link>
-          <Link href="/teams">Teams</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/insights">Insights</Link>
-          <Link href="/terms">Terms</Link>
+        <div className="footer-row">
+          <span className="footer-copy">© 2026 RoboSTEM Foundation, All Rights Reserved.</span>
+          <div className="footer-links">
+            <Link href="/events">Events</Link>
+            <Link href="/teams">Teams</Link>
+            <Link href="/skills">Skills</Link>
+            <Link href="/terms">Terms</Link>
+            <Link href="/privacy">Privacy</Link>
+          </div>
         </div>
       </footer>
+      <MobileTabBar path={path} />
     </>
   );
 }
@@ -2138,81 +2390,45 @@ const skillsLeaderboards = [
 ];
 
 const homeEventTabs: Array<{ label: string; value: HomeEventTab }> = [
-  { label: "Popular", value: "popular" },
   { label: "Upcoming", value: "upcoming" },
   { label: "Today's Events", value: "today" },
   { label: "Signatures", value: "signatures" },
   { label: "Near Today", value: "near" },
 ];
 
-function ProgramPicker({
-  selectedProgramIds,
-  onChange,
-  triggerLabel = "Change program",
-}: {
-  selectedProgramIds: string[];
-  onChange: (ids: string[]) => void;
-  triggerLabel?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [multi, setMulti] = useState(selectedProgramIds.length !== 1);
-  const options = programOptions.filter((option) => option.value);
+// Home events program filter — a compact multi-select toggle. "…" groups every
+// non-V5/IQ program (VEX U + VEX AI) under one button.
+const HOME_PROGRAM_GROUPS: Array<{ key: string; label: string; title: string; ids: string[] }> = [
+  { key: "v5", label: "V5", title: "VEX V5 Robotics Competition", ids: ["1"] },
+  { key: "iq", label: "IQ", title: "VEX IQ Robotics Competition", ids: ["41"] },
+  { key: "other", label: "…", title: "Other events (VEX U, VEX AI)", ids: ["4", "57"] },
+];
 
-  const toggle = (id: string) => {
-    if (!multi) {
-      onChange([id]);
-      setOpen(false);
-    } else {
-      onChange(selectedProgramIds.includes(id) ? selectedProgramIds.filter((value) => value !== id) : [...selectedProgramIds, id]);
-    }
-  };
-
+function HomeProgramToggle({ selected, onChange }: { selected: string[]; onChange: (ids: string[]) => void }) {
   return (
-    <span className="home-program-picker">
-      <button type="button" className="change-program-btn" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-        {triggerLabel}
-      </button>
-      {open && (
-        <div className="picker-menu-list" style={{ zIndex: 20 }}>
-          <div className="picker-multi-row">
-            <label className="picker-multi-toggle">
-              <input
-                type="checkbox"
-                checked={multi}
-                onChange={(event) => {
-                  setMulti(event.target.checked);
-                  if (!event.target.checked && selectedProgramIds.length !== 1) {
-                    onChange(selectedProgramIds.length ? selectedProgramIds.slice(0, 1) : [options[0].value]);
-                  }
-                }}
-              />
-              <span>Select multiple</span>
-            </label>
-            <button type="button" className="picker-menu-close" onClick={() => setOpen(false)} aria-label="Close">
-              &times;
-            </button>
-          </div>
-          {multi && (
-            <div className="picker-menu-actions">
-              <button type="button" onClick={() => onChange(options.map((option) => option.value))}>All</button>
-              <button type="button" onClick={() => onChange([])}>Clear</button>
-            </div>
-          )}
-          {options.map((option) =>
-            multi ? (
-              <label key={option.value}>
-                <input type="checkbox" checked={selectedProgramIds.includes(option.value)} onChange={() => toggle(option.value)} />
-                <span>{option.label}</span>
-              </label>
-            ) : (
-              <button key={option.value} type="button" className={selectedProgramIds.includes(option.value) ? "active" : ""} onClick={() => toggle(option.value)}>
-                <span>{option.label}</span>
-              </button>
-            ),
-          )}
-        </div>
-      )}
-    </span>
+    <div className="home-prog-toggle" role="group" aria-label="Programs">
+      {HOME_PROGRAM_GROUPS.map((group) => {
+        const active = group.ids.every((id) => selected.includes(id));
+        return (
+          <button
+            key={group.key}
+            type="button"
+            className={active ? "active" : ""}
+            aria-pressed={active}
+            title={group.title}
+            onClick={() =>
+              onChange(
+                active
+                  ? selected.filter((id) => !group.ids.includes(id))
+                  : [...selected.filter((id) => !group.ids.includes(id)), ...group.ids],
+              )
+            }
+          >
+            {group.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -2401,7 +2617,6 @@ function Home() {
     [events, selectedProgramIds],
   );
   const homeEvents = useMemo(() => {
-    if (homeEventTab === "popular") return [];
     if (homeEventTab === "today") {
       return baseHomeEvents
         .filter((event) => {
@@ -2439,29 +2654,35 @@ function Home() {
               <Users size={16} />
               Teams
             </Link>
-            <Link href="/insights" className="home-hero-btn home-hero-btn-icon" aria-label="Insights" title="Insights">
-              <BarChart3 size={16} />
-            </Link>
           </nav>
         </div>
       </section>
 
       <div className="home-dashboard">
         <aside className="home-sidebar">
-          <SignedOut>
-            <Panel title="Sign up / Log in" icon={<Star />}>
-              <div className="auth-card-body">
-                <p className="auth-card-copy">Sign in to sync your favorites and settings across devices.</p>
-                <SignInButtons />
-              </div>
-            </Panel>
-          </SignedOut>
+          {/* Hidden on mobile (see .home-signin-card) — phone users sign in via
+              the header account button instead of a full-width card. */}
+          <div className="home-signin-card">
+            <SignedOut>
+              <Panel title="Sign up / Log in" icon={<Star />}>
+                <div className="auth-card-body">
+                  <p className="auth-card-copy">Sign in to sync your favorites and settings across devices.</p>
+                  <SignInButtons />
+                </div>
+              </Panel>
+            </SignedOut>
+          </div>
           <RecentlyViewedPanel />
           <FavoritesPanel />
           <OrgPanel />
 
-          <Panel title="Skills Leaderboards" icon={<Trophy />}>
+          <Panel title="VEX Skill Leaderboards" icon={<Trophy />}>
             <div className="skills-leaderboard-list">
+              <Link href="/skills" className="skills-lb-openscout">
+                <BarChart3 size={14} />
+                <span>View leaderboards on OpenScout</span>
+                <ChevronRight size={14} className="arrow" />
+              </Link>
               {skillsLeaderboards.map((lb) => (
                 <a
                   key={lb.url}
@@ -2480,26 +2701,21 @@ function Home() {
 
         <Panel
           title={
-            <>
-              VEX Robotics Competition Events
-              <ProgramPicker selectedProgramIds={selectedProgramIds} onChange={setSelectedProgramIds} />
-            </>
+            <div className="home-events-header">
+              <HomeProgramToggle selected={selectedProgramIds} onChange={setSelectedProgramIds} />
+              <SeasonSelector
+                seasons={homeEventTabs.map((tab, index) => ({ id: index, label: tab.label }))}
+                selectedSeasonId={homeEventTabs.findIndex((tab) => tab.value === homeEventTab)}
+                onChange={(index) => setHomeEventTab(homeEventTabs[index].value)}
+                loading={false}
+                hideCount
+                hideLabel
+              />
+              <Link href="/events" className="home-events-seeall">See all events</Link>
+            </div>
           }
           icon={<CalendarDays />}
-          action={<Link href="/events">See all events</Link>}
         >
-          <div className="home-event-tabs">
-            {homeEventTabs.map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                className={homeEventTab === tab.value ? "active" : ""}
-                onClick={() => setHomeEventTab(tab.value)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
           <Status loading={eventsLoading} error={eventsError} />
           <EventTable events={homeEvents} loading={eventsLoading} compact showPriority showProgram />
         </Panel>
@@ -2622,8 +2838,6 @@ function highlightMatch(text: string, query: string): ReactNode {
 function EventsPageInner() {
   const params = new URLSearchParams(window.location.search);
   const [quickSearch, setQuickSearch] = useState(params.get("search") ?? "");
-  const [quickSearchLimit, setQuickSearchLimit] = useState(3);
-  const [activeQuickResult, setActiveQuickResult] = useState(0);
   const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>(() => {
     const saved = window.localStorage.getItem("vex-events-programs");
     if (!saved) return ["1"];
@@ -2634,7 +2848,6 @@ function EventsPageInner() {
       return ["1"];
     }
   });
-  const [programMenuOpen, setProgramMenuOpen] = useState(false);
   const [level, setLevel] = useState<string>(() => readEventFilters().level ?? "");
   const [selectedRegionKeys, setSelectedRegionKeys] = useState<string[]>(() => readEventFilters().selectedRegionKeys ?? []);
   const [regionMenuOpen, setRegionMenuOpen] = useState(false);
@@ -2644,14 +2857,16 @@ function EventsPageInner() {
   const [sort, setSort] = useState<EventSort>(() => readEventFilters().sort ?? "smart");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [filterLayout, setFilterLayout] = useState<EventFilterLayout>(() => readEventFilters().filterLayout ?? "sidebar");
+  // Mobile-only: the filter sidebar collapses to a "Filters" toggle so results
+  // show first. Has no effect on desktop (the toggle is hidden via CSS).
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [selectedSeasonIds, setSelectedSeasonIds] = useState<number[]>(() => readEventFilters().selectedSeasonIds ?? []);
   const [seasonSelectionTouched, setSeasonSelectionTouched] = useState<boolean>(() => readEventFilters().seasonSelectionTouched ?? false);
-  const [seasonMenuOpen, setSeasonMenuOpen] = useState(false);
   const [seasonMultiSelect, setSeasonMultiSelect] = useState<boolean>(() => readEventFilters().seasonMultiSelect ?? false);
   const [programMultiSelect, setProgramMultiSelect] = useState<boolean>(() => readEventFilters().programMultiSelect ?? false);
   const [pastSeasonDateDir, setPastSeasonDateDir] = useState<"asc" | "desc">(() => readEventFilters().pastSeasonDateDir ?? "asc");
   const [selectedGrades, setSelectedGrades] = useState<string[]>(() => readEventFilters().selectedGrades ?? []);
-  const [gradeMenuOpen, setGradeMenuOpen] = useState(false);
+  const [programMoreOpen, setProgramMoreOpen] = useState(false);
   const [lastOpenedMenu, setLastOpenedMenu] = useState<"region" | "season" | "program" | "sort" | "grade" | null>(null);
   const [hideCanceled, setHideCanceled] = useState<boolean>(() => readEventFilters().hideCanceled ?? true);
   const [page, setPage] = useState(1);
@@ -2688,22 +2903,6 @@ function EventsPageInner() {
   const allSeasonsSelected = !!seasonOptions.length && sameNumberSet(selectedSeasonIds, allSeasonIds);
   const currentSeasonId = seasonOptions[0]?.id;
   const isPastSeasonView = !!currentSeasonId && selectedSeasonIds.length > 0 && !selectedSeasonIds.includes(currentSeasonId);
-  const selectedProgramLabels = programOptions
-    .filter((option) => option.value && selectedProgramIds.includes(option.value))
-    .map((option) => option.label);
-  const programButtonLabel =
-    !selectedProgramIds.length || selectedProgramIds.length === programOptions.length - 1
-      ? "All programs"
-      : selectedProgramIds.length === 1
-        ? selectedProgramLabels[0] ?? "Program"
-        : `${selectedProgramIds.length} programs`;
-  const gradeOptions = ["HS", "MS", "ES"] as const;
-  const gradeButtonLabel =
-    selectedGrades.length === 0 || selectedGrades.length === gradeOptions.length
-      ? "All grades"
-      : selectedGrades.length === 1
-        ? selectedGrades[0]!
-        : `${selectedGrades.length} grades`;
   const countryOptions = useMemo(() => dedupeCountryGroups(countries.data ?? []), [countries.data]);
   const sortOptions: Array<{ label: string; value: EventSort }> = [
     { label: "Smart Sort", value: "smart" },
@@ -2780,35 +2979,22 @@ function EventsPageInner() {
       }),
     [data, selectedProgramIds, level, selectedRegionOptions, selectedSeasonIds, hideCanceled, selectedGrades, sort, isPastSeasonView],
   );
-  const quickResults = useMemo(() => {
+  // Quick search live-filters the visible events directly (no results dropdown).
+  const searchedEvents = useMemo(() => {
     const needle = quickSearch.trim().toLowerCase();
-    if (!needle) return [];
-    return visibleEvents.filter((event) => event.name.toLowerCase().includes(needle)).slice(0, quickSearchLimit);
-  }, [visibleEvents, quickSearch, quickSearchLimit]);
-  const quickResultTotal = useMemo(() => {
-    const needle = quickSearch.trim().toLowerCase();
-    if (!needle) return 0;
-    return visibleEvents.filter((event) => event.name.toLowerCase().includes(needle)).length;
+    if (!needle) return visibleEvents;
+    return visibleEvents.filter((event) => event.name.toLowerCase().includes(needle));
   }, [visibleEvents, quickSearch]);
   const pageSize = 40;
-  const totalPages = Math.max(1, Math.ceil(visibleEvents.length / pageSize));
-  const pageEvents = visibleEvents.slice((page - 1) * pageSize, page * pageSize);
-  const selectedSeasonLabels = seasonOptions.filter((season) => selectedSeasonIds.includes(season.id)).map((season) => season.label);
-  const seasonButtonLabel =
-    !selectedSeasonIds.length || selectedSeasonIds.length === seasonOptions.length
-      ? "All seasons"
-      : selectedSeasonIds.length === 1
-        ? selectedSeasonLabels[0] ?? "Season"
-        : `${selectedSeasonIds.length} seasons`;
-
+  const totalPages = Math.max(1, Math.ceil(searchedEvents.length / pageSize));
+  const pageEvents = searchedEvents.slice((page - 1) * pageSize, page * pageSize);
   useEffect(() => {
     setPage(1);
   }, [selectedProgramIds, level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds, hideCanceled, selectedGrades]);
 
   useEffect(() => {
-    setQuickSearchLimit(3);
-    setActiveQuickResult(0);
-  }, [quickSearch, visibleEvents]);
+    setPage(1);
+  }, [quickSearch]);
 
   useEffect(() => {
     setEventsSettings({
@@ -2843,47 +3029,11 @@ function EventsPageInner() {
     }
   }, [selectedRegionKeys, regionOptions]);
 
-  const toggleSeason = (seasonId: number) => {
+  const selectSeason = (seasonId: number) => {
     setSeasonSelectionTouched(true);
-    if (!seasonMultiSelect) {
-      setSelectedSeasonIds([seasonId]);
-      setSeasonMenuOpen(false);
-      if (currentSeasonId && seasonId !== currentSeasonId) {
-        setEventWindow("allSeason");
-      } else {
-        setEventWindow("near");
-      }
-    } else {
-      setSelectedSeasonIds((ids) => (ids.includes(seasonId) ? ids.filter((id) => id !== seasonId) : [...ids, seasonId]));
-    }
-  };
-  const toggleProgram = (programId: string) => {
-    if (!programMultiSelect) {
-      setSelectedProgramIds([programId]);
-      setProgramMenuOpen(false);
-    } else {
-      setSelectedProgramIds((ids) => (ids.includes(programId) ? ids.filter((id) => id !== programId) : [...ids, programId]));
-    }
-    setSeasonSelectionTouched(false);
-    setSelectedSeasonIds([]);
-  };
-  const selectAllPrograms = () => {
-    setSelectedProgramIds(programOptions.map((option) => option.value).filter(Boolean));
-    setSeasonSelectionTouched(false);
-    setSelectedSeasonIds([]);
-  };
-  const clearPrograms = () => {
-    setSelectedProgramIds([]);
-    setSeasonSelectionTouched(false);
-    setSelectedSeasonIds([]);
-  };
-  const selectAllSeasons = () => {
-    setSeasonSelectionTouched(true);
-    setSelectedSeasonIds(seasonOptions.map((season) => season.id));
-  };
-  const clearSeasons = () => {
-    setSeasonSelectionTouched(true);
-    setSelectedSeasonIds([]);
+    setSelectedSeasonIds([seasonId]);
+    if (currentSeasonId && seasonId !== currentSeasonId) setEventWindow("allSeason");
+    else setEventWindow("near");
   };
   const resetFilters = () => {
     window.localStorage.removeItem(EVENT_FILTER_KEY);
@@ -2913,203 +3063,82 @@ function EventsPageInner() {
   const clearRegions = () => {
     setSelectedRegionKeys([]);
   };
-  const openQuickResult = (event?: Event) => {
-    if (event) navigate(eventPath(event));
+
+  // Program is single-select in the toggle UI; grade options depend on it.
+  const activeProgramId = selectedProgramIds.length === 1 ? selectedProgramIds[0] : null;
+  const availableGrades = activeProgramId ? (GRADES_BY_PROGRAM[activeProgramId] ?? []) : [];
+  const activeGrade = selectedGrades.length === 1 ? selectedGrades[0] : null;
+  const moreProgramActive = !!activeProgramId && PROGRAM_TOGGLE_MORE.some((p) => p.value === activeProgramId);
+  const selectProgram = (programId: string) => {
+    setSelectedProgramIds([programId]);
+    setSelectedGrades([]);
+    setSeasonSelectionTouched(false);
+    setSelectedSeasonIds([]);
   };
-  const handleQuickSearchKey = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (!quickResults.length) return;
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setActiveQuickResult((index) => Math.min(index + 1, quickResults.length - 1));
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setActiveQuickResult((index) => Math.max(index - 1, 0));
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      openQuickResult(quickResults[activeQuickResult] ?? quickResults[0]);
-    }
-  };
+  const selectGrade = (code: string | null) => setSelectedGrades(code ? [code] : []);
 
   const filterControls = (
     <>
-      <div className="filter-section">
-        <div className="filter-section-title">Time</div>
-        <div className="quick-filters">
-          <button className={eventWindow === "near" ? "active" : ""} onClick={() => setEventWindow("near")}>
-            Near today
-          </button>
-          <button className={eventWindow === "upcoming" ? "active" : ""} onClick={() => setEventWindow("upcoming")}>
-            Upcoming
-          </button>
-          <button className={eventWindow === "allSeason" ? "active" : ""} onClick={() => setEventWindow("allSeason")}>
-            All
-          </button>
-        </div>
-      </div>
-      <div className="filter-section">
-        <div className="filter-section-title">Type</div>
-        <div className="quick-filters">
-          <button className={!level ? "active" : ""} onClick={() => setLevel("")}>
-            All
-          </button>
-          <button className={level === "World" ? "active" : ""} onClick={() => setQuickFilter("World", eventWindow)}>
-            Worlds
-          </button>
-          <button className={level === "Signature" ? "active" : ""} onClick={() => setQuickFilter("Signature", eventWindow)}>
-            Signature
-          </button>
-          <button className={level === "Championship" ? "active" : ""} onClick={() => setQuickFilter("Championship", eventWindow)}>
-            Championships
-          </button>
-          <button className={level === "Other" ? "active" : ""} onClick={() => setLevel("Other")}>
-            Other
-          </button>
-        </div>
-      </div>
       <div className="event-filter-fields">
-        <div className="filter-field">
-          <span>
-            Seasons
+        <div className="filter-section">
+          <div className="filter-section-title filter-section-title-row">
+            <span>Season</span>
             {isPastSeasonView && currentSeasonId && (
-              <button
-                type="button"
-                className="back-to-season-btn"
-                onClick={() => {
-                  setSeasonSelectionTouched(true);
-                  setSelectedSeasonIds([currentSeasonId]);
-                  setEventWindow("near");
-                }}
-              >
+              <button type="button" className="back-to-season-btn" onClick={() => selectSeason(currentSeasonId)}>
                 Back to {seasonOptions[0]?.label}
               </button>
             )}
-          </span>
-          <div className="picker-menu season-picker-menu">
-            <button type="button" onClick={() => { setSeasonMenuOpen((open) => !open); setLastOpenedMenu("season"); }} aria-expanded={seasonMenuOpen}>
-              {seasonButtonLabel}
-            </button>
-            {seasonMenuOpen && (
-              <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "season" ? 20 : 10 }}>
-                <label className="picker-multi-toggle">
-                  <input
-                    type="checkbox"
-                    checked={seasonMultiSelect}
-                    onChange={(e) => {
-                      setSeasonMultiSelect(e.target.checked);
-                      if (!e.target.checked && selectedSeasonIds.length > 1) {
-                        setSelectedSeasonIds(selectedSeasonIds.slice(0, 1));
-                      }
-                    }}
-                  />
-                  <span>Select multiple</span>
-                </label>
-                {seasonMultiSelect && (
-                  <div className="picker-menu-actions">
-                    <button type="button" onClick={selectAllSeasons}>All</button>
-                    <button type="button" onClick={clearSeasons}>Clear</button>
-                  </div>
-                )}
-                {seasonOptions.map((season) =>
-                  seasonMultiSelect ? (
-                    <label key={season.id}>
-                      <input type="checkbox" checked={selectedSeasonIds.includes(season.id)} onChange={() => toggleSeason(season.id)} />
-                      <span>{season.label}</span>
-                      {season.program && <small>{season.program}</small>}
-                    </label>
-                  ) : (
-                    <button key={season.id} type="button" className={selectedSeasonIds.includes(season.id) ? "active" : ""} onClick={() => toggleSeason(season.id)}>
-                      <span>{season.label}</span>
-                      {season.program && <small>{season.program}</small>}
-                    </button>
-                  )
-                )}
-                {!seasonOptions.length && <div className="picker-menu-empty">Loading seasons...</div>}
-              </div>
-            )}
           </div>
+          <SeasonSelector
+            seasons={seasonOptions.map((season) => ({ id: season.id, label: season.label }))}
+            selectedSeasonId={selectedSeasonIds[0] ?? null}
+            onChange={selectSeason}
+            loading={seasons.loading}
+            hideCount
+            hideLabel
+          />
         </div>
-        <div className="filter-field-pair">
-          <div className="filter-field">
-            <span>Programs</span>
-            <div className="picker-menu">
-              <button type="button" onClick={() => { setProgramMenuOpen((open) => !open); setLastOpenedMenu("program"); }} aria-expanded={programMenuOpen}>
-                {programButtonLabel}
+        <div className="filter-section">
+          <div className="filter-section-title">Program &amp; Grade</div>
+          <div className="program-grade">
+            <div className="seg-toggle">
+              {PROGRAM_TOGGLE_PRIMARY.map((p) => (
+                <button key={p.value} type="button" className={activeProgramId === p.value ? "active" : ""} onClick={() => selectProgram(p.value)}>
+                  {p.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`seg-toggle-more${programMoreOpen || moreProgramActive ? " active" : ""}`}
+                aria-expanded={programMoreOpen || moreProgramActive}
+                title="More programs"
+                onClick={() => setProgramMoreOpen((open) => !open)}
+              >
+                &hellip;
               </button>
-              {programMenuOpen && (
-                <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "program" ? 20 : 10 }}>
-                  <label className="picker-multi-toggle">
-                    <input
-                      type="checkbox"
-                      checked={programMultiSelect}
-                      onChange={(e) => {
-                        setProgramMultiSelect(e.target.checked);
-                        if (!e.target.checked && selectedProgramIds.length > 1) {
-                          setSelectedProgramIds(selectedProgramIds.slice(0, 1));
-                          setSeasonSelectionTouched(false);
-                          setSelectedSeasonIds([]);
-                        }
-                      }}
-                    />
-                    <span>Select multiple</span>
-                  </label>
-                  {programMultiSelect && (
-                    <div className="picker-menu-actions">
-                      <button type="button" onClick={selectAllPrograms}>All</button>
-                      <button type="button" onClick={clearPrograms}>Clear</button>
-                    </div>
-                  )}
-                  {programOptions
-                    .filter((option) => option.value)
-                    .map((option) =>
-                      programMultiSelect ? (
-                        <label key={option.value}>
-                          <input type="checkbox" checked={selectedProgramIds.includes(option.value)} onChange={() => toggleProgram(option.value)} />
-                          <span>{option.label}</span>
-                        </label>
-                      ) : (
-                        <button key={option.value} type="button" className={selectedProgramIds.includes(option.value) ? "active" : ""} onClick={() => toggleProgram(option.value)}>
-                          <span>{option.label}</span>
-                        </button>
-                      )
-                    )}
-                </div>
-              )}
+              {(programMoreOpen || moreProgramActive) &&
+                PROGRAM_TOGGLE_MORE.map((p) => (
+                  <button key={p.value} type="button" className={activeProgramId === p.value ? "active" : ""} onClick={() => selectProgram(p.value)}>
+                    {p.label}
+                  </button>
+                ))}
             </div>
-          </div>
-          <div className="filter-field">
-            <span>Grade</span>
-            <div className="picker-menu">
-              <button type="button" onClick={() => { setGradeMenuOpen((open) => !open); setLastOpenedMenu("grade"); }} aria-expanded={gradeMenuOpen}>
-                {gradeButtonLabel}
-              </button>
-              {gradeMenuOpen && (
-                <div className="picker-menu-list" style={{ zIndex: lastOpenedMenu === "grade" ? 20 : 10 }}>
-                  <div className="picker-menu-actions">
-                    <button type="button" onClick={() => setSelectedGrades([])}>All</button>
-                    <button type="button" onClick={() => setSelectedGrades([])}>Clear</button>
-                  </div>
-                  {gradeOptions.map((g) => (
-                    <label key={g}>
-                      <input
-                        type="checkbox"
-                        checked={selectedGrades.length === 0 || selectedGrades.includes(g)}
-                        onChange={() =>
-                          setSelectedGrades((prev) => {
-                            // If currently "all" (empty = all), clicking one grade means exclude others
-                            const effective = prev.length === 0 ? [...gradeOptions] : prev;
-                            const next = effective.includes(g) ? effective.filter((x) => x !== g) : [...effective, g];
-                            return next.length === gradeOptions.length ? [] : next;
-                          })
-                        }
-                      />
-                      <span>{g === "HS" ? "High School" : g === "MS" ? "Middle School" : "Elementary"}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
+            {availableGrades.length > 1 ? (
+              <div className="seg-toggle">
+                <button type="button" className={!activeGrade ? "active" : ""} onClick={() => selectGrade(null)}>
+                  All
+                </button>
+                {availableGrades.map((g) => (
+                  <button key={g} type="button" className={activeGrade === g ? "active" : ""} onClick={() => selectGrade(g)}>
+                    {gradeShortLabel(g)}
+                  </button>
+                ))}
+              </div>
+            ) : availableGrades.length === 1 ? (
+              <div className="grade-static">{gradeShortLabel(availableGrades[0]!)}</div>
+            ) : (
+              <div className="grade-static grade-na">N/A</div>
+            )}
           </div>
         </div>
         <div className="filter-field">
@@ -3151,6 +3180,40 @@ function EventsPageInner() {
             )}
           </div>
         </div>
+        <div className="filter-section">
+          <div className="filter-section-title">Time</div>
+          <div className="seg-toggle">
+            <button className={eventWindow === "near" ? "active" : ""} onClick={() => setEventWindow("near")}>
+              Near today
+            </button>
+            <button className={eventWindow === "upcoming" ? "active" : ""} onClick={() => setEventWindow("upcoming")}>
+              Upcoming
+            </button>
+            <button className={eventWindow === "allSeason" ? "active" : ""} onClick={() => setEventWindow("allSeason")}>
+              All
+            </button>
+          </div>
+        </div>
+        <div className="filter-section">
+          <div className="filter-section-title">Type</div>
+          <div className="seg-toggle">
+            <button className={!level ? "active" : ""} onClick={() => setLevel("")}>
+              All
+            </button>
+            <button className={level === "World" ? "active" : ""} onClick={() => setQuickFilter("World", eventWindow)}>
+              Worlds
+            </button>
+            <button className={level === "Signature" ? "active" : ""} onClick={() => setQuickFilter("Signature", eventWindow)}>
+              Signature
+            </button>
+            <button className={level === "Championship" ? "active" : ""} onClick={() => setQuickFilter("Championship", eventWindow)}>
+              Championships
+            </button>
+            <button className={level === "Other" ? "active" : ""} onClick={() => setLevel("Other")}>
+              Other
+            </button>
+          </div>
+        </div>
         <div className="filter-field">
           <span>Sort</span>
           <div className="picker-menu">
@@ -3185,11 +3248,11 @@ function EventsPageInner() {
   );
 
   return (
-    <section className="page">
+    <section className={`page${filterLayout === "sidebar" ? " events-page-wide" : ""}`}>
       <div className="events-title-row">
         <PageTitle icon={<CalendarDays />} title="Events" />
         <button
-          className="icon-button"
+          className="icon-button event-filter-layout-toggle"
           onClick={() => setFilterLayout((layout) => (layout === "sidebar" ? "inline" : "sidebar"))}
           aria-label={filterLayout === "sidebar" ? "Use compact filters" : "Use sidebar filters"}
           title={filterLayout === "sidebar" ? "Compact filters" : "Sidebar filters"}
@@ -3202,73 +3265,74 @@ function EventsPageInner() {
         <Panel title="Event List" icon={<CalendarDays />}>
           <Status loading={loading} error={error} />
           <div className="event-quick-search">
-            <label className="search-field">
-              <Search size={16} />
+            <label className="search-field event-search-field">
+              <Search size={16} className="event-search-icon" />
               <input
                 value={quickSearch}
                 onChange={(event) => setQuickSearch(event.target.value)}
-                onKeyDown={handleQuickSearchKey}
-                placeholder="Quick search event name"
+                placeholder="Search events by name"
               />
+              {!!quickSearch.trim() && (
+                <button type="button" className="event-search-clear" onClick={() => setQuickSearch("")} aria-label="Clear search">
+                  <X size={15} />
+                </button>
+              )}
             </label>
-            {!!quickSearch.trim() && (
-              <div className="quick-search-results">
-                {quickResults.map((event, index) => (
-                  <button
-                    key={event.id}
-                    className={index === activeQuickResult ? "active" : ""}
-                    type="button"
-                    onMouseEnter={() => setActiveQuickResult(index)}
-                    onClick={() => openQuickResult(event)}
-                  >
-                    <span>{highlightMatch(event.name, quickSearch)}</span>
-                    <small>{formatEventDateRange(event.start, event.end)}</small>
-                  </button>
-                ))}
-                {!quickResults.length && <div className="quick-search-empty">No matching event names.</div>}
-                {quickSearchLimit < quickResultTotal && (
-                  <button type="button" className="show-more-results" onClick={() => setQuickSearchLimit((limit) => limit + 3)}>
-                    Show more
-                  </button>
-                )}
-              </div>
+            {!loading && (
+              <span className="event-search-count">
+                {searchedEvents.length.toLocaleString()} {searchedEvents.length === 1 ? "event" : "events"}
+              </span>
             )}
           </div>
-          {isPastSeasonView ? (
-            <PastSeasonEventView
-              events={visibleEvents}
-              loading={loading}
-              showSeason={!selectedSeasonIds.length || allSeasonsSelected}
-              showGrade
-              dateDir={pastSeasonDateDir}
-              onDateDirToggle={() => setPastSeasonDateDir((d) => (d === "asc" ? "desc" : "asc"))}
-            />
-          ) : (
-            <>
-              <EventTable events={pageEvents} loading={loading} showPriority showGrade showSeason={!selectedSeasonIds.length || allSeasonsSelected} />
-              {!loading && (
-                <div className="pager">
-                  <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
-                    <ChevronLeft size={16} />
-                  </button>
-                  <span>
-                    Page {page.toLocaleString()} of {totalPages.toLocaleString()}
-                  </span>
-                  <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} aria-label="Next page">
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              )}
-            </>
-          )}
+          <CrossFade
+            trigger={`${selectedSeasonIds.join(",")}|${selectedProgramIds.join(",")}|${selectedGrades.join(",")}|${selectedRegionKeys.join(",")}|${level}|${eventWindow}|${sort}|${pastSeasonDateDir}|${page}`}
+          >
+            {isPastSeasonView ? (
+              <PastSeasonEventView
+                events={searchedEvents}
+                loading={loading}
+                showSeason={!selectedSeasonIds.length || allSeasonsSelected}
+                showGrade
+                dateDir={pastSeasonDateDir}
+                onDateDirToggle={() => setPastSeasonDateDir((d) => (d === "asc" ? "desc" : "asc"))}
+              />
+            ) : (
+              <>
+                <EventTable events={pageEvents} loading={loading} showPriority showGrade showSeason={!selectedSeasonIds.length || allSeasonsSelected} />
+                {!loading && (
+                  <div className="pager">
+                    <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span>
+                      Page {page.toLocaleString()} of {totalPages.toLocaleString()}
+                    </span>
+                    <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} aria-label="Next page">
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </CrossFade>
         </Panel>
         {filterLayout === "sidebar" && (
-          <aside className="event-filter-sidebar">
+          <aside className={`event-filter-sidebar ${mobileFiltersOpen ? "mobile-open" : ""}`}>
             <div className="event-filter-sidebar-title">
-              Filters
+              <button
+                type="button"
+                className="event-filter-mobile-toggle"
+                onClick={() => setMobileFiltersOpen((open) => !open)}
+                aria-expanded={mobileFiltersOpen}
+              >
+                <ListFilter size={15} />
+                <span>Filters</span>
+                <ChevronDown size={15} className="event-filter-chevron" />
+              </button>
+              <span className="event-filter-title-text">Filters</span>
               <button type="button" className="reset-filters-btn" onClick={resetFilters}>Reset to defaults</button>
             </div>
-            {filterControls}
+            <div className="event-filter-body">{filterControls}</div>
           </aside>
         )}
       </div>
@@ -3422,19 +3486,18 @@ function EventTable({
 }) {
   const showProgram = showProgramProp ?? !compact;
   const showLevel = !compact && !showPriority;
-  const columnCount = 3 + (showPriority ? 1 : 0) + (showProgram ? 1 : 0) + (showSeason ? 1 : 0) + (showLevel ? 1 : 0) + (showGrade ? 1 : 0);
+  const columnCount = 2 + (showPriority ? 1 : 0) + (showProgram ? 1 : 0) + (showSeason ? 1 : 0) + (showLevel ? 1 : 0) + (showGrade ? 1 : 0);
 
   return (
-    <table>
+    <table className="event-table">
       <thead>
         <tr>
           <th>Event</th>
-          {showPriority && <th>Priority</th>}
-          {showProgram && <th>Program</th>}
+          {showPriority && <th className="event-col-priority">Priority</th>}
+          {showProgram && <th className="event-col-program">Program</th>}
           {showGrade && <th className="grade-col">Grade</th>}
-          {showSeason && <th>Season</th>}
-          <th>Location</th>
-          <th>
+          {showSeason && <th className="event-col-season">Season</th>}
+          <th className="event-col-dates">
             {onDateSortToggle ? (
               <button type="button" className="sort-col-btn" onClick={onDateSortToggle}>
                 Dates {dateSortDir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -3443,7 +3506,7 @@ function EventTable({
               "Dates"
             )}
           </th>
-          {showLevel && <th>Level</th>}
+          {showLevel && <th className="event-col-level">Level</th>}
         </tr>
       </thead>
       {loading ? (
@@ -3472,9 +3535,8 @@ function EventTable({
                 </td>
               )}
               {showSeason && <td>{shortSeasonName(event.season.name)}</td>}
-              <td>{locationLine(event)}</td>
-              <td>
-                <span className="date-range">{formatEventDateRange(event.start, event.end)}</span>
+              <td className="event-date-cell">
+                <span className="date-range">{formatEventDateRangeShort(event.start, event.end)}</span>
               </td>
               {showLevel && (
                 <td>
@@ -3516,6 +3578,22 @@ function TeamsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [teamView, setTeamView] = useState<"grid" | "list">(() => {
+    if (typeof localStorage === "undefined") return "grid";
+    return localStorage.getItem("teamsView") === "list" ? "list" : "grid";
+  });
+  const [skillsByTeam, setSkillsByTeam] = useState<Map<number, number>>(new Map());
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const seasonsAsync = useAsync(() => api.robotEventsSeasons({ per_page: 250 }), []);
+  const programSeasonId = useMemo(() => {
+    const pid = Number(program);
+    if (!pid) return null;
+    return (
+      (seasonsAsync.data?.data ?? [])
+        .filter((season) => season.program?.id === pid)
+        .sort((a, b) => b.id - a.id)[0]?.id ?? null
+    );
+  }, [seasonsAsync.data, program]);
   const reloadTeamsRef = useRef<() => void>(() => {});
   const cacheKey = cachedTeamsKey(program, registered);
   const committedSearch = submittedSearch.trim();
@@ -3733,6 +3811,45 @@ function TeamsPage() {
   }, [search]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem("teamsView", teamView);
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+  }, [teamView]);
+
+  // World Skills scores load in the background after the team list, keyed by the
+  // current program's season + grade levels. The table shows a skeleton until the
+  // map arrives. Results are session-cached (loadWorldSkills) so this is cheap.
+  useEffect(() => {
+    const grades = (GRADES_BY_PROGRAM[program] ?? []).map((code) => GRADE_CODE_TO_FULL[code]).filter(Boolean);
+    if (!programSeasonId || !grades.length) {
+      setSkillsByTeam(new Map());
+      setSkillsLoading(false);
+      return;
+    }
+    let live = true;
+    setSkillsLoading(true);
+    Promise.all(grades.map((grade) => loadWorldSkills(programSeasonId, grade).catch(() => [] as WorldSkillsEntry[])))
+      .then((lists) => {
+        if (!live) return;
+        const map = new Map<number, number>();
+        for (const list of lists) {
+          for (const entry of list) {
+            if (entry.team?.id != null) map.set(entry.team.id, entry.scores?.score ?? 0);
+          }
+        }
+        setSkillsByTeam(map);
+      })
+      .finally(() => {
+        if (live) setSkillsLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [programSeasonId, program]);
+
+  useEffect(() => {
     let live = true;
     const needle = debouncedQuickSearch.trim();
     if (!needle) {
@@ -3780,7 +3897,7 @@ function TeamsPage() {
 
   return (
     <section className="page">
-      <PageTitle icon={<Users />} title="Teams" subtitle="Search team numbers, names, regions, programs, grade levels, and registration status." />
+      <PageTitle icon={<Users />} title="Teams" />
       <SearchFilters
         search={search}
         setSearch={(value) => {
@@ -3803,8 +3920,9 @@ function TeamsPage() {
         }}
         regionControl={
           <div className="team-region-filter picker-menu">
-            <button type="button" onClick={() => setRegionMenuOpen((open) => !open)} aria-expanded={regionMenuOpen}>
-              {regionButtonLabel}
+            <button type="button" className="team-region-trigger" onClick={() => setRegionMenuOpen((open) => !open)} aria-expanded={regionMenuOpen}>
+              <MapPin size={14} />
+              <span>{regionButtonLabel}</span>
             </button>
             {regionMenuOpen && (
               <div className="picker-menu-list region-menu-list team-region-menu-list">
@@ -3856,39 +3974,79 @@ function TeamsPage() {
         title="Team List"
         icon={<Users />}
         action={
-          !isSearchingTeams && (
-            <span className="teams-cache-controls">
-              {lastUpdated && <span className="teams-cache-time">Updated {formatRelativeTime(lastUpdated)}</span>}
-              <CompareModeButton />
+          <span className="teams-list-controls">
+            <div className="team-view-toggle" role="group" aria-label="Team list view">
               <button
                 type="button"
-                className="teams-reload-btn"
-                onClick={() => reloadTeamsRef.current()}
-                disabled={refreshing}
-                title="Reload team list now"
+                className={teamView === "grid" ? "active" : ""}
+                onClick={() => setTeamView("grid")}
+                title="Grid view"
+                aria-label="Grid view"
+                aria-pressed={teamView === "grid"}
               >
-                <RotateCw size={13} className={refreshing ? "spin" : ""} />
-                {refreshing ? "Reloading..." : "Reload"}
+                <LayoutGrid size={14} />
               </button>
-            </span>
-          )
+              <button
+                type="button"
+                className={teamView === "list" ? "active" : ""}
+                onClick={() => setTeamView("list")}
+                title="List view"
+                aria-label="List view"
+                aria-pressed={teamView === "list"}
+              >
+                <List size={14} />
+              </button>
+            </div>
+            {!isSearchingTeams && (
+              <span className="teams-cache-controls">
+                {lastUpdated && <span className="teams-cache-time">Updated {formatRelativeTime(lastUpdated)}</span>}
+                <CompareModeButton />
+                <button
+                  type="button"
+                  className="teams-reload-btn"
+                  onClick={() => reloadTeamsRef.current()}
+                  disabled={refreshing}
+                  title="Reload team list now"
+                >
+                  <RotateCw size={13} className={refreshing ? "spin" : ""} />
+                  {refreshing ? "Reloading..." : "Reload"}
+                </button>
+              </span>
+            )}
+          </span>
         }
       >
         <Status loading={loading} error={error} />
         {refreshing && !loading && <div className="notice subtle">Updating cached teams...</div>}
-        <TeamTable teams={tableTeams} loading={loading} localPageSize={50} />
+        {teamView === "grid" ? (
+          <TeamGrid teams={tableTeams} loading={loading} localPageSize={50} />
+        ) : (
+          <TeamTable
+            teams={tableTeams}
+            loading={loading}
+            localPageSize={50}
+            splitName
+            skills={{
+              scoreByTeam: skillsByTeam,
+              // Show the skeleton while seasons resolve and skills fetch, but only
+              // for programs that actually have a World Skills leaderboard.
+              loading: (GRADES_BY_PROGRAM[program] ?? []).length > 0 && (seasonsAsync.loading || skillsLoading),
+            }}
+          />
+        )}
       </Panel>
     </section>
   );
 }
 
-function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number; divisionMap?: Map<number, string> | null }) {
+function TeamTable({ teams, loading, localPageSize, eventId, divisionMap, splitName = false, skills }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number; divisionMap?: Map<number, string> | null; splitName?: boolean; skills?: { scoreByTeam: Map<number, number>; loading: boolean } }) {
   const [page, setPage] = useState(1);
   const [expandedTeamId, setExpandedTeamId] = useState<number | null>(null);
   const compareMode = useComparePickMode();
   const quickViewFirst = useQuickViewFirst();
   const totalPages = localPageSize ? Math.max(1, Math.ceil(teams.length / localPageSize)) : 1;
   const visibleTeams = localPageSize ? teams.slice((page - 1) * localPageSize, page * localPageSize) : teams;
+  const colCount = 8 + (splitName ? 1 : 0) + (skills ? 1 : 0);
 
   useEffect(() => {
     setPage(1);
@@ -3898,14 +4056,16 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
   return (
     <>
       <ComparePickHint />
-      <table className="team-table">
+      <table className={`team-table${splitName || skills ? " team-table-dir" : ""}`}>
         <thead>
           <tr>
             <th>Team</th>
+            {splitName && <th>Name</th>}
             <th>Program</th>
             <th>Level</th>
             <th>Organization</th>
             <th>Location</th>
+            {skills && <th className="team-skills-col">Skills</th>}
             <th>
               {divisionMap
                 ? "Division"
@@ -3917,7 +4077,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
           </tr>
         </thead>
         {loading ? (
-          <LoadingTable columns={8} />
+          <LoadingTable columns={colCount} />
         ) : (
           <tbody>
             {visibleTeams.map((team) => {
@@ -3941,8 +4101,9 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
                         teamName={team.team_name}
                         className="team-number"
                       />
-                      {team.team_name && <span>{team.team_name}</span>}
+                      {!splitName && team.team_name && <span>{team.team_name}</span>}
                     </td>
+                    {splitName && <td className="truncate-cell team-name-cell">{team.team_name || "—"}</td>}
                     <td>
                       <ProgramBadge program={team.program} />
                     </td>
@@ -3951,6 +4112,17 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
                     </td>
                     <td className="truncate-cell">{team.organization || "-"}</td>
                     <td className="truncate-cell">{locationLine(team)}</td>
+                    {skills && (
+                      <td className="team-skills-col">
+                        {skills.loading ? (
+                          <Skeleton className="h-3.5 w-9" />
+                        ) : skills.scoreByTeam.has(team.id) ? (
+                          <span className="team-skills-score">{skills.scoreByTeam.get(team.id)}</span>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                    )}
                     <td>{divisionMap ? (divisionMap.get(team.id) ?? "—") : (team.registered ? "Registered" : "Inactive")}</td>
                     <td
                       className="quick-look-col"
@@ -3960,7 +4132,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
                       }}
                     >
                       <button type="button" className={`quick-look-btn${expanded ? " active" : ""}`} title="Quick look" aria-label={`Quick look for ${team.number}`}>
-                        <PanelRight size={14} />
+                        <Eye size={14} />
                       </button>
                     </td>
                     <td className="compare-col" onClick={(e) => e.stopPropagation()}>
@@ -3974,7 +4146,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
                   </tr>
                   {expanded && (
                     <tr key={`${team.id}-details`} className="team-detail-row">
-                      <td colSpan={8}>
+                      <td colSpan={colCount}>
                         <div className="team-detail-content">
                           <div className="team-detail-top">
                             <div>
@@ -3999,7 +4171,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
             })}
             {!teams.length && (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={colCount}>
                   <Empty />
                 </td>
               </tr>
@@ -4014,6 +4186,101 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap }: { te
         </div>
       )}
     </>
+  );
+}
+
+function TeamGrid({ teams, loading, localPageSize }: { teams: Team[]; loading: boolean; localPageSize?: number }) {
+  const [page, setPage] = useState(1);
+  const compareMode = useComparePickMode();
+  const totalPages = localPageSize ? Math.max(1, Math.ceil(teams.length / localPageSize)) : 1;
+  const visibleTeams = localPageSize ? teams.slice((page - 1) * localPageSize, page * localPageSize) : teams;
+
+  useEffect(() => {
+    setPage(1);
+  }, [teams, localPageSize]);
+
+  return (
+    <>
+      <ComparePickHint />
+      {loading ? (
+        <div className="team-grid">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} className="team-card team-card-skeleton">
+              <div className="team-card-top">
+                <Skeleton className="h-6 w-16" />
+                <div className="team-card-id">
+                  <Skeleton className="h-3.5 w-32" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+              </div>
+              <Skeleton className="h-3 w-full" />
+            </div>
+          ))}
+        </div>
+      ) : !teams.length ? (
+        <div className="team-grid-empty">
+          <Empty />
+        </div>
+      ) : (
+        <div className="team-grid">
+          {visibleTeams.map((team) => (
+            <TeamCard key={team.id} team={team} compareMode={compareMode} />
+          ))}
+        </div>
+      )}
+      {!loading && localPageSize && (
+        <div className="pager-with-total">
+          <span>{teams.length.toLocaleString()} teams loaded</span>
+          <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
+        </div>
+      )}
+    </>
+  );
+}
+
+function TeamCard({ team, compareMode }: { team: Team; compareMode: boolean }) {
+  const programCode = programSlug(team.program);
+  return (
+    <div
+      className={`team-card${compareMode ? " compare-pick-card" : ""}`}
+      onClick={() => {
+        if (compareMode) return;
+        navigate(teamPath(team));
+      }}
+    >
+      <div className="team-card-top">
+        <CompareTeamLink
+          teamId={team.id}
+          teamNumber={team.number}
+          programCode={programCode}
+          teamName={team.team_name}
+          className="team-card-num"
+        />
+        <div className="team-card-id">
+          {team.team_name && <span className="team-card-name">{team.team_name}</span>}
+          <span className="team-card-org">{team.organization || "No organization listed"}</span>
+        </div>
+        <span className="team-card-compare" onClick={(e) => e.stopPropagation()}>
+          <CompareRowBtn
+            teamId={team.id}
+            teamNumber={team.number}
+            programCode={programCode}
+            teamName={team.team_name ?? undefined}
+          />
+        </span>
+      </div>
+      <div className="team-card-foot">
+        <span className="team-card-loc" title={locationLine(team)}>
+          {locationLine(team)}
+          {team.grade ? ` · ${gradeCode(team.grade)}` : ""}
+        </span>
+        <span
+          className={`team-card-status${team.registered ? " ok" : ""}`}
+          title={team.registered ? "Registered" : "Inactive"}
+        />
+        <ProgramBadge program={team.program} />
+      </div>
+    </div>
   );
 }
 
@@ -4103,11 +4370,26 @@ function SearchFilters({
 }) {
   const [visibleCount, setVisibleCount] = useState(20);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Reset visible count when the result set changes (new search query)
   useEffect(() => {
     setVisibleCount(20);
   }, [quickResults]);
+
+  // "/" focuses the team search (mirrors the kbd hint), unless already typing.
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const el = document.activeElement;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement | null)?.isContentEditable) return;
+      event.preventDefault();
+      inputRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const handleQuickScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -4132,6 +4414,7 @@ function SearchFilters({
         <label>
           <Search size={16} />
           <input
+            ref={inputRef}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             onFocus={onFocus}
@@ -4147,10 +4430,10 @@ function SearchFilters({
             }}
             placeholder={placeholder}
           />
+          {!search && (
+            <kbd className="team-search-kbd" aria-hidden="true">/</kbd>
+          )}
         </label>
-        <button type="submit" className="team-search-submit" aria-label="Search teams">
-          <Search size={16} />
-        </button>
         {quickOpen && !!search.trim() && (
           <div className="team-quick-results">
             <div
@@ -4178,13 +4461,19 @@ function SearchFilters({
           </div>
         )}
       </div>
-      <select value={program} onChange={(event) => setProgram(event.target.value)}>
+      <div className="team-prog-seg" role="group" aria-label="Program">
         {programOptions.map((option) => (
-          <option key={option.value || "all"} value={option.value}>
-            {option.label}
-          </option>
+          <button
+            key={option.value || "all"}
+            type="button"
+            className={program === option.value ? "active" : ""}
+            aria-pressed={program === option.value}
+            onClick={() => setProgram(option.value)}
+          >
+            {option.value === "" ? "All" : option.label}
+          </button>
         ))}
-      </select>
+      </div>
       {regionControl}
       {children}
     </form>
@@ -4228,7 +4517,6 @@ function EventDetail({ param }: { param: string }) {
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
   const [teamSearch, setTeamSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const tabLayout = useTabLayout();
   const orgs = useOrgs();
   const primaryOrg = orgs[0] ?? null;
   const lookup = useAsync(async () => {
@@ -4242,6 +4530,9 @@ function EventDetail({ param }: { param: string }) {
   const id = event ? String(event.id) : "";
   const divisions = useMemo(() => [...(event?.divisions ?? [])].sort((a, b) => (a.order ?? a.id) - (b.order ?? b.id)), [event]);
   const division = selectedDivision ?? divisions[0]?.id ?? 1;
+  // While the event is live, silently re-poll the data that changes during
+  // competition (matches, rankings, skills, awards) so it updates without a reload.
+  const liveRefresh = event && eventIsLive(event) ? liveEventRefreshMs : 0;
   // Staggered fetch priority to avoid a thundering herd (and 429s) on mount.
   // matches/teams (and the focus-team view below) load immediately; everything
   // else is deferred in ~0.5s tiers so the API isn't hit with ~8 parallel
@@ -4252,6 +4543,8 @@ function EventDetail({ param }: { param: string }) {
       return collectAllPages<Match>((page) => api.eventMatches(id, division, { per_page: 250, page }));
     },
     [id, division, event?.id],
+    0,
+    liveRefresh,
   );
   const teams = useAsync(
     async () => {
@@ -4267,6 +4560,7 @@ function EventDetail({ param }: { param: string }) {
     },
     [id, division, event?.id],
     500,
+    liveRefresh,
   );
   const awards = useAsync(
     async () => {
@@ -4275,6 +4569,7 @@ function EventDetail({ param }: { param: string }) {
     },
     [id, event?.id],
     500,
+    liveRefresh,
   );
   const skills = useAsync(
     async () => {
@@ -4283,6 +4578,7 @@ function EventDetail({ param }: { param: string }) {
     },
     [id, event?.id],
     1000,
+    liveRefresh,
   );
   // For multi-division events: load rankings for every division in parallel so we
   // can map each team to its division on the Teams tab.
@@ -4323,6 +4619,8 @@ function EventDetail({ param }: { param: string }) {
       return collectAllPages<Match>((page) => api.teamMatches(focusTeam.id, { "event[]": [Number(id)], per_page: 250, page }));
     },
     [focusTeam?.id, id, event?.id],
+    0,
+    liveRefresh,
   );
 
   const eventInfo = useAsync(
@@ -4491,12 +4789,11 @@ function EventDetail({ param }: { param: string }) {
         </div>
       </div>
 
-      <div className={`view-tabs view-tabs-${tabLayout}`}>
+      <div className="view-tabs view-tabs-horizontal">
       <Tabs
         active={tab}
         onChange={(next) => setTab(next as EventDetailTab)}
-        orientation={tabLayout}
-        showLayoutToggle
+        orientation="horizontal"
         action={<CompareModeButton />}
         tabs={[
           ...(focusTeam
@@ -4649,9 +4946,9 @@ function formatEventDate(start: string | undefined, end: string | undefined): st
   }
 }
 
-function EventStatCard({ label, value }: { label: string; value: ReactNode }) {
+function EventStatCard({ label, value, wide }: { label: string; value: ReactNode; wide?: boolean }) {
   return (
-    <div className="event-stat-card">
+    <div className={`event-stat-card${wide ? " event-stat-card--wide" : ""}`}>
       <span className="event-stat-label">{label}</span>
       <strong className="event-stat-value">{value}</strong>
     </div>
@@ -4796,6 +5093,16 @@ function EventInfoTab({
 
   const webcast = infoData?.webcast ?? null;
   const hasWebcastLinks = (webcast?.links?.length ?? 0) > 0;
+  const isUrl = (s?: string | null) => !!s && /^https?:\/\//i.test(s.trim());
+  // URLs to render as clickable links: the explicit links, or a description
+  // that is itself just a URL. Each shows as the URL + open-in-new-tab icon.
+  const webcastUrls = hasWebcastLinks
+    ? webcast!.links.map((l) => l.url)
+    : isUrl(webcast?.description)
+      ? [webcast!.description!.trim()]
+      : [];
+  // Show the description as text only when it's prose, not a bare URL we link.
+  const webcastDescText = webcast?.description && !isUrl(webcast.description) ? webcast.description : null;
 
   return (
     <div className="event-info-tab">
@@ -4812,7 +5119,16 @@ function EventInfoTab({
 
       <div className="event-info-grid">
         {/* Left column — event details + webcast */}
-        <Panel title="Event Info" icon={<Info size={15} />}>
+        <Panel
+          title="Event Info"
+          icon={<Info size={15} />}
+          action={
+            <a href={calendarUrl} target="_blank" rel="noopener noreferrer" className="event-info-calendar-link">
+              <CalendarDays size={12} />
+              Add to Calendar
+            </a>
+          }
+        >
           <dl className="about-profile">
             <AboutProfileRow label="Date">{formatEventDate(event.start, event.end)}</AboutProfileRow>
             {event.level && (
@@ -4826,12 +5142,6 @@ function EventInfoTab({
             <AboutProfileRow label="Season">{event.season?.name ?? "—"}</AboutProfileRow>
             <AboutProfileRow label="SKU">{event.sku ?? String(event.id)}</AboutProfileRow>
           </dl>
-          <div className="event-info-calendar-row">
-            <a href={calendarUrl} target="_blank" rel="noopener noreferrer" className="event-info-calendar-link">
-              <CalendarDays size={12} />
-              Add to Calendar
-            </a>
-          </div>
 
           {/* Webcast section */}
           {(webcast || loading) && (
@@ -4844,26 +5154,21 @@ function EventInfoTab({
                 <div className="event-info-webcast-desc">Loading…</div>
               ) : webcast ? (
                 <>
-                  {webcast.description && (
-                    <div className="event-info-webcast-desc">{webcast.description}</div>
+                  {webcastDescText && (
+                    <div className="event-info-webcast-desc">{webcastDescText}</div>
                   )}
-                  {hasWebcastLinks && (
-                    <div className="event-info-webcast-links">
-                      {webcast.links.map((link, i) => (
+                  {webcastUrls.length > 0 && (
+                    <div className="event-info-webcast-urls">
+                      {webcastUrls.map((url, i) => (
                         <a
                           key={i}
-                          href={link.url}
+                          href={url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="event-info-webcast-link"
+                          className="event-info-webcast-url"
                         >
-                          {link.platform === "youtube" ? (
-                            <Youtube size={13} />
-                          ) : (
-                            <Tv2 size={13} />
-                          )}
-                          {link.label || "Watch Live"}
-                          <ExternalLink size={11} />
+                          <span className="event-info-webcast-url-text">{url}</span>
+                          <ExternalLink size={12} />
                         </a>
                       ))}
                     </div>
@@ -4907,28 +5212,28 @@ function EventInfoTab({
         <div className="event-stats-grid">
           <Panel title="Ranking Stats" icon={<BarChart3 size={15} />}>
             {statsRankings.loading ? (
-              <div className="event-stat-card"><span className="event-stat-label">Loading…</span></div>
+              <div className="event-stat-empty">Loading…</div>
             ) : rankStats ? (
               isIqProgram(event) ? (
-                <>
+                <div className="event-stat-cells">
                   <EventStatCard label="Teams" value={rankStats.teams} />
                   <EventStatCard label="Avg Rank" value={`#${rankStats.avgRank.toFixed(1)}`} />
                   <EventStatCard label="Avg Score" value={rankStats.avgScore.toFixed(1)} />
                   <EventStatCard label="High Score" value={rankStats.maxHighScore} />
-                </>
+                </div>
               ) : (
-                <>
-                  <EventStatCard label="Teams" value={rankStats.teams} />
+                <div className="event-stat-cells">
+                  <EventStatCard label="Teams" value={rankStats.teams} wide />
                   <EventStatCard label="Avg WP" value={rankStats.avgWp.toFixed(1)} />
                   <EventStatCard label="Avg AP" value={rankStats.avgAp.toFixed(1)} />
                   <EventStatCard label="Avg AWP" value={rankStats.avgAwp.toFixed(2)} />
                   <EventStatCard label="Total WP" value={rankStats.totalWp.toFixed(0)} />
                   <EventStatCard label="Total AP" value={rankStats.totalAp.toFixed(0)} />
                   <EventStatCard label="Total AWP" value={rankStats.totalAwp.toFixed(0)} />
-                </>
+                </div>
               )
             ) : (
-              <div className="event-stat-card"><span className="event-stat-label muted">No ranking data</span></div>
+              <div className="event-stat-empty">No ranking data</div>
             )}
           </Panel>
 
@@ -4936,31 +5241,29 @@ function EventInfoTab({
             <Panel title="Skills" icon={<Zap size={15} />}>
               {/* Event Skills section */}
               {statsSkills.loading ? (
-                <div className="event-stat-card"><span className="event-stat-label">Loading…</span></div>
+                <div className="event-stat-empty">Loading…</div>
               ) : skillStats ? (
-                <div className="event-stat-section">
-                  <EventStatCard label="Avg Combined" value={skillStats.avgCombined.toFixed(1)} />
+                <div className="event-stat-cells">
+                  <EventStatCard label="Avg Combined" value={skillStats.avgCombined.toFixed(1)} wide />
                   <EventStatCard label="Avg Driver" value={skillStats.avgDriver.toFixed(1)} />
                   <EventStatCard label="Avg Programming" value={skillStats.avgProg.toFixed(1)} />
                 </div>
               ) : null}
 
-              {/* World Skills section — vertical label outside the row cards */}
+              {/* World Skills section — vertical label + bracket outside the rows */}
               {(statsWorldSkills.loading || worldSkillsStats) && (
                 <div className="event-stat-world-group">
                   <span className="event-stat-world-label">World Skills</span>
-                  <div className="event-stat-section">
-                    {statsWorldSkills.loading || statsRankings.loading ? (
-                      <div className="event-stat-card"><span className="event-stat-label">Loading…</span></div>
-                    ) : worldSkillsStats ? (
-                      <>
-                        <EventStatCard label="Avg Rank" value={`#${Math.round(worldSkillsStats.avgRank)}`} />
-                        <EventStatCard label="Avg Combined" value={worldSkillsStats.avgCombined.toFixed(1)} />
-                        <EventStatCard label="Avg Driver" value={worldSkillsStats.avgDriver.toFixed(1)} />
-                        <EventStatCard label="Avg Programming" value={worldSkillsStats.avgProg.toFixed(1)} />
-                      </>
-                    ) : null}
-                  </div>
+                  {statsWorldSkills.loading || statsRankings.loading ? (
+                    <div className="event-stat-empty">Loading…</div>
+                  ) : worldSkillsStats ? (
+                    <div className="event-stat-cells">
+                      <EventStatCard label="Avg Rank" value={`#${Math.round(worldSkillsStats.avgRank)}`} />
+                      <EventStatCard label="Avg Combined" value={worldSkillsStats.avgCombined.toFixed(1)} />
+                      <EventStatCard label="Avg Driver" value={worldSkillsStats.avgDriver.toFixed(1)} />
+                      <EventStatCard label="Avg Programming" value={worldSkillsStats.avgProg.toFixed(1)} />
+                    </div>
+                  ) : null}
                 </div>
               )}
             </Panel>
@@ -4980,21 +5283,6 @@ function shortMonthYear(ts: number) {
   return new Date(ts).toLocaleDateString(undefined, { month: "short", year: "2-digit" });
 }
 
-function useMeasuredWidth() {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const update = () => setWidth(el.clientWidth);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return { ref, width };
-}
-
 type ChartSeries = { name: string; color: string; values: Array<number | null> };
 
 function starPoints(cx: number, cy: number, outer: number, inner: number) {
@@ -5010,10 +5298,10 @@ function starPoints(cx: number, cy: number, outer: number, inner: number) {
 function TrendChart({
   labels,
   tips,
+  links,
   series,
   markers,
-  height = 140,
-  area = false,
+  height = 160,
   yFormat = (n: number) => String(Math.round(n)),
   yFloor,
   yCeil,
@@ -5021,6 +5309,7 @@ function TrendChart({
 }: {
   labels: string[];
   tips?: string[];
+  links?: Array<string | null>;
   series: ChartSeries[];
   markers?: boolean[];
   height?: number;
@@ -5030,134 +5319,178 @@ function TrendChart({
   yCeil?: number;
   yMaxPad?: number;
 }) {
-  const { ref, width } = useMeasuredWidth();
-  const [hover, setHover] = useState<number | null>(null);
-  const n = labels.length;
+  const uid = useId().replace(/:/g, "");
+  // Index of the point currently under the cursor, plus a live ref to the row
+  // data, so a keyboard Enter while hovering can open that event (mirrors click).
+  const activeIndexRef = useRef<number | null>(null);
+  const dataRef = useRef<Array<Record<string, number | string | boolean | null>>>([]);
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      const idx = activeIndexRef.current;
+      if (idx == null) return;
+      const link = dataRef.current[idx]?._link;
+      if (typeof link === "string" && link) navigate(link);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const allValues = series.flatMap((s) => s.values.filter((v): v is number => v != null));
 
-  const padL = 44;
-  const padR = 10;
-  const padT = 20;
-  const padB = 10;
-  const W = Math.max(width, 1);
-  const innerW = Math.max(W - padL - padR, 1);
-  const innerH = Math.max(height - padT - padB, 1);
-
-  const lo = yFloor ?? (allValues.length ? Math.min(...allValues) : 0);
-  let hi = yCeil ?? (allValues.length ? Math.max(...allValues) : 1);
-  if (hi === lo) {
-    hi = lo + 1;
-  } else if (yCeil == null) {
-    hi = hi + (hi - lo) * yMaxPad;
+  if (!labels.length || !allValues.length) {
+    return <div className="about-chart-empty">No data for this season.</div>;
   }
 
-  const xAt = (i: number) => (n <= 1 ? padL + innerW / 2 : padL + (i / (n - 1)) * innerW);
-  const yAt = (v: number) => padT + innerH - ((v - lo) / (hi - lo)) * innerH;
+  const lo = yFloor ?? Math.min(...allValues);
+  let hi = yCeil ?? Math.max(...allValues);
+  if (hi === lo) hi = lo + 1;
+  else if (yCeil == null) hi = hi + (hi - lo) * yMaxPad;
 
-  if (!n || !allValues.length) {
-    return (
-      <div ref={ref} className="about-chart-empty">
-        No data for this season.
-      </div>
-    );
-  }
+  // recharts wants flat row objects; use index-safe series keys (s0, s1, …) so
+  // the generated --color-* CSS vars stay valid, with the display label, event
+  // tip, link, and marquee flag stashed alongside each row. The x-axis is keyed
+  // on a unique per-row `_key` (not the formatted month) so that two events in
+  // the same month don't collapse onto one category — which would desync the
+  // hover cursor from the active point.
+  const config: ChartConfig = {};
+  series.forEach((s, i) => {
+    config[`s${i}`] = { label: s.name, color: s.color };
+  });
 
-  const hoverYs =
-    hover != null
-      ? series
-          .map((s) => s.values[hover])
-          .filter((v): v is number => v != null)
-          .map((v) => yAt(v))
-      : [];
-  const hoverY = hoverYs.length ? Math.min(...hoverYs) : padT;
+  const data = labels.map((label, i) => {
+    const row: Record<string, number | string | boolean | null> = {
+      _key: String(i),
+      _label: label,
+      _tip: tips?.[i] ?? label,
+      _link: links?.[i] ?? null,
+      _marquee: !!markers?.[i],
+    };
+    series.forEach((s, si) => {
+      row[`s${si}`] = s.values[i];
+    });
+    return row;
+  });
+  dataRef.current = data;
+
+  const goToEvent = (index: number | string | undefined) => {
+    if (index == null) return;
+    const i = typeof index === "number" ? index : Number(index);
+    if (!Number.isFinite(i)) return;
+    const link = data[i]?._link;
+    if (typeof link === "string" && link) navigate(link);
+  };
 
   return (
-    <div ref={ref} className="about-chart" onMouseLeave={() => setHover(null)}>
-      {width > 0 && (
-        <svg width={W} height={height} role="img" aria-hidden="true">
-          {[0, 0.25, 0.5, 0.75, 1].map((t) => {
-            const y = padT + innerH * t;
-            const val = hi - t * (hi - lo);
-            return (
-              <g key={t}>
-                <line x1={padL} y1={y} x2={W - padR} y2={y} className="about-chart-grid" />
-                <text x={padL - 16} y={y + 3} textAnchor="end" className="about-chart-ylabel">
-                  {yFormat(val)}
-                </text>
-              </g>
-            );
-          })}
-          {series.map((s, si) => {
-            const pts = s.values.map((v, i) => (v == null ? null : { x: xAt(i), y: yAt(v) }));
-            const segments: string[] = [];
-            let cur: string[] = [];
-            pts.forEach((p) => {
-              if (p) {
-                cur.push(`${cur.length ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`);
-              } else if (cur.length) {
-                segments.push(cur.join(" "));
-                cur = [];
-              }
-            });
-            if (cur.length) segments.push(cur.join(" "));
-            const linePath = segments.join(" ");
-            const firstPt = pts.find((p) => p);
-            const lastPt = [...pts].reverse().find((p) => p);
-            const baseline = (padT + innerH).toFixed(1);
-            const areaPath =
-              area && firstPt && lastPt
-                ? `${linePath} L${lastPt.x.toFixed(1)} ${baseline} L${firstPt.x.toFixed(1)} ${baseline} Z`
-                : "";
-            return (
-              <g key={si}>
-                {area && areaPath && <path d={areaPath} fill={s.color} className="about-chart-area" />}
-                <path d={linePath} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-                {pts.map((p, i) => {
-                  if (!p) return null;
-                  const big = hover === i;
-                  if (markers?.[i]) {
-                    const outer = big ? 7 : 5.5;
-                    return (
-                      <polygon
-                        key={i}
-                        points={starPoints(p.x, p.y, outer, outer * 0.42)}
-                        fill="#fff"
-                        stroke={s.color}
-                        strokeWidth={2}
-                        strokeLinejoin="round"
-                      />
-                    );
-                  }
-                  return <circle key={i} cx={p.x} cy={p.y} r={big ? 4.5 : 3} fill="#fff" stroke={s.color} strokeWidth={2} />;
-                })}
-              </g>
-            );
-          })}
-          {hover != null && <line x1={xAt(hover)} y1={padT} x2={xAt(hover)} y2={padT + innerH} className="about-chart-guide" />}
-          {labels.map((_, i) => {
-            const bandW = n <= 1 ? innerW : innerW / (n - 1);
-            return (
-              <rect key={i} x={xAt(i) - bandW / 2} y={0} width={bandW} height={height} fill="transparent" onMouseEnter={() => setHover(i)} />
-            );
-          })}
-        </svg>
-      )}
-      <div className="about-chart-xaxis" style={{ paddingLeft: padL, paddingRight: padR }}>
-        <span>{labels[0]}</span>
-        {n > 1 && <span>{labels[n - 1]}</span>}
-      </div>
-      {hover != null && (
-        <div className={`about-chart-tip${hoverY < 70 ? " below" : ""}`} style={{ left: `${(xAt(hover) / W) * 100}%`, top: hoverY }}>
-          <strong>{tips?.[hover] ?? labels[hover]}</strong>
-          {series.map((s) => (
-            <span key={s.name}>
-              <i style={{ background: s.color }} /> {s.name}: <b>{s.values[hover] == null ? "—" : yFormat(s.values[hover] as number)}</b>
-            </span>
+    <ChartContainer config={config} className="w-full" style={{ height, aspectRatio: "auto" }}>
+      <AreaChart
+        accessibilityLayer
+        data={data}
+        margin={{ left: 4, right: 8, top: 8, bottom: 0 }}
+        onClick={(state) => goToEvent(state?.activeTooltipIndex ?? undefined)}
+        onMouseMove={(state) => {
+          const i = state?.activeTooltipIndex;
+          activeIndexRef.current = typeof i === "number" ? i : i != null ? Number(i) : null;
+        }}
+        onMouseLeave={() => {
+          activeIndexRef.current = null;
+        }}
+        className="[&_.recharts-surface]:cursor-pointer"
+      >
+        <defs>
+          {series.map((_, i) => (
+            <linearGradient key={i} id={`fill-${uid}-${i}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={`var(--color-s${i})`} stopOpacity={0.4} />
+              <stop offset="95%" stopColor={`var(--color-s${i})`} stopOpacity={0.04} />
+            </linearGradient>
           ))}
-        </div>
-      )}
-    </div>
+        </defs>
+        <CartesianGrid vertical={false} />
+        <XAxis
+          dataKey="_key"
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          minTickGap={24}
+          interval="preserveStartEnd"
+          tickFormatter={(v) => data[Number(v)]?._label as string ?? ""}
+        />
+        <YAxis width={44} tickLine={false} axisLine={false} tickMargin={4} domain={[lo, hi]} tickFormatter={(v) => yFormat(Number(v))} />
+        <ChartTooltip
+          cursor={{ strokeDasharray: "3 3" }}
+          content={(props) => {
+            const { active, payload } = props as unknown as {
+              active?: boolean;
+              payload?: ReadonlyArray<{
+                value?: number | null;
+                dataKey?: string;
+                color?: string;
+                name?: string;
+                payload?: { _tip?: string; _link?: string | null };
+              }>;
+            };
+            if (!active || !payload?.length) return null;
+            const row = payload[0]?.payload;
+            const rawTip = row?._tip ?? "";
+            const tip = rawTip.length > 20 ? `${rawTip.slice(0, 20).trimEnd()}…` : rawTip;
+            return (
+              <div className="grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+                <div className="font-medium">{tip}</div>
+                <div className="grid gap-1.5">
+                  {payload
+                    .filter((p) => p.value != null)
+                    .map((p) => (
+                      <div key={p.dataKey} className="flex w-full items-center justify-between gap-3">
+                        <span className="flex items-center gap-1.5">
+                          <span className="size-2 shrink-0 rounded-[2px]" style={{ background: p.color }} />
+                          <span className="text-muted-foreground">{config[p.dataKey as string]?.label ?? p.name}</span>
+                        </span>
+                        <span className="font-mono font-medium tabular-nums text-foreground">{yFormat(Number(p.value))}</span>
+                      </div>
+                    ))}
+                </div>
+                <div className="mt-0.5 flex items-center gap-1 border-t border-border/50 pt-1 text-muted-foreground">
+                  <CornerDownLeft className="size-3" /> to see more
+                </div>
+              </div>
+            );
+          }}
+        />
+        {series.map((_, i) => (
+          <Area
+            key={i}
+            dataKey={`s${i}`}
+            type="monotone"
+            stroke={`var(--color-s${i})`}
+            strokeWidth={2}
+            fill={`url(#fill-${uid}-${i})`}
+            connectNulls={false}
+            isAnimationActive={false}
+            activeDot={{ r: 4 }}
+            dot={(props) => {
+              const { cx, cy, stroke, payload, index } = props as {
+                cx?: number;
+                cy?: number;
+                stroke?: string;
+                payload?: { _marquee?: boolean };
+                index?: number;
+              };
+              if (cx == null || cy == null || !payload?._marquee) return <g key={index} />;
+              return (
+                <polygon
+                  key={index}
+                  points={starPoints(cx, cy, 6, 6 * 0.42)}
+                  fill="var(--surface)"
+                  stroke={stroke}
+                  strokeWidth={2}
+                  strokeLinejoin="round"
+                />
+              );
+            }}
+          />
+        ))}
+      </AreaChart>
+    </ChartContainer>
   );
 }
 
@@ -5165,23 +5498,22 @@ function StatCard({
   label,
   value,
   sub,
-  accent = "gray",
-  icon,
 }: {
   label: string;
   value: ReactNode;
   sub?: ReactNode;
+  // accent/icon kept in the type for existing call sites but no longer rendered —
+  // the minimalist treatment relies on typographic hierarchy, not icons/color.
   accent?: "blue" | "green" | "amber" | "red" | "gray";
   icon?: ReactNode;
 }) {
   return (
-    <div className="about-stat" data-accent={accent}>
-      <div className="about-stat-label">
-        {icon}
-        <span>{label}</span>
+    <div className="about-stat">
+      <span className="about-stat-label">{label}</span>
+      <div className="about-stat-figure">
+        <strong className="about-stat-value">{value}</strong>
+        {sub != null && <small className="about-stat-sub">{sub}</small>}
       </div>
-      <strong className="about-stat-value">{value}</strong>
-      {sub != null && <small className="about-stat-sub">{sub}</small>}
     </div>
   );
 }
@@ -5327,6 +5659,8 @@ function TeamAboutTab({
         const finalsScore = finalsScores.length ? Math.max(...finalsScores) : 0;
         return {
           name: ev?.name ?? r?.event.name ?? `Event ${eventId}`,
+          id: eventId,
+          sku: ev?.sku ?? null,
           date: dateOf(eventId),
           marquee: isMarqueeEvent(ev),
           rank: r?.rank ?? 0,
@@ -5364,6 +5698,8 @@ function TeamAboutTab({
     return [...byEvent.entries()]
       .map(([eventId, v]) => ({
         name: eventIndex.get(eventId)?.name ?? `Event ${eventId}`,
+        id: eventId,
+        sku: eventIndex.get(eventId)?.sku ?? null,
         date: dateOf(eventId),
         marquee: isMarqueeEvent(eventIndex.get(eventId)),
         driver: v.driver,
@@ -5421,7 +5757,7 @@ function TeamAboutTab({
   const wsSub = worldSkills.loading
     ? "Loading leaderboard…"
     : wsEntry
-      ? `${wsEntry.scores.score} pts · ${grade}`
+      ? `${wsEntry.scores.score} pts`
       : worldSkills.error
         ? "Leaderboard unavailable"
         : "No ranked skills run";
@@ -5434,21 +5770,19 @@ function TeamAboutTab({
 
   return (
     <div className="about-wrap">
-      <Panel title="Team Profile" icon={<Info size={18} />}>
-        <dl className="about-profile">
-          <AboutProfileRow label="Location">{locationLine(team) || "—"}</AboutProfileRow>
-          <AboutProfileRow label="Grade">{team.grade || "Unknown"}</AboutProfileRow>
-          <AboutProfileRow label="Program">
-            <ProgramBadge program={team.program} />
-          </AboutProfileRow>
-          <AboutProfileRow label="Status">
-            <span className={`about-status ${team.registered ? "active" : "inactive"}`}>{team.registered ? "Active" : "Inactive"}</span>
-          </AboutProfileRow>
-          <AboutProfileRow label="Years Active">
-            {years ? (years.first === years.last ? `${years.first}` : `${years.first} – ${team.registered ? "present" : years.last}`) : "—"}
-          </AboutProfileRow>
-        </dl>
-      </Panel>
+      <dl className="about-profile">
+        <AboutProfileRow label="Location">{locationLine(team) || "—"}</AboutProfileRow>
+        <AboutProfileRow label="Grade">{team.grade || "Unknown"}</AboutProfileRow>
+        <AboutProfileRow label="Program">
+          <ProgramBadge program={team.program} />
+        </AboutProfileRow>
+        <AboutProfileRow label="Status">
+          <span className={`about-status ${team.registered ? "active" : "inactive"}`}>{team.registered ? "Active" : "Inactive"}</span>
+        </AboutProfileRow>
+        <AboutProfileRow label="Years Active">
+          {years ? (years.first === years.last ? `${years.first}` : `${years.first} – ${team.registered ? "present" : years.last}`) : "—"}
+        </AboutProfileRow>
+      </dl>
 
       <div className="about-stats">
         <StatCard label="World Skills" accent="blue" icon={<Medal size={14} />} value={wsValue} sub={wsSub} />
@@ -5457,7 +5791,7 @@ function TeamAboutTab({
           accent="blue"
           icon={<Activity size={14} />}
           value={agg.bestCombined || "—"}
-          sub={agg.bestCombined ? `${agg.bestDriver} driver · ${agg.bestProg} auton` : "No skills runs"}
+          sub={agg.bestCombined ? `${agg.bestDriver} driver ${agg.bestProg} auton` : "No skills runs"}
         />
         <StatCard label="Events" accent="gray" icon={<CalendarDays size={14} />} value={agg.events || "—"} sub={seasonLabel} />
         {isIq ? (
@@ -5490,6 +5824,7 @@ function TeamAboutTab({
                   area
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => r.name)}
+                  links={rankRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "Win rate", color: "#337ab7", values: rankRows.map((r) => r.winRate * 100) }]}
                   markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
@@ -5514,6 +5849,7 @@ function TeamAboutTab({
                 <TrendChart
                   labels={skillRows.map((r) => shortMonthYear(r.date))}
                   tips={skillRows.map((r) => r.name)}
+                  links={skillRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[
                     { name: "Driver", color: "#337ab7", values: skillRows.map((r) => r.driver) },
                     { name: "Autonomous", color: "#8e44ad", values: skillRows.map((r) => r.prog) },
@@ -5532,6 +5868,7 @@ function TeamAboutTab({
                   area
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => r.name)}
+                  links={rankRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "Avg score", color: "#5cb85c", values: rankRows.map((r) => r.allQualAvg) }]}
                   markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
@@ -5548,6 +5885,7 @@ function TeamAboutTab({
                   area
                   labels={finalsRows.map((r) => shortMonthYear(r.date))}
                   tips={finalsRows.map((r) => r.name)}
+                  links={finalsRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "Finals score", color: "#f0ad4e", values: finalsRows.map((r) => r.finalsScore) }]}
                   markers={finalsRows.map((r) => r.marquee)}
                   yFloor={0}
@@ -5563,6 +5901,7 @@ function TeamAboutTab({
                 <TrendChart
                   labels={rankedRows.map((r) => shortMonthYear(r.date))}
                   tips={rankedRows.map((r) => `${r.name} — #${r.rank}`)}
+                  links={rankedRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "Qual rank", color: "#337ab7", values: rankedRows.map((r) => r.rank) }]}
                   markers={rankedRows.map((r) => r.marquee)}
                   yFloor={1}
@@ -5578,6 +5917,7 @@ function TeamAboutTab({
                 <TrendChart
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => r.name)}
+                  links={rankRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "Avg WP", color: "#f0ad4e", values: rankRows.map((r) => r.avgWp) }]}
                   markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
@@ -5594,6 +5934,7 @@ function TeamAboutTab({
                   area
                   labels={rankRows.map((r) => shortMonthYear(r.date))}
                   tips={rankRows.map((r) => `${r.name} — ${r.awp} AWP`)}
+                  links={rankRows.map((r) => eventPath({ sku: r.sku, id: r.id }))}
                   series={[{ name: "AWP", color: "#5cb85c", values: rankRows.map((r) => r.awp) }]}
                   markers={rankRows.map((r) => r.marquee)}
                   yFloor={0}
@@ -5609,7 +5950,6 @@ function TeamAboutTab({
 
 function TeamDetail({ param }: { param: string }) {
   const [tab, setTab] = useState<TeamDetailTab>(() => hashTab(TEAM_DETAIL_TABS, "about"));
-  const tabLayout = useTabLayout();
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const [dateDirection, setDateDirection] = useState<DateDirection>("asc");
   const [matchesBySeason, setMatchesBySeason] = useState<Record<number, AsyncBucket<Match>>>({});
@@ -5835,12 +6175,11 @@ function TeamDetail({ param }: { param: string }) {
         </div>
       </div>
 
-      <div className={`view-tabs view-tabs-${tabLayout}`}>
+      <div className="view-tabs view-tabs-vertical">
       <Tabs
         active={tab}
         onChange={(next) => setTab(next as TeamDetailTab)}
-        orientation={tabLayout}
-        showLayoutToggle
+        orientation="vertical"
         tabs={[
           ["about", "About", <Info size={15} />],
           ["events", `Events ${seasonEvents.length || ""}`, <CalendarDays size={15} />],
@@ -5858,11 +6197,7 @@ function TeamDetail({ param }: { param: string }) {
       />
       {tab !== "about" && <DateDirectionToggle direction={dateDirection} onChange={setDateDirection} />}
       {tab !== "about" && <Status loading={activeStatus.loading} error={activeStatus.error} />}
-      {tab !== "about" && !activeStatus.loading && !events.loading && selectedSeason && (
-        <div className="table-summary">
-          Showing {selectedSeason.label} only. Change season to review another year.
-        </div>
-      )}
+      <CrossFade trigger={`${tab}:${selectedSeasonId}`}>
       {tab === "about" && (
         <TeamAboutTab
           team={team}
@@ -5939,6 +6274,7 @@ function TeamDetail({ param }: { param: string }) {
           }}
         />
       )}
+      </CrossFade>
       </div>
       </div>
     </section>
@@ -6261,24 +6597,167 @@ function SeasonSelector({
   selectedSeasonId,
   onChange,
   loading,
+  hideCount,
+  hideLabel,
 }: {
-  seasons: Array<{ id: number; label: string; count: number }>;
+  seasons: Array<{ id: number; label: string; count?: number }>;
   selectedSeasonId: number | null;
   onChange: (seasonId: number) => void;
   loading: boolean;
+  hideCount?: boolean;
+  hideLabel?: boolean;
 }) {
+  // Sliding highlight pill: track the active segment's position/size and move a
+  // single absolutely-positioned pill to it, so selection slides instead of the
+  // per-item background fading in/out.
+  const trackRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const autoRef = useRef<number | null>(null);
+  const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
+  // Whether the strip overflows past the right edge (drives the fade + chevron).
+  const [moreRight, setMoreRight] = useState(false);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const track = trackRef.current;
+      if (!track) return;
+      const active = track.querySelector<HTMLElement>('[data-state="on"]');
+      setPill(active ? { left: active.offsetLeft, width: active.offsetWidth } : null);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [selectedSeasonId, seasons]);
+
+  // Track right-edge overflow as the strip scrolls / resizes.
+  const updateEdges = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setMoreRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+  }, []);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    updateEdges();
+    el.addEventListener("scroll", updateEdges, { passive: true });
+    window.addEventListener("resize", updateEdges);
+    const ro = new ResizeObserver(updateEdges);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", updateEdges);
+      window.removeEventListener("resize", updateEdges);
+      ro.disconnect();
+    };
+  }, [updateEdges, seasons]);
+
+  // Vertical wheel over the strip scrolls it horizontally instead of the page,
+  // and arrow keys do the same while the pointer is hovering the strip.
+  const hoverRef = useRef(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth) return;
+      const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (!delta) return;
+      e.preventDefault();
+      el.scrollLeft += delta;
+    };
+    const onEnter = () => { hoverRef.current = true; };
+    const onLeave = () => { hoverRef.current = false; };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!hoverRef.current) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      // Don't hijack arrows when the user is typing in a field.
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
+      e.preventDefault();
+      el.scrollLeft += e.key === "ArrowRight" ? 80 : -80;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("mouseenter", onEnter);
+    el.addEventListener("mouseleave", onLeave);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("mouseenter", onEnter);
+      el.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [seasons]);
+
+  const stopAuto = useCallback(() => {
+    if (autoRef.current != null) {
+      cancelAnimationFrame(autoRef.current);
+      autoRef.current = null;
+    }
+  }, []);
+  const startAuto = useCallback(() => {
+    stopAuto();
+    const step = () => {
+      const el = scrollRef.current;
+      if (!el) { autoRef.current = null; return; }
+      const max = el.scrollWidth - el.clientWidth;
+      if (el.scrollLeft >= max - 0.5) { autoRef.current = null; return; }
+      el.scrollLeft = Math.min(max, el.scrollLeft + 7);
+      autoRef.current = requestAnimationFrame(step);
+    };
+    autoRef.current = requestAnimationFrame(step);
+  }, [stopAuto]);
+  useEffect(() => stopAuto, [stopAuto]);
+
   if (loading || !seasons.length) return null;
 
   return (
-    <div className="season-toolbar">
-      <span>Season</span>
-      <select value={selectedSeasonId ?? ""} onChange={(event) => onChange(Number(event.target.value))}>
-        {seasons.map((season) => (
-          <option key={season.id} value={season.id}>
-            {season.label} ({season.count})
-          </option>
-        ))}
-      </select>
+    <div className={`season-toolbar${hideLabel ? " season-toolbar-nolabel" : ""}`}>
+      {!hideLabel && <span>Season</span>}
+      <div className="season-scroll">
+        <div ref={scrollRef} className="season-scroll-view no-scrollbar">
+          <div ref={trackRef} className="relative w-max rounded-lg bg-muted p-1">
+            {pill && (
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-y-1 z-0 rounded-md bg-background shadow-sm ring-1 ring-black/5 transition-[transform,width] duration-200 ease-out"
+                style={{ width: pill.width, transform: `translateX(${pill.left}px)` }}
+              />
+            )}
+            <ToggleGroup
+              type="single"
+              variant="default"
+              value={selectedSeasonId != null ? String(selectedSeasonId) : ""}
+              onValueChange={(value) => { if (value) onChange(Number(value)); }}
+              className="relative z-10 gap-1"
+            >
+              {seasons.map((season) => (
+                <ToggleGroupItem
+                  key={season.id}
+                  value={String(season.id)}
+                  className="gap-1.5 rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground data-[state=on]:bg-transparent data-[state=on]:text-foreground"
+                >
+                  {season.label}
+                  {!hideCount && <span className="opacity-60 tabular-nums">{season.count}</span>}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
+        </div>
+        {moreRight && (
+          <div className="season-fade" aria-hidden="true">
+            <button
+              type="button"
+              className="season-more"
+              aria-label="Scroll to more seasons"
+              onMouseEnter={startAuto}
+              onMouseLeave={stopAuto}
+              onClick={() => scrollRef.current?.scrollBy({ left: scrollRef.current.clientWidth * 0.8, behavior: "smooth" })}
+            >
+              <ChevronsRight size={16} />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -6287,12 +6766,14 @@ function DateDirectionToggle({ direction, onChange }: { direction: DateDirection
   return (
     <div className="date-direction-toggle" aria-label="Date order">
       <span>Order</span>
-      <button className={direction === "asc" ? "active" : ""} onClick={() => onChange("asc")}>
-        Earlier first
-      </button>
-      <button className={direction === "desc" ? "active" : ""} onClick={() => onChange("desc")}>
-        Later first
-      </button>
+      <div className="seg-track">
+        <button className={direction === "asc" ? "active" : ""} onClick={() => onChange("asc")}>
+          Earlier first
+        </button>
+        <button className={direction === "desc" ? "active" : ""} onClick={() => onChange("desc")}>
+          Later first
+        </button>
+      </div>
     </div>
   );
 }
@@ -6561,7 +7042,7 @@ function TeamEventCards({
           <details key={event.id} className="event-group">
             <summary>
               {/* Left: event name + SKU */}
-              <span>
+              <span className="event-group-head-main">
                 <button
                   className="event-group-name-btn"
                   onClick={(e) => { e.preventDefault(); onViewMatches(event.id); }}
@@ -6570,15 +7051,18 @@ function TeamEventCards({
                 </button>
                 <small>{event.sku}</small>
               </span>
-              {/* Right: program badge · city/state · dates · level */}
+              {/* Right: program badge · city/state · dates, with level tag below */}
               <span className="event-card-info">
-                <ProgramBadge program={event.program} />
-                {shortLoc && <span className="event-card-location">{shortLoc}</span>}
-                <span className="event-group-meta">{formatEventDateRange(event.start, event.end)}</span>
+                <span className="event-card-meta-row">
+                  <ProgramBadge program={event.program} />
+                  {shortLoc && <span className="event-card-location">{shortLoc}</span>}
+                  <span className="event-group-meta">{formatEventDateRange(event.start, event.end)}</span>
+                </span>
                 {cat.label !== "Other" && (
                   <span className={`event-priority priority-${cat.rank}`}>{cat.label}</span>
                 )}
               </span>
+              <ChevronDown size={15} className="event-group-chevron" aria-hidden="true" />
             </summary>
             {/* Stats: awards / ranking / skills */}
             <TeamEventDetail
@@ -6686,53 +7170,27 @@ function TeamEventDetail({
           {isIq ? (
             <div className="metric-line">
               <strong>Ranking</strong>
-              <span>
-                <b>Rank</b> {ranking?.rank ?? "-"}
-              </span>
-              <span>
-                <b>Avg</b> {formatNumber(iqStats?.avg)}
-              </span>
-              <span>
-                <b>High</b> {iqStats?.high ?? "-"}
-              </span>
-              <span>
-                <b>Low</b> {iqStats?.low ?? "-"}
-              </span>
+              <span>Rank <b>{ranking?.rank ?? "-"}</b></span>
+              <span>Avg <b>{formatNumber(iqStats?.avg)}</b></span>
+              <span>High <b>{iqStats?.high ?? "-"}</b></span>
+              <span>Low <b>{iqStats?.low ?? "-"}</b></span>
             </div>
           ) : (
             <div className="metric-line">
               <strong>Ranking</strong>
-              <span>
-                <b>Rank</b> {ranking?.rank ?? "-"}
-              </span>
-              <span>
-                <b>Record</b> {ranking ? `${ranking.wins ?? 0}-${ranking.losses ?? 0}-${ranking.ties ?? 0}` : "-"}
-              </span>
-              <span>
-                <b>WP</b> {ranking?.wp ?? "-"}
-              </span>
-              <span>
-                <b>AP</b> {ranking?.ap ?? "-"}
-              </span>
-              <span>
-                <b>SP</b> {ranking?.sp ?? "-"}
-              </span>
+              <span>Rank <b>{ranking?.rank ?? "-"}</b></span>
+              <span>Record <b>{ranking ? `${ranking.wins ?? 0}-${ranking.losses ?? 0}-${ranking.ties ?? 0}` : "-"}</b></span>
+              <span>WP <b>{ranking?.wp ?? "-"}</b></span>
+              <span>AP <b>{ranking?.ap ?? "-"}</b></span>
+              <span>SP <b>{ranking?.sp ?? "-"}</b></span>
             </div>
           )}
           <div className="metric-line">
             <strong>Skills</strong>
-            <span>
-              <b>Rank</b> {skillsRow.rank ?? "-"}
-            </span>
-            <span>
-              Combined <b>{skillsRow.combined ?? "-"}</b>
-            </span>
-            <span>
-              Driver <b>{skillsRow.driver?.score ?? "-"}</b> Attempts <b>{skillsRow.driver?.attempts ?? "-"}</b>
-            </span>
-            <span>
-              Programming <b>{skillsRow.programming?.score ?? "-"}</b> Attempts <b>{skillsRow.programming?.attempts ?? "-"}</b>
-            </span>
+            <span>Rank <b>{skillsRow.rank ?? "-"}</b></span>
+            <span>Combined <b>{skillsRow.combined ?? "-"}</b></span>
+            <span>Driver <b>{skillsRow.driver?.score ?? "-"}</b> <i>{skillsRow.driver?.attempts ?? "-"} att</i></span>
+            <span>Programming <b>{skillsRow.programming?.score ?? "-"}</b> <i>{skillsRow.programming?.attempts ?? "-"} att</i></span>
           </div>
         </div>
       </div>
@@ -7207,34 +7665,17 @@ function EventHighlights({ awards }: { awards: HighlightAward[] }) {
   );
 }
 
-function TabLayoutToggle({ layout }: { layout: TabLayout }) {
-  const next: TabLayout = layout === "vertical" ? "horizontal" : "vertical";
-  return (
-    <button
-      type="button"
-      className="icon-button"
-      onClick={() => setTabLayout(next)}
-      aria-label={`Switch to ${next} tabs`}
-      title={`Switch to ${next} tabs`}
-    >
-      {layout === "vertical" ? <Rows3 size={16} /> : <PanelLeft size={16} />}
-    </button>
-  );
-}
-
 function Tabs({
   tabs,
   active,
   onChange,
   orientation = "horizontal",
-  showLayoutToggle = false,
   action,
 }: {
   tabs: Array<[string, string, ReactNode, (() => void)?]>;
   active: string;
   onChange: (tab: string) => void;
   orientation?: TabLayout;
-  showLayoutToggle?: boolean;
   action?: ReactNode;
 }) {
   if (orientation === "vertical") {
@@ -7263,17 +7704,6 @@ function Tabs({
             )}
           </button>
         ))}
-        {showLayoutToggle && (
-          <button
-            type="button"
-            className="settings-tab view-tabs-rail-toggle"
-            onClick={() => setTabLayout("horizontal")}
-            title="Switch to horizontal tabs"
-          >
-            <Rows3 size={15} />
-            Horizontal view
-          </button>
-        )}
         {action && <div className="view-tabs-rail-action">{action}</div>}
       </nav>
     );
@@ -7301,14 +7731,13 @@ function Tabs({
       ))}
     </div>
   );
-  if (!showLayoutToggle) return bar;
-  // Wrap so the toggle sits at the right end of the bar without being caught by
+  if (!action) return bar;
+  // Wrap so the action sits at the right end of the bar without being caught by
   // the `.tabs button` styles (which would render it transparent/invisible).
   return (
     <div className="view-tabs-bar">
       {bar}
-      {action && <span className="view-tabs-bar-action">{action}</span>}
-      <TabLayoutToggle layout={orientation} />
+      <span className="view-tabs-bar-action">{action}</span>
     </div>
   );
 }
@@ -7336,6 +7765,19 @@ function MatchesTable({
 }) {
   const [qualificationDirection, setQualificationDirection] = useState<DateDirection>("asc");
   const [bracketOpen, setBracketOpen] = useState(false);
+  // Every team that appears in any match = the event's competing teams. Lets a
+  // note recognize any event team you type, not just the ones in that match.
+  const eventTeams = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const match of matches) {
+      for (const alliance of match.alliances) {
+        for (const entry of alliance.teams) {
+          if (entry.team?.id && entry.team?.name) m.set(entry.team.id, entry.team.name);
+        }
+      }
+    }
+    return [...m].map(([id, number]) => ({ id, number }));
+  }, [matches]);
   const qualificationMatches = matches
     .filter((match) => match.round === 2)
     .sort((a, b) => (qualificationDirection === "asc" ? 1 : -1) * (a.matchnum - b.matchnum));
@@ -7368,6 +7810,7 @@ function MatchesTable({
             dayNumbers={dayNumbers}
             showNoteRail={showNoteRail}
             eventId={eventId}
+            eventTeams={eventTeams}
           />
         </section>
       ));
@@ -7411,6 +7854,7 @@ function MatchesTable({
             scoreTier={scoreTier}
             showNoteRail
             eventId={eventId}
+            eventTeams={eventTeams}
           />
         )}
       </section>
@@ -7511,10 +7955,11 @@ const NOTE_CHAR_LIMIT = 2000;
  * Chips that appear in the note body get a "mentioned" highlight.
  * Clicking opens the team page. Works for both V5RC (red/blue) and IQ.
  */
-function NoteTeamChips({ match, body }: { match: Match; body: string }) {
+function NoteTeamChips({ match, body, eventTeams }: { match: Match; body: string; eventTeams?: { id: number; number: string }[] }) {
   const programCode = useContext(ProgramContext);
 
-  const teams = useMemo(() => {
+  // Teams playing in this match — shown as the resting roster (grey chips).
+  const matchTeams = useMemo(() => {
     const out: Array<{ id: number; name: string; color: string }> = [];
     for (const alliance of match.alliances) {
       for (const entry of alliance.teams) {
@@ -7526,33 +7971,51 @@ function NoteTeamChips({ match, body }: { match: Match; body: string }) {
     return out;
   }, [match]);
 
-  const mentioned = useMemo(() => {
-    if (!body.trim() || !teams.length) return new Set<number>();
-    return new Set(
-      teams
-        .filter(({ name }) => {
-          // Non-alphanumeric boundary on both sides — handles team nums like 169W, 9181X
-          const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          return new RegExp(`(?:^|[^A-Za-z0-9])${escaped}(?:$|[^A-Za-z0-9])`, "i").test(body);
-        })
-        .map(({ id }) => id),
-    );
-  }, [body, teams]);
+  // Match a team number on non-alphanumeric boundaries (handles 169W, 9181X).
+  const mentions = useMemo(() => {
+    const text = body;
+    return (name: string) => {
+      if (!text.trim()) return false;
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(?:^|[^A-Za-z0-9])${escaped}(?:$|[^A-Za-z0-9])`, "i").test(text);
+    };
+  }, [body]);
 
-  if (!teams.length) return null;
+  const matchIds = useMemo(() => new Set(matchTeams.map((t) => t.id)), [matchTeams]);
+
+  // Teams elsewhere in the event that the note mentions but aren't in this match
+  // — surfaced as extra colored tags so any event team you type becomes clickable.
+  const extraTeams = useMemo(() => {
+    if (!eventTeams || !body.trim()) return [] as { id: number; number: string }[];
+    return eventTeams.filter((t) => !matchIds.has(t.id) && mentions(t.number));
+  }, [eventTeams, matchIds, mentions, body]);
+
+  if (!matchTeams.length && !extraTeams.length) return null;
 
   return (
     <div className="note-team-chips">
-      {teams.map(({ id, name, color }) => (
+      {matchTeams.map(({ id, name, color }) => (
         <TeamQuickLink
           key={id}
           teamId={id}
           teamNumber={name}
           programCode={programCode}
-          className={`note-team-chip note-team-chip-${color} ${mentioned.has(id) ? "mentioned" : ""}`}
+          className={`note-team-chip note-team-chip-${color} ${mentions(name) ? "mentioned" : ""}`}
           title={`Open team ${name}`}
         >
           {name}
+        </TeamQuickLink>
+      ))}
+      {extraTeams.map(({ id, number }) => (
+        <TeamQuickLink
+          key={id}
+          teamId={id}
+          teamNumber={number}
+          programCode={programCode}
+          className="note-team-chip note-team-chip-accent mentioned"
+          title={`Open team ${number}`}
+        >
+          {number}
         </TeamQuickLink>
       ))}
     </div>
@@ -7565,11 +8028,13 @@ function NoteTeamChips({ match, body }: { match: Match; body: string }) {
 function MatchNotePopover({
   match,
   eventId,
+  eventTeams,
   anchorRect,
   onClose,
 }: {
   match: Match;
   eventId?: number;
+  eventTeams?: { id: number; number: string }[];
   anchorRect: DOMRect;
   onClose: () => void;
 }) {
@@ -7639,7 +8104,7 @@ function MatchNotePopover({
         onChange={(e) => handleChange(e.target.value)}
         placeholder={scope === "personal" ? "Add a note…" : "Add a team note…"}
       />
-      <NoteTeamChips match={match} body={activeBody} />
+      <NoteTeamChips match={match} body={activeBody} eventTeams={eventTeams} />
       <div className="note-popover-footer">
         <span className="note-popover-hint">Saved automatically · empty clears</span>
         {showCounter && (
@@ -7669,6 +8134,7 @@ function ResultsMatchTable({
   markWinningIqScore = false,
   showNoteRail = false,
   eventId,
+  eventTeams,
 }: {
   matches: Match[];
   emptyText: string;
@@ -7687,6 +8153,7 @@ function ResultsMatchTable({
   markWinningIqScore?: boolean;
   showNoteRail?: boolean;
   eventId?: number;
+  eventTeams?: { id: number; number: string }[];
 }) {
   const tbodyRef = useRef<HTMLTableSectionElement>(null);
   const rafRef = useRef(0);
@@ -7895,6 +8362,7 @@ function ResultsMatchTable({
       <MatchNotePopover
         match={popover.match}
         eventId={eventId}
+        eventTeams={eventTeams}
         anchorRect={popover.rect}
         onClose={() => setPopover(null)}
       />
@@ -7935,14 +8403,6 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
     });
     return `https://www.youtube.com/embed/${playback.timestamp.videoId}?${params.toString()}`;
   }, [playback.timestamp.videoId, startSeconds]);
-
-  useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   useEffect(() => {
     if (!playback.timestamp.videoId || !iframeRef.current) return;
@@ -8000,8 +8460,10 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
   };
 
   return (
-    <div className="video-overlay" onClick={onClose}>
-      <div className="video-modal" onClick={(e) => e.stopPropagation()}>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent showCloseButton={false} className="w-fit max-w-none sm:max-w-none border-0 bg-transparent p-0 shadow-none">
+        <DialogTitle className="sr-only">Match video</DialogTitle>
+        <div className="video-modal">
         <div className="video-modal-header">
           <div className="video-match-info">
             <strong>{playback.match.name}</strong>
@@ -8069,8 +8531,9 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
             onSeek={seekTo}
           />
         </div>
-      </div>
-    </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -8378,26 +8841,21 @@ function EliminationBracket({ matches }: { matches: Match[] }) {
 }
 
 function EliminationBracketOverlay({ matches, onClose }: { matches: Match[]; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div className="video-overlay bracket-overlay" onClick={onClose}>
-      <div className="bracket-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="bracket-modal-header">
-          <strong>Elimination Bracket</strong>
-          <button className="video-close-btn" onClick={onClose} aria-label="Close">&times;</button>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent showCloseButton={false} className="w-fit max-w-none sm:max-w-none border-0 bg-transparent p-0 shadow-none">
+        <DialogTitle className="sr-only">Elimination bracket</DialogTitle>
+        <div className="bracket-modal">
+          <div className="bracket-modal-header">
+            <strong>Elimination Bracket</strong>
+            <CloseButton onClose={onClose} />
+          </div>
+          <div className="bracket-modal-body">
+            <EliminationBracket matches={matches} />
+          </div>
         </div>
-        <div className="bracket-modal-body">
-          <EliminationBracket matches={matches} />
-        </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -9194,6 +9652,7 @@ function WorldSkillsPageInner() {
       {/* Table */}
       <Status loading={wsLoading} error={wsError} />
       {!wsLoading && !wsError && (
+        <CrossFade trigger={`${program}|${grade}|${resolvedSeasonId}|${debouncedSearch}|${filterCountries.join(",")}|${filterRegions.join(",")}|${page}`}>
         <div className="ws-table-wrap">
           <table className="ws-table">
             <colgroup>
@@ -9244,18 +9703,18 @@ function WorldSkillsPageInner() {
               ) : (
                 visibleRows.map((r, i) => (
                   <tr key={r.team.id}>
-                    <td className="ws-col-num">{(page - 1) * PAGE_SIZE + i + 1}</td>
-                    <td><strong>{r.rank}</strong></td>
-                    <td><strong>{r.scores.score}</strong></td>
-                    <td><strong>{r.scores.programming}</strong></td>
-                    <td><strong>{r.scores.driver}</strong></td>
-                    <td className="ws-max-auto">{r.scores.maxProgramming ?? "—"}</td>
-                    <td className="ws-max-driver">{r.scores.maxDriver ?? "—"}</td>
-                    <td className="ws-muted-cell ws-tip-cell" data-tip={formatSkillsDate(r.scores.progScoredAt, useUtc)}><span className="ws-cell-inner">{renderSkillsDate(r.scores.progScoredAt, useUtc)}</span></td>
-                    <td className="ws-muted-cell ws-tip-cell" data-tip={formatSkillsDate(r.scores.driverScoredAt, useUtc)}><span className="ws-cell-inner">{renderSkillsDate(r.scores.driverScoredAt, useUtc)}</span></td>
-                    <td className="ws-muted-cell">{r.scores.progStopTime ?? "—"}</td>
-                    <td className="ws-muted-cell">{r.scores.driverStopTime ?? "—"}</td>
-                    <td>
+                    <td className="ws-col-num ws-hide-mobile">{(page - 1) * PAGE_SIZE + i + 1}</td>
+                    <td className="ws-m-rank"><strong>{r.rank}</strong></td>
+                    <td className="ws-m-stat" data-label="Score"><strong>{r.scores.score}</strong></td>
+                    <td className="ws-m-stat" data-label="Auto"><strong>{r.scores.programming}</strong></td>
+                    <td className="ws-m-stat" data-label="Driver"><strong>{r.scores.driver}</strong></td>
+                    <td className="ws-max-auto ws-hide-mobile">{r.scores.maxProgramming ?? "—"}</td>
+                    <td className="ws-max-driver ws-hide-mobile">{r.scores.maxDriver ?? "—"}</td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={formatSkillsDate(r.scores.progScoredAt, useUtc)}><span className="ws-cell-inner">{renderSkillsDate(r.scores.progScoredAt, useUtc)}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={formatSkillsDate(r.scores.driverScoredAt, useUtc)}><span className="ws-cell-inner">{renderSkillsDate(r.scores.driverScoredAt, useUtc)}</span></td>
+                    <td className="ws-muted-cell ws-hide-mobile">{r.scores.progStopTime ?? "—"}</td>
+                    <td className="ws-muted-cell ws-hide-mobile">{r.scores.driverStopTime ?? "—"}</td>
+                    <td className="ws-m-team">
                       <CompareTeamLink
                         teamId={r.team.id}
                         teamNumber={r.team.team}
@@ -9263,16 +9722,17 @@ function WorldSkillsPageInner() {
                         teamName={r.team.teamName ?? undefined}
                       />
                     </td>
-                    <td className="ws-text-cell ws-tip-cell" data-tip={r.team.teamName ?? "—"}><span className="ws-cell-inner">{r.team.teamName ?? "—"}</span></td>
-                    <td className="ws-muted-cell ws-tip-cell" data-tip={r.team.organization ?? "—"}><span className="ws-cell-inner">{r.team.organization ?? "—"}</span></td>
-                    <td className="ws-muted-cell ws-tip-cell" data-tip={r.team.eventRegion ?? "—"}><span className="ws-cell-inner">{r.team.eventRegion ?? "—"}</span></td>
-                    <td className="ws-muted-cell ws-tip-cell" data-tip={r.team.country ?? "—"}><span className="ws-cell-inner">{r.team.country ?? "—"}</span></td>
+                    <td className="ws-text-cell ws-tip-cell ws-m-name" data-tip={r.team.teamName ?? "—"}><span className="ws-cell-inner">{r.team.teamName ?? "—"}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.organization ?? "—"}><span className="ws-cell-inner">{r.team.organization ?? "—"}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.eventRegion ?? "—"}><span className="ws-cell-inner">{r.team.eventRegion ?? "—"}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.country ?? "—"}><span className="ws-cell-inner">{r.team.country ?? "—"}</span></td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
+        </CrossFade>
       )}
       <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
     </section>
@@ -9346,7 +9806,7 @@ function InsightsPage() {
 function NotFound() {
   return (
     <section className="page">
-      <PageTitle icon={<ExternalLink />} title="Page Not Found" subtitle="That stemScout route does not exist yet." />
+      <PageTitle icon={<ExternalLink />} title="Page Not Found" subtitle="That OpenScout route does not exist yet." />
       <Link href="/" className="button-link">
         Go home
       </Link>
@@ -9355,127 +9815,231 @@ function NotFound() {
 }
 
 // ---------------------------------------------------------------------------
-// Beta disclaimer (first-visit modal)
-// ---------------------------------------------------------------------------
-
-function BetaDisclaimer() {
-  const [visible, setVisible] = useState(() => !localStorage.getItem("beta-disclaimer-seen"));
-
-  function dismiss() {
-    localStorage.setItem("beta-disclaimer-seen", "1");
-    setVisible(false);
-  }
-
-  if (!visible) return null;
-
-  return (
-    <div className="beta-overlay" role="dialog" aria-modal="true" aria-label="Beta disclaimer">
-      <div className="beta-modal">
-        <div className="beta-modal-icon">🔒</div>
-        <h2 className="beta-modal-title">Internal Preview</h2>
-        <p className="beta-modal-body">
-          This is an internal, unreleased version of stemScout. Everything is subject to change — features, data, and
-          design may be incomplete or inaccurate.
-        </p>
-        <p className="beta-modal-legal">
-          By continuing to use this website you agree to our{" "}
-          <Link href="/terms" onClick={dismiss}>
-            Terms &amp; Conditions
-          </Link>
-          , including the confidentiality provisions that apply to this preview.
-        </p>
-        <button className="beta-modal-btn" onClick={dismiss}>
-          I Understand
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Terms & Conditions page
+// Terms of Service page
 // ---------------------------------------------------------------------------
 
 function TermsPage() {
   return (
     <section className="page terms-page">
-      <PageTitle icon={<Shield />} title="Terms & Conditions" subtitle="Last updated: May 2026" />
+      <PageTitle icon={<Shield />} title="Terms of Service" subtitle="Last updated: June 2026" />
       <div className="terms-body">
-        <h3>1. About stemScout</h3>
+        <h3>1. Acceptance of these terms</h3>
         <p>
-          stemScout is a web-based scouting and analytics tool for VEX Robotics events, operated by Alexander Deng
-          ("we", "us"). It is currently an internal preview and has not been publicly released.
+          OpenScout ("OpenScout", the "Service") is a web-based scouting and analytics tool for VEX Robotics events,
+          provided by RoboSTEM Foundation, Inc. (legal name ROBOSTEM FOUNDATION INC), a 501(c)(3) nonprofit organization
+          registered in California ("RoboSTEM Foundation", "we", "us", or "our"). By accessing or using the Service, you
+          agree to be bound by these Terms of Service. If you do not agree, do not use the Service.
         </p>
 
-        <h3>2. Eligibility</h3>
+        <h3>2. Eligibility &amp; age requirement</h3>
         <p>
-          You must be at least 13 years old to use stemScout. By accessing this site you confirm that you meet this
-          requirement. Users under 18 should have parental or guardian consent.
+          The Service is not directed to children and you must be at least 13 years old to use it or to create an
+          account. By using OpenScout you represent that you are 13 or older. If you are under 18, you may use the
+          Service only with the involvement and consent of a parent or legal guardian. We do not knowingly collect
+          personal information from anyone under 13; see our{" "}
+          <Link href="/privacy">Privacy Policy</Link> for details.
         </p>
 
-        <h3>3. Confidentiality (Preview Users)</h3>
+        <h3>3. Accounts</h3>
         <p>
-          <strong>
-            Access to this unreleased preview version of stemScout is by explicit invitation only. If you have been
-            granted access, you agree to the following:
-          </strong>
+          You may sign in using a third-party provider (such as Google or Discord). You are responsible for activity
+          that occurs under your account and for keeping your login credentials with those providers secure. Provide
+          accurate information and keep it up to date. You may delete your account at any time by contacting us.
         </p>
-        <ul>
-          <li>
-            You will <strong>not</strong> share, demonstrate, screenshot, screen-record, or otherwise disclose any
-            features, functionality, data, or existence of stemScout to any person who has not been explicitly
-            authorized to access it by Alexander Deng.
-          </li>
-          <li>
-            You will <strong>not</strong> post about stemScout on social media, Discord servers, forums, or any other
-            public or semi-public channel without prior written permission from Alexander Deng.
-          </li>
-          <li>
-            You understand that features shown in this preview are experimental and may change significantly or be
-            removed before any public release.
-          </li>
-          <li>
-            Violation of these confidentiality terms may result in immediate revocation of your access.
-          </li>
-        </ul>
 
-        <h3>4. Acceptable Use</h3>
+        <h3>4. Acceptable use</h3>
         <p>You agree not to:</p>
         <ul>
-          <li>Attempt to reverse-engineer, scrape, or overload the service or its upstream APIs.</li>
-          <li>Use stemScout for any unlawful purpose.</li>
-          <li>Attempt to gain unauthorized access to any systems connected to stemScout.</li>
+          <li>Reverse-engineer, scrape, overload, or disrupt the Service or its upstream data sources or APIs.</li>
+          <li>Use OpenScout for any unlawful, harmful, or abusive purpose, or to harass other users.</li>
+          <li>Attempt to gain unauthorized access to any account, system, or data connected to the Service.</li>
+          <li>Misrepresent your identity or another team's identity, or upload unlawful or infringing content.</li>
         </ul>
 
-        <h3>5. Data &amp; Privacy</h3>
+        <h3>5. Intellectual property</h3>
         <p>
-          stemScout displays publicly available VEX Robotics event and team data sourced from RobotEvents and the
-          RoboStem database. We store minimal data in your browser (localStorage / IndexedDB) to cache event listings
-          and your preferences. No personal data is sent to our servers at this time.
+          The Service, including its software, design, and branding, is owned by RoboSTEM Foundation and protected by
+          applicable intellectual-property laws. We grant you a limited, non-exclusive, non-transferable, revocable
+          license to use the Service for its intended purpose. You retain ownership of any notes or content you create;
+          by submitting it you grant us the rights needed to operate and provide the Service to you.
         </p>
 
-        <h3>6. No Warranty</h3>
+        <h3>6. Third-party data &amp; no affiliation</h3>
         <p>
-          stemScout is provided "as is" without warranties of any kind. Data may be incomplete or inaccurate. We are
-          not affiliated with the Robotics Education &amp; Competition (REC) Foundation or VEX Robotics.
+          OpenScout displays publicly available VEX Robotics event and team data sourced from Events.vex.com and other
+          third-party databases. We do not control and are not responsible for that data, which may be incomplete or
+          inaccurate. OpenScout and RoboSTEM Foundation are independent and are not affiliated with, endorsed by, or
+          sponsored by VEX Robotics.
         </p>
 
-        <h3>7. Limitation of Liability</h3>
+        <h3>7. Privacy</h3>
         <p>
-          To the maximum extent permitted by applicable law, Alexander Deng shall not be liable for any indirect,
-          incidental, or consequential damages arising from your use of stemScout.
+          Your use of the Service is also governed by our <Link href="/privacy">Privacy Policy</Link>, which explains
+          what information we collect and how we handle it. By using OpenScout you acknowledge that you have read it.
         </p>
 
-        <h3>8. Changes to These Terms</h3>
+        <h3>8. Disclaimer of warranties</h3>
         <p>
-          These terms may be updated at any time. Continued use of stemScout after any change constitutes acceptance of
-          the updated terms.
+          The Service is provided "as is" and "as available" without warranties of any kind, whether express or
+          implied, including fitness for a particular purpose, accuracy, or non-infringement. We do not warrant that
+          the Service will be uninterrupted, error-free, or that any data shown is accurate or current.
         </p>
 
-        <h3>9. Contact</h3>
+        <h3>9. Limitation of liability</h3>
         <p>
-          Questions or concerns? Reach out to Alexander Deng directly via the channels through which you were granted
-          access.
+          To the maximum extent permitted by applicable law, RoboSTEM Foundation and its officers, directors,
+          volunteers, and agents shall not be liable for any indirect, incidental, special, consequential, or punitive
+          damages, or any loss of data, arising from or related to your use of the Service.
+        </p>
+
+        <h3>10. Termination</h3>
+        <p>
+          We may suspend or terminate your access to the Service at any time if you violate these Terms or to protect
+          the Service or its users. You may stop using the Service at any time.
+        </p>
+
+        <h3>11. Governing law</h3>
+        <p>
+          These Terms are governed by the laws of the State of California, United States, without regard to its
+          conflict-of-laws rules, except where superseded by mandatory consumer-protection laws of your country of
+          residence.
+        </p>
+
+        <h3>12. Changes to these terms</h3>
+        <p>
+          We may update these Terms from time to time. When we do, we will revise the "Last updated" date above.
+          Continued use of the Service after changes take effect constitutes acceptance of the updated Terms.
+        </p>
+
+        <h3>13. Contact</h3>
+        <p>
+          Questions about these Terms? Contact RoboSTEM Foundation, Inc. at{" "}
+          <a href="mailto:contact@robostem.org">contact@robostem.org</a>.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Privacy Policy page
+// ---------------------------------------------------------------------------
+
+function PrivacyPage() {
+  return (
+    <section className="page terms-page">
+      <PageTitle icon={<Shield />} title="Privacy Policy" subtitle="Last updated: June 2026" />
+      <div className="terms-body">
+        <h3>1. Who we are</h3>
+        <p>
+          OpenScout is operated by RoboSTEM Foundation, Inc. (legal name ROBOSTEM FOUNDATION INC), a 501(c)(3) nonprofit
+          organization registered in California ("RoboSTEM Foundation", "we", "us", or "our"), which is the data
+          controller for personal information processed through the Service. This policy explains what we collect, why,
+          and the rights you have. You can reach us about privacy at{" "}
+          <a href="mailto:contact@robostem.org">contact@robostem.org</a>.
+        </p>
+
+        <h3>2. Information we collect</h3>
+        <ul>
+          <li>
+            <strong>Account information.</strong> When you sign in with Google or Discord, we receive your name, email
+            address, profile picture, and a provider account identifier from that provider.
+          </li>
+          <li>
+            <strong>Profile information you provide.</strong> An optional display name, team number, competition
+            program, and appearance/theme preferences.
+          </li>
+          <li>
+            <strong>Content you create.</strong> Notes, favorites, and pick lists you save within the Service.
+          </li>
+          <li>
+            <strong>Usage &amp; device data.</strong> Aggregate, privacy-friendly analytics (for example via Vercel
+            Analytics) such as pages viewed and approximate, non-identifying device information.
+          </li>
+          <li>
+            <strong>Local storage.</strong> We cache event listings and your preferences in your browser
+            (localStorage / IndexedDB) so the app loads faster. This stays on your device.
+          </li>
+        </ul>
+
+        <h3>3. How we use your information</h3>
+        <ul>
+          <li>To provide, maintain, and personalize the Service and your account.</li>
+          <li>To save your preferences, notes, and team data across devices.</li>
+          <li>To understand usage in aggregate so we can improve and secure the Service.</li>
+          <li>To communicate with you about your account or important changes.</li>
+        </ul>
+
+        <h3>4. Legal bases for processing (GDPR)</h3>
+        <p>
+          If you are in the European Economic Area or the United Kingdom, we process your personal data under the
+          following legal bases: <strong>performance of a contract</strong> (to provide the Service you request),{" "}
+          <strong>your consent</strong> (which you may withdraw at any time), and our{" "}
+          <strong>legitimate interests</strong> (to keep the Service secure and to improve it), balanced against your
+          rights.
+        </p>
+
+        <h3>5. Children's privacy (COPPA)</h3>
+        <p>
+          The Service is not intended for and is not directed to children under 13, and we do not knowingly collect
+          personal information from anyone under 13. If you believe a child under 13 has provided us with personal
+          information, please contact us at <a href="mailto:contact@robostem.org">contact@robostem.org</a> and we will delete
+          it promptly.
+        </p>
+
+        <h3>6. How we share information</h3>
+        <p>
+          We do not sell your personal information. We share it only with service providers who process data on our
+          behalf to operate the Service, including our hosting and database provider (Supabase), our hosting and
+          analytics platform (Vercel), and the authentication providers you choose to sign in with (Google, Discord).
+          We may also disclose information if required by law or to protect the rights and safety of our users.
+        </p>
+
+        <h3>7. International data transfers</h3>
+        <p>
+          We are based in the United States and our service providers may process data in the United States and other
+          countries. Where we transfer personal data out of the EEA or UK, we rely on appropriate safeguards such as
+          Standard Contractual Clauses.
+        </p>
+
+        <h3>8. Data retention</h3>
+        <p>
+          We keep your account and profile information for as long as your account is active. If you delete your account
+          or ask us to delete your data, we will remove it within a reasonable period, except where we must retain it to
+          comply with legal obligations.
+        </p>
+
+        <h3>9. Your rights</h3>
+        <p>
+          Depending on where you live, you may have the right to access, correct, delete, or export your personal data,
+          to object to or restrict certain processing, and to withdraw consent. Residents of the EEA/UK may also lodge a
+          complaint with their local data-protection authority; California residents have rights under the CCPA/CPRA,
+          including the right to know and to delete. To exercise any of these rights, email us at{" "}
+          <a href="mailto:contact@robostem.org">contact@robostem.org</a>.
+        </p>
+
+        <h3>10. Security</h3>
+        <p>
+          We use reasonable technical and organizational measures to protect your information. No method of transmission
+          or storage is completely secure, so we cannot guarantee absolute security.
+        </p>
+
+        <h3>11. Cookies &amp; local storage</h3>
+        <p>
+          We use essential browser storage to keep you signed in and to remember your preferences, and privacy-friendly
+          analytics to measure usage. We do not use advertising cookies.
+        </p>
+
+        <h3>12. Changes to this policy</h3>
+        <p>
+          We may update this Privacy Policy from time to time. When we do, we will revise the "Last updated" date above
+          and, where appropriate, notify you within the Service.
+        </p>
+
+        <h3>13. Contact</h3>
+        <p>
+          Questions or requests about your privacy? Contact RoboSTEM Foundation, Inc. at{" "}
+          <a href="mailto:contact@robostem.org">contact@robostem.org</a>.
         </p>
       </div>
     </section>
@@ -9575,44 +10139,58 @@ function ProfileSettings() {
             {provider && <span className="badge">{provider}</span>}
           </div>
         </div>
-        <button type="button" className="settings-signout" onClick={() => void signOut()}>
-          <LogOut size={15} />
+        <Button variant="outline" size="sm" onClick={() => void signOut()}>
+          <LogOut data-icon="inline-start" />
           Sign out
-        </button>
+        </Button>
       </div>
 
       <div className="settings-card-body">
-        <div className="settings-fields">
-          <label className="onboard-field settings-field-name">
-            <span>Name</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} maxLength={24} placeholder="Your name" />
-          </label>
-          <label className="onboard-field">
-            <span>Team Number</span>
-            <input
-              value={teamNumber}
-              onChange={(event) => setTeamNumber(event.target.value.toUpperCase())}
-              maxLength={10}
-              placeholder="169W"
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="settings-name">Name</FieldLabel>
+            <Input
+              id="settings-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={24}
+              placeholder="Your name"
             />
-          </label>
-          <label className="onboard-field">
-            <span>Program</span>
-            <select value={program} onChange={(event) => setProgram(event.target.value)}>
-              <option value="">—</option>
-              {AUTH_PROGRAMS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <FieldLabel htmlFor="settings-team">Team Number</FieldLabel>
+              <Input
+                id="settings-team"
+                value={teamNumber}
+                onChange={(event) => setTeamNumber(event.target.value.toUpperCase())}
+                maxLength={10}
+                placeholder="169W"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="settings-program">Program</FieldLabel>
+              <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
+                <SelectTrigger id="settings-program" className="w-full">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {AUTH_PROGRAMS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+        </FieldGroup>
 
         <div className="settings-actions">
-          <button type="button" className="settings-save" onClick={() => void save()} disabled={saving || !dirty}>
+          <Button onClick={() => void save()} disabled={saving || !dirty}>
             {saving ? "Saving…" : "Save changes"}
-          </button>
+          </Button>
           {saved && (
             <span className="settings-saved">
               <Check size={15} />
@@ -9627,66 +10205,6 @@ function ProfileSettings() {
 
 // Theme picker. Saves immediately on selection (optimistic local state + profile
 // upsert) — no separate Save button needed.
-const TAB_LAYOUT_OPTIONS: Array<{ value: TabLayout; label: string }> = [
-  { value: "horizontal", label: "Horizontal" },
-  { value: "vertical", label: "Vertical" },
-];
-
-// Mini wireframe preview of each tab orientation, mirroring the theme tiles: a
-// bar of tabs across the top (horizontal) vs. a side rail (vertical).
-function TabLayoutWire({ value }: { value: TabLayout }) {
-  const tabs = (
-    <>
-      <span className="lw-tab active" />
-      <span className="lw-tab" />
-      <span className="lw-tab" />
-    </>
-  );
-  const body = (
-    <span className="lw-body">
-      <span className="lw-line" />
-      <span className="lw-line short" />
-    </span>
-  );
-  return (
-    <span className={`layout-wire layout-wire-${value}`} aria-hidden="true">
-      {value === "horizontal" ? (
-        <>
-          <span className="lw-tabs">{tabs}</span>
-          {body}
-        </>
-      ) : (
-        <>
-          <span className="lw-rail">{tabs}</span>
-          {body}
-        </>
-      )}
-    </span>
-  );
-}
-
-const UI_STYLE_OPTIONS: Array<{ value: UiStyle; label: string }> = [
-  { value: "classic", label: "Classic" },
-  { value: "modern", label: "Modern" },
-];
-
-// Mini wireframe preview of each interface skin: a top bar + a card, with the
-// corner radius / accent / surfaces that define the look. CSS keys off the
-// `ui-wire-${value}` class (see styles.css).
-function UiStyleWire({ value }: { value: UiStyle }) {
-  return (
-    <span className={`ui-wire ui-wire-${value}`} aria-hidden="true">
-      <span className="uw-bar" />
-      <span className="uw-body">
-        <span className="uw-card">
-          <span className="uw-pill" />
-          <span className="uw-line" />
-          <span className="uw-line short" />
-        </span>
-      </span>
-    </span>
-  );
-}
 
 const QUICK_VIEW_OPTIONS: Array<{ value: boolean; label: string }> = [
   { value: true, label: "Quick view first" },
@@ -9715,8 +10233,6 @@ function QuickViewWire({ value }: { value: boolean }) {
 function AppearanceSettings() {
   const { updateProfile } = useAuth();
   const theme = useTheme(); // global theme store — already reflects the synced cloud value
-  const tabLayout = useTabLayout(); // synced via user_settings jsonb (settings.ts)
-  const uiStyle = useUiStyle(); // interface skin, synced via user_settings jsonb
   const quickViewFirst = useQuickViewFirst(); // team-click behavior, synced
   const quickViewExpand = useQuickViewExpandExtras(); // quick-view Events/Awards default, synced
 
@@ -9731,7 +10247,7 @@ function AppearanceSettings() {
         <h2 className="settings-card-title">Appearance</h2>
       </div>
       <div className="settings-card-body">
-        <p className="settings-section-copy">Choose how stemScout looks. Your pick syncs to your account.</p>
+        <p className="settings-section-copy">Choose how OpenScout looks. Your pick syncs to your account.</p>
         <div className="theme-picker">
           {SETTINGS_THEME_OPTIONS.map((option) => (
             <button
@@ -9751,48 +10267,6 @@ function AppearanceSettings() {
           ))}
         </div>
         <p className="onboard-hint">Applies instantly and syncs across your devices.</p>
-
-        <div className="settings-field">
-          <h3 className="settings-field-title">Interface style</h3>
-          <p className="settings-section-copy">
-            Keep the classic look, or switch to a cleaner, modern skin. Both work in light and dark.
-          </p>
-          <div className="layout-picker" role="group" aria-label="Interface style">
-            {UI_STYLE_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`theme-tile ${uiStyle === option.value ? "active" : ""}`}
-                onClick={() => setUiStyle(option.value)}
-                aria-pressed={uiStyle === option.value}
-              >
-                <UiStyleWire value={option.value} />
-                <span className="theme-tile-label">{option.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="settings-field">
-          <h3 className="settings-field-title">Detail page tabs</h3>
-          <p className="settings-section-copy">
-            Pick how tabs appear on event and team pages — a bar across the top, or a side rail like this page.
-          </p>
-          <div className="layout-picker" role="group" aria-label="Tab orientation">
-            {TAB_LAYOUT_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`theme-tile ${tabLayout === option.value ? "active" : ""}`}
-                onClick={() => setTabLayout(option.value)}
-                aria-pressed={tabLayout === option.value}
-              >
-                <TabLayoutWire value={option.value} />
-                <span className="theme-tile-label">{option.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
 
         <div className="settings-field">
           <h3 className="settings-field-title">Team click behavior</h3>
@@ -9988,60 +10462,58 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const handleKey = (e: KeyboardEvent<HTMLElement>) => {
-    if (e.key === "Escape") onClose();
-  };
-
   return (
-    <div className="video-overlay" onClick={onClose} onKeyDown={handleKey} role="dialog" aria-modal="true" aria-label="Create org">
-      <div className="org-create-modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Create an org</h2>
-        <div className="org-create-field">
-          <label htmlFor="org-name-input">Org name</label>
-          <input
-            id="org-name-input"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value.slice(0, 40))}
-            placeholder="e.g. 169W Scouting Alliance"
-            autoFocus
-            onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }}
-          />
-        </div>
-        <div className="org-create-row">
-          <div className="org-create-field">
-            <label htmlFor="org-program-select">Program</label>
-            <select id="org-program-select" value={program} onChange={(e) => setProgram(e.target.value)}>
-              <option value="">Any / none</option>
-              {AUTH_PROGRAMS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
-          </div>
-          <div className="org-create-field">
-            <label htmlFor="org-team-input">Team #</label>
-            <input
-              id="org-team-input"
-              type="text"
-              value={teamNumber}
-              onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
-              placeholder="e.g. 169W"
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create an org</DialogTitle>
+        </DialogHeader>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="org-name-input">Org name</FieldLabel>
+            <Input
+              id="org-name-input"
+              value={name}
+              onChange={(e) => setName(e.target.value.slice(0, 40))}
+              placeholder="e.g. 169W Scouting Alliance"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }}
             />
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <FieldLabel htmlFor="org-program-select">Program</FieldLabel>
+              <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
+                <SelectTrigger id="org-program-select" className="w-full">
+                  <SelectValue placeholder="Any / none" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Any / none</SelectItem>
+                  {AUTH_PROGRAMS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="org-team-input">Team #</FieldLabel>
+              <Input
+                id="org-team-input"
+                value={teamNumber}
+                onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
+                placeholder="e.g. 169W"
+              />
+            </Field>
           </div>
-        </div>
-        <div className="org-create-footer">
-          <button type="button" className="button-link secondary" onClick={onClose}>Cancel</button>
-          <button
-            type="button"
-            className="button-link"
-            onClick={() => void handleCreate()}
-            disabled={!name.trim() || saving}
-          >
+        </FieldGroup>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => void handleCreate()} disabled={!name.trim() || saving}>
             {saving ? "Creating…" : "Create org"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -10067,9 +10539,9 @@ function OrgPanel() {
         <Panel title="Org / Team" icon={<Users size={15} />}>
           <div className="org-panel-empty">
             <p>Collaborate with your scouting team.</p>
-            <button type="button" className="button-link" onClick={() => setCreateOpen(true)}>
+            <Button variant="outline" size="sm" className="self-start" onClick={() => setCreateOpen(true)}>
               Create an org
-            </button>
+            </Button>
             <p className="org-panel-hint">Or ask your coach for an invite link.</p>
           </div>
         </Panel>
@@ -10177,15 +10649,13 @@ function JoinOrgPage({ token }: { token: string }) {
               </>
             )}
             {!result?.ok && user && (
-              <button
-                type="button"
-                className="button-link"
-                style={{ marginTop: 8 }}
+              <Button
+                className="mt-2"
                 onClick={() => void handleJoin()}
                 disabled={joining}
               >
                 {joining ? "Joining…" : `Join ${info.org_name}`}
-              </button>
+              </Button>
             )}
           </>
         )}
@@ -10255,46 +10725,51 @@ function OrgOverviewTab({ orgId, org }: { orgId: string; org: OrgMembership | un
 
   return (
     <div className="org-settings-form">
-      <div className="org-settings-field">
-        <label htmlFor="os-name">Org name</label>
-        <input
-          id="os-name"
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value.slice(0, 40))}
-          maxLength={40}
-        />
-      </div>
-      <div className="org-settings-row">
-        <div className="org-settings-field">
-          <label htmlFor="os-program">Program</label>
-          <select id="os-program" value={program} onChange={(e) => setProgram(e.target.value)}>
-            <option value="">Any / none</option>
-            {AUTH_PROGRAMS.map((p) => (
-              <option key={p.value} value={p.value}>{p.label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="org-settings-field">
-          <label htmlFor="os-team">Team #</label>
-          <input
-            id="os-team"
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="os-name">Org name</FieldLabel>
+          <Input
+            id="os-name"
             type="text"
-            value={teamNumber}
-            onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
-            placeholder="e.g. 169W"
+            value={name}
+            onChange={(e) => setName(e.target.value.slice(0, 40))}
+            maxLength={40}
           />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field>
+            <FieldLabel htmlFor="os-program">Program</FieldLabel>
+            <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
+              <SelectTrigger id="os-program" className="w-full">
+                <SelectValue placeholder="Any / none" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Any / none</SelectItem>
+                {AUTH_PROGRAMS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="os-team">Team #</FieldLabel>
+            <Input
+              id="os-team"
+              type="text"
+              value={teamNumber}
+              onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
+              placeholder="e.g. 169W"
+            />
+          </Field>
         </div>
-      </div>
-      <button
-        type="button"
-        className="button-link"
-        style={{ alignSelf: "flex-start" }}
+      </FieldGroup>
+      <Button
+        className="self-start"
         onClick={() => void handleSave()}
         disabled={saving || !name.trim()}
       >
         {saved ? "Saved!" : saving ? "Saving…" : "Save changes"}
-      </button>
+      </Button>
 
       <div className="danger-zone">
         <h3>{org.role === "owner" ? "Delete org" : "Leave org"}</h3>
@@ -10303,26 +10778,18 @@ function OrgOverviewTab({ orgId, org }: { orgId: string; org: OrgMembership | un
             ? "Permanently deletes the org and all shared data. This cannot be undone."
             : "You will lose access to this org's shared favorites and notes."}
         </p>
-        <button
-          type="button"
-          className="button-link"
-          style={{ background: "var(--danger)", borderColor: "var(--danger-strong)", color: "#fff" }}
-          onClick={() => void handleLeaveOrDelete()}
-        >
-          {confirming
-            ? (org.role === "owner" ? "Confirm delete" : "Confirm leave")
-            : (org.role === "owner" ? "Delete org" : "Leave org")}
-        </button>
-        {confirming && (
-          <button
-            type="button"
-            className="button-link secondary"
-            style={{ marginLeft: 8 }}
-            onClick={() => setConfirming(false)}
-          >
-            Cancel
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <Button variant="destructive" onClick={() => void handleLeaveOrDelete()}>
+            {confirming
+              ? (org.role === "owner" ? "Confirm delete" : "Confirm leave")
+              : (org.role === "owner" ? "Delete org" : "Leave org")}
+          </Button>
+          {confirming && (
+            <Button variant="outline" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -10365,26 +10832,25 @@ function OrgMembersTab({ orgId, org }: { orgId: string; org: OrgMembership | und
           {canManage && m.userId !== user?.id && (
             <>
               {org?.role === "owner" && (
-                <select
-                  value={m.role}
-                  onChange={(e) => void handleRoleChange(m.userId, e.target.value as OrgRole)}
-                  style={{ fontSize: 12, padding: "2px 6px", borderRadius: "var(--radius)", border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-2)" }}
-                  aria-label={`Change role for ${m.displayName}`}
-                >
-                  <option value="admin">admin</option>
-                  <option value="member">member</option>
-                </select>
+                <Select value={m.role} onValueChange={(v) => void handleRoleChange(m.userId, v as OrgRole)}>
+                  <SelectTrigger size="sm" className="w-[108px]" aria-label={`Change role for ${m.displayName}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">admin</SelectItem>
+                    <SelectItem value="member">member</SelectItem>
+                  </SelectContent>
+                </Select>
               )}
-              <button
-                type="button"
-                className="icon-button"
-                style={{ width: 26, height: 26 }}
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => void handleRemove(m.userId)}
                 title={`Remove ${m.displayName}`}
                 aria-label={`Remove ${m.displayName}`}
               >
                 <UserMinus size={13} />
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -10443,16 +10909,16 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
 
   return (
     <div>
-      <button
-        type="button"
-        className="button-link"
-        style={{ marginBottom: 16 }}
+      <Button
+        variant="outline"
+        size="sm"
+        className="mb-4"
         onClick={() => void handleGenerate()}
         disabled={generating}
       >
-        <Link2 size={14} />
+        <Link2 data-icon="inline-start" />
         {generating ? "Generating…" : "Generate invite link"}
-      </button>
+      </Button>
       {invites.length === 0 && (
         <p style={{ fontSize: 13, color: "var(--text-muted)" }}>No active invite links.</p>
       )}
@@ -10461,34 +10927,34 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
           const url = `${window.location.origin}/join/${invite.id}`;
           return (
             <div key={invite.id} className="org-invite-item">
-              <input
+              <Input
                 type="text"
-                className="org-invite-link-input"
+                className="org-invite-link-input flex-1"
                 value={url}
                 readOnly
                 title={url}
               />
-              <button
-                type="button"
-                className="icon-button"
-                style={{ width: 32, height: 32, flexShrink: 0 }}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
                 onClick={() => void handleCopy(invite.id)}
                 title="Copy link"
                 aria-label="Copy invite link"
               >
                 {copied === invite.id ? <Check size={13} /> : <LinkIcon size={13} />}
-              </button>
+              </Button>
               <span className="org-invite-expiry">{formatExpiry(invite.expiresAt)}</span>
-              <button
-                type="button"
-                className="icon-button"
-                style={{ width: 32, height: 32, flexShrink: 0, color: "var(--danger)" }}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0 text-destructive hover:text-destructive"
                 onClick={() => void handleRevoke(invite.id)}
                 title="Revoke"
                 aria-label="Revoke invite"
               >
                 <Unlink size={13} />
-              </button>
+              </Button>
             </div>
           );
         })}
@@ -10497,24 +10963,345 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
   );
 }
 
-type OrgSettingsTab = "overview" | "members" | "invites";
-const ORG_SETTINGS_TABS: Array<{ value: OrgSettingsTab; label: string; icon: ReactNode }> = [
-  { value: "overview", label: "Overview", icon: <Settings size={15} /> },
-  { value: "members",  label: "Members",  icon: <Users size={15} /> },
-  { value: "invites",  label: "Invites",  icon: <Link2 size={15} /> },
+// ── Org Workspace (/org/:id) ──────────────────────────────────────────────────
+
+const ORG_WORKSPACE_TABS = ["dashboard", "notes", "picklists", "activity", "export", "settings"] as const;
+type OrgWorkspaceTab = typeof ORG_WORKSPACE_TABS[number];
+const ORG_WORKSPACE_NAV: Array<{ value: OrgWorkspaceTab; label: string; icon: ReactNode }> = [
+  { value: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={15} /> },
+  { value: "notes",     label: "Notes",     icon: <StickyNote size={15} /> },
+  { value: "picklists", label: "Picklists", icon: <ListOrdered size={15} /> },
+  { value: "activity",  label: "Activity",  icon: <Activity size={15} /> },
+  { value: "export",    label: "Export",    icon: <Download size={15} /> },
+  { value: "settings",  label: "Settings",  icon: <Settings size={15} /> },
 ];
 
-function OrgSettingsPage({ orgId }: { orgId: string }) {
+function orgSlug(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "org";
+}
+
+function activityVerb(item: ActivityItem): string {
+  switch (item.kind) {
+    case "note": return "added a note";
+    case "picklist": return item.teamNumber ? `ranked ${item.teamNumber} in a picklist` : "updated a picklist";
+    case "favorite": return item.refKind === "event" ? "favorited an event" : "favorited a team";
+  }
+}
+
+function OrgActivityRow({ item, eventName }: { item: ActivityItem; eventName: string | null }) {
+  const initial = (item.userName || "?").charAt(0).toUpperCase();
+  const when = formatRelativeTime(new Date(item.ts).getTime());
+  const eventLabel = item.eventId ? (eventName ?? `Event ${item.eventId}`) : null;
+  const href = item.eventId ? urlWithHash(`/event/${item.eventId}`, item.kind === "picklist" ? "picklist" : "matches") : null;
+  const body = (
+    <>
+      <span className="org-member-avatar" aria-hidden>{initial}</span>
+      <span className="org-activity-text">
+        <strong>{item.userName}</strong> {activityVerb(item)}
+        {eventLabel && <> · <span className="org-activity-event">{eventLabel}</span></>}
+      </span>
+      <span className="org-activity-time">{when}</span>
+    </>
+  );
+  return href
+    ? <Link href={href} className="org-activity-row">{body}</Link>
+    : <div className="org-activity-row">{body}</div>;
+}
+
+function OrgDashboardTab({ orgId, onNavigate }: { orgId: string; onNavigate: (tab: OrgWorkspaceTab) => void }) {
+  const favs = useOrgFavorites(orgId);
+  const notes = useOrgNotesList(orgId);
+  const picks = useOrgPicklistEvents(orgId);
+  const [memberCount, setMemberCount] = useState<number | null>(null);
+  const [activity, setActivity] = useState<ActivityItem[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getOrgMembers(orgId).then((m) => { if (!cancelled) setMemberCount(m.length); });
+    void loadOrgActivity(orgId, 5).then((a) => { if (!cancelled) setActivity(a); });
+    return () => { cancelled = true; };
+  }, [orgId]);
+
+  const names = useEventNames((activity ?? []).map((a) => a.eventId));
+  const nameOf = (id: string | null) => { const ev = id ? names.get(id) : null; return ev?.name ?? null; };
+  const favCount = favs.teams.length + favs.events.length;
+
+  const tiles: Array<{ label: string; value: number | string; icon: ReactNode; tab?: OrgWorkspaceTab }> = [
+    { label: "Notes",            value: notes.length,                            icon: <StickyNote size={16} />,  tab: "notes" },
+    { label: "Active picklists", value: picks.loading ? "…" : picks.data.length, icon: <ListOrdered size={16} />, tab: "picklists" },
+    { label: "Shared favorites", value: favCount,                                icon: <Star size={16} /> },
+    { label: "Members",          value: memberCount ?? "…",                      icon: <Users size={16} />,       tab: "settings" },
+  ];
+
+  return (
+    <div className="org-ws-section">
+      <div className="org-ws-stats">
+        {tiles.map((t) => {
+          const inner = (
+            <>
+              <span className="org-ws-stat-top">{t.icon}<span className="org-ws-stat-value">{t.value}</span></span>
+              <span className="org-ws-stat-label">{t.label}</span>
+            </>
+          );
+          return t.tab
+            ? <button key={t.label} type="button" className="org-ws-stat org-ws-stat--btn" onClick={() => onNavigate(t.tab as OrgWorkspaceTab)}>{inner}</button>
+            : <div key={t.label} className="org-ws-stat">{inner}</div>;
+        })}
+      </div>
+
+      <div className="org-ws-block">
+        <div className="org-ws-block-head">
+          <h3>Recent activity</h3>
+          <button type="button" className="panel-action-link" onClick={() => onNavigate("activity")}>View all</button>
+        </div>
+        {activity === null
+          ? <Skeleton className="h-24 w-full" />
+          : activity.length === 0
+            ? <p className="org-ws-empty">No shared activity yet.</p>
+            : <div className="org-activity-list">{activity.map((a, i) => <OrgActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>}
+      </div>
+    </div>
+  );
+}
+
+function OrgNotesHubTab({ orgId }: { orgId: string }) {
+  const notes = useOrgNotesList(orgId);
+  const [query, setQuery] = useState("");
+  const [eventFilter, setEventFilter] = useState("all");
+  const names = useEventNames(notes.map((n) => n.eventId));
+  const nameOf = (id: string | null) => { const ev = id ? names.get(id) : null; return ev?.name ?? (id ? `Event ${id}` : "No event"); };
+
+  const eventOptions = useMemo(
+    () => Array.from(new Set(notes.map((n) => n.eventId ?? "none"))),
+    [notes],
+  );
+
+  const filtered = notes.filter((n) => {
+    if (eventFilter !== "all" && (n.eventId ?? "none") !== eventFilter) return false;
+    const q = query.trim().toLowerCase();
+    if (q && !n.body.toLowerCase().includes(q) && !nameOf(n.eventId).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const groups = useMemo(() => {
+    const m = new Map<string, OrgNoteListItem[]>();
+    for (const n of filtered) {
+      const k = n.eventId ?? "none";
+      const arr = m.get(k) ?? []; arr.push(n); m.set(k, arr);
+    }
+    return [...m.entries()];
+  }, [filtered]);
+
+  if (notes.length === 0) {
+    return <p className="org-ws-empty">No shared notes yet. Add a note from any match's note button and switch it to your org to share it here.</p>;
+  }
+
+  return (
+    <div className="org-ws-section">
+      <div className="org-ws-toolbar">
+        <Input placeholder="Search notes…" value={query} onChange={(e) => setQuery(e.target.value)} className="org-ws-search" />
+        <Select value={eventFilter} onValueChange={setEventFilter}>
+          <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All events</SelectItem>
+            {eventOptions.map((id) => (
+              <SelectItem key={id} value={id}>{id === "none" ? "No event" : nameOf(id)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {groups.length === 0
+        ? <p className="org-ws-empty">No notes match your search.</p>
+        : groups.map(([eid, items]) => (
+          <div key={eid} className="org-notes-group">
+            <div className="org-notes-group-head">
+              <span className="org-notes-group-name">{eid === "none" ? "No event" : nameOf(eid)}</span>
+              <span className="org-ws-badge">{items.length}</span>
+            </div>
+            {items.map((n) => {
+              const href = n.eventId ? urlWithHash(`/event/${n.eventId}`, "matches") : null;
+              const inner = <span className="org-note-body">{n.body}</span>;
+              return href
+                ? <Link key={n.matchId} href={href} className="org-note-row">{inner}<ChevronRight size={14} className="org-note-go" /></Link>
+                : <div key={n.matchId} className="org-note-row">{inner}</div>;
+            })}
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function OrgPicklistRow({ summary, eventName, eventSku }: { summary: OrgPicklistSummary; eventName: string | null; eventSku: string | null }) {
+  const name = eventName ?? `Event ${summary.eventId}`;
+  const href = urlWithHash(`/event/${eventSku || summary.eventId}`, "picklist");
+  return (
+    <Link href={href} className="org-picklist-card">
+      <div className="org-picklist-card-head">
+        <span className="org-picklist-name">{name}</span>
+        <span className="org-ws-badge">{summary.teamCount} team{summary.teamCount !== 1 ? "s" : ""}</span>
+      </div>
+      <div className="org-picklist-preview">
+        {summary.topTeams.map((t, i) => (
+          <span key={t.teamNumber} className="org-picklist-team"><span className="org-picklist-rank">{i + 1}</span>{t.teamNumber}</span>
+        ))}
+        {summary.teamCount > summary.topTeams.length && (
+          <span className="org-picklist-more">+{summary.teamCount - summary.topTeams.length} more</span>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+function OrgPicklistsTab({ orgId }: { orgId: string }) {
+  const { data, loading } = useOrgPicklistEvents(orgId);
+  const names = useEventNames(data.map((d) => d.eventId));
+  if (loading) return <Skeleton className="h-28 w-full" />;
+  if (data.length === 0) return <p className="org-ws-empty">No picklists yet. Build one from an event's Picklist tab and it will show up here.</p>;
+  return (
+    <div className="org-picklist-grid">
+      {data.map((s) => {
+        const ev = names.get(s.eventId);
+        return <OrgPicklistRow key={s.eventId} summary={s} eventName={ev?.name ?? null} eventSku={ev?.sku ?? null} />;
+      })}
+    </div>
+  );
+}
+
+function OrgActivityTab({ orgId }: { orgId: string }) {
+  const [items, setItems] = useState<ActivityItem[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void loadOrgActivity(orgId, 60).then((a) => { if (!cancelled) setItems(a); });
+    return () => { cancelled = true; };
+  }, [orgId]);
+  const names = useEventNames((items ?? []).map((a) => a.eventId));
+  const nameOf = (id: string | null) => { const ev = id ? names.get(id) : null; return ev?.name ?? null; };
+  if (items === null) return <Skeleton className="h-40 w-full" />;
+  if (items.length === 0) return <p className="org-ws-empty">No shared activity yet.</p>;
+  return <div className="org-activity-list">{items.map((a, i) => <OrgActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>;
+}
+
+function OrgExportTab({ orgId, orgName }: { orgId: string; orgName: string }) {
+  const notes = useOrgNotesList(orgId);
+  const [picklists, setPicklists] = useState<Array<{ eventId: string; entries: PicklistEntry[] }> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void loadOrgPicklistEntries(orgId).then((p) => { if (!cancelled) setPicklists(p); });
+    return () => { cancelled = true; };
+  }, [orgId]);
+
+  const eventIds = [...new Set([...notes.map((n) => n.eventId), ...(picklists ?? []).map((p) => p.eventId)])];
+  const names = useEventNames(eventIds);
+  const nameOf = (id: string | null) => { const ev = id ? names.get(id) : null; return ev?.name ?? (id ? `Event ${id}` : "No event"); };
+
+  const downloadCsv = (filename: string, rows: (string | number)[][]) => {
+    const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPicklists = () => {
+    const rows: (string | number)[][] = [["Event", "Rank", "Team #", "Team Name", "Crossed Out", "Notes"]];
+    for (const p of picklists ?? []) {
+      p.entries.forEach((e, i) => rows.push([nameOf(p.eventId), i + 1, e.teamNumber, e.teamName ?? "", e.crossedOut ? "yes" : "", e.notes]));
+    }
+    downloadCsv(`${orgSlug(orgName)}-picklists.csv`, rows);
+  };
+
+  const exportNotes = () => {
+    const rows: (string | number)[][] = [["Event", "Match ID", "Note", "Updated"]];
+    for (const n of notes) rows.push([nameOf(n.eventId), n.matchId, n.body, n.updatedAt]);
+    downloadCsv(`${orgSlug(orgName)}-notes.csv`, rows);
+  };
+
+  const hasPicklists = (picklists ?? []).some((p) => p.entries.length > 0);
+
+  return (
+    <div className="org-ws-section">
+      <p className="org-ws-help">Download your org's shared data as CSV, or print a clean copy for the competition table.</p>
+      <div className="org-ws-export-actions">
+        <Button variant="outline" onClick={exportPicklists} disabled={!hasPicklists}>
+          <Download data-icon="inline-start" />Picklists CSV
+        </Button>
+        <Button variant="outline" onClick={exportNotes} disabled={notes.length === 0}>
+          <Download data-icon="inline-start" />Notes CSV
+        </Button>
+        <Button variant="secondary" onClick={() => window.print()}>
+          <Printer data-icon="inline-start" />Print / Save PDF
+        </Button>
+      </div>
+
+      {/* Print-only formatted view — hidden on screen, isolated for print */}
+      <div className="org-print-root">
+        <h1>{orgName}</h1>
+        <section className="org-print-section">
+          <h2>Picklists</h2>
+          {!hasPicklists ? <p>No picklists.</p> : (picklists ?? []).filter((p) => p.entries.length > 0).map((p) => (
+            <div key={p.eventId} className="org-print-block">
+              <h3>{nameOf(p.eventId)}</h3>
+              <ol>
+                {p.entries.map((e) => (
+                  <li key={e.teamId} style={{ textDecoration: e.crossedOut ? "line-through" : "none" }}>
+                    {e.teamNumber}{e.teamName ? ` — ${e.teamName}` : ""}{e.notes ? ` — ${e.notes}` : ""}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </section>
+        <section className="org-print-section">
+          <h2>Notes</h2>
+          {notes.length === 0 ? <p>No notes.</p> : notes.map((n) => (
+            <div key={n.matchId} className="org-print-note">
+              <strong>{nameOf(n.eventId)}</strong>
+              <p>{n.body}</p>
+            </div>
+          ))}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function OrgSettingsSection({ orgId, org }: { orgId: string; org: OrgMembership | undefined }) {
+  return (
+    <div className="org-ws-section">
+      <OrgOverviewTab orgId={orgId} org={org} />
+      <div className="org-ws-subsection">
+        <h3 className="org-ws-subhead">Members</h3>
+        <OrgMembersTab orgId={orgId} org={org} />
+      </div>
+      <div className="org-ws-subsection">
+        <h3 className="org-ws-subhead">Invites</h3>
+        <OrgInvitesTab orgId={orgId} />
+      </div>
+    </div>
+  );
+}
+
+function OrgWorkspacePage({ orgId }: { orgId: string }) {
   const org = useOrg(orgId);
   const ready = useOrgsReady();
-  const [tab, setTab] = useState<OrgSettingsTab>("overview");
   const { user } = useAuth();
+  const [tab, setTab] = useState<OrgWorkspaceTab>(() => hashTab(ORG_WORKSPACE_TABS, "dashboard"));
+
+  useEffect(() => {
+    const handler = () => setTab(hashTab(ORG_WORKSPACE_TABS, "dashboard"));
+    window.addEventListener("hashchange", handler);
+    return () => window.removeEventListener("hashchange", handler);
+  }, []);
+
+  useEffect(() => { replaceCurrentHash(tab); }, [tab]);
 
   if (!user) {
     return (
       <section className="page">
         <div style={{ padding: "40px 20px", textAlign: "center" }}>
-          <p style={{ color: "var(--text-muted)" }}>Sign in to manage this org.</p>
+          <p style={{ color: "var(--text-muted)" }}>Sign in to view this org.</p>
         </div>
       </section>
     );
@@ -10533,13 +11320,13 @@ function OrgSettingsPage({ orgId }: { orgId: string }) {
 
   return (
     <section className="page">
-      <PageTitle icon={<Users />} title={org?.name ?? "Org Settings"} />
+      <PageTitle icon={<Users />} title={org?.name ?? "Org"} />
       <div style={{ marginBottom: 12 }}>
         <a href="/" className="join-org-back" onClick={(e) => { e.preventDefault(); navigate("/"); }}>← Back to home</a>
       </div>
       <div className="settings-layout">
-        <nav className="settings-tabs" aria-label="Org settings sections">
-          {ORG_SETTINGS_TABS.map((t) => (
+        <nav className="settings-tabs" aria-label="Org sections">
+          {ORG_WORKSPACE_NAV.map((t) => (
             <button
               key={t.value}
               type="button"
@@ -10552,9 +11339,12 @@ function OrgSettingsPage({ orgId }: { orgId: string }) {
           ))}
         </nav>
         <div className="settings-content">
-          {tab === "overview" && <OrgOverviewTab orgId={orgId} org={org} />}
-          {tab === "members"  && <OrgMembersTab orgId={orgId} org={org} />}
-          {tab === "invites"  && <OrgInvitesTab orgId={orgId} />}
+          {tab === "dashboard" && <OrgDashboardTab orgId={orgId} onNavigate={setTab} />}
+          {tab === "notes"     && <OrgNotesHubTab orgId={orgId} />}
+          {tab === "picklists" && <OrgPicklistsTab orgId={orgId} />}
+          {tab === "activity"  && <OrgActivityTab orgId={orgId} />}
+          {tab === "export"    && <OrgExportTab orgId={orgId} orgName={org?.name ?? "org"} />}
+          {tab === "settings"  && <OrgSettingsSection orgId={orgId} org={org} />}
         </div>
       </div>
     </section>
@@ -10849,8 +11639,13 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   const actionOffset = cmpOffset + visibleRecentCount;
 
   return (
-    <div className="spotlight-overlay" onClick={onClose}>
-      <div className="spotlight-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Command palette">
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="top-[14vh] translate-y-0 w-[min(580px,100%)] max-w-[580px] sm:max-w-[580px] gap-0 border-0 bg-transparent p-0 shadow-none"
+      >
+        <DialogTitle className="sr-only">Command palette</DialogTitle>
+        <div className="spotlight-modal">
 
         {/* Input */}
         <div className="spotlight-input-row">
@@ -10967,8 +11762,9 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
           <span><kbd>↵</kbd> open</span>
           <span><kbd>Esc</kbd> close</span>
         </div>
-      </div>
-    </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -11429,13 +12225,6 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
     return () => { live.value = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally runs once on mount
 
-  // Close on Escape
-  useEffect(() => {
-    const handler = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
   const loadedProfiles = slots.map((s) => s.profile).filter((p): p is Team => !!p);
   const isIqCompare = loadedProfiles.length > 0 && loadedProfiles.every((p) => isIqProgramInfo(p.program));
   const compareRows = useMemo(() => buildCompareRows(!!contextEventId, isIqCompare), [contextEventId, isIqCompare]);
@@ -11476,14 +12265,12 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
   }
 
   return (
-    <div className="compare-overlay" onClick={onClose}>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent showCloseButton={false} className="w-fit max-w-none sm:max-w-none border-0 bg-transparent p-0 shadow-none">
+        <DialogTitle className="sr-only">Compare teams</DialogTitle>
       <div
         className="compare-modal"
         style={{ "--col-count": colCount } as React.CSSProperties}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Compare teams"
       >
         {/* Header */}
         <div className="compare-modal-header">
@@ -11573,7 +12360,8 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
           })}
         </div>
       </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -11643,37 +12431,530 @@ function CompareFromUrl({ param }: { param: string }) {
 }
 
 function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const handler = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
   return (
-    <div className="spotlight-overlay" onClick={onClose}>
-      <div className="shortcuts-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-        <div className="shortcuts-header">
-          <strong>Keyboard Shortcuts</strong>
-          <button type="button" className="video-close-btn" onClick={onClose} aria-label="Close">×</button>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Keyboard Shortcuts</DialogTitle>
+        </DialogHeader>
+        <table className="shortcuts-table">
+          <tbody>
+            <tr><td><kbd>{isMac ? "⌘K" : "Ctrl+K"}</kbd></td><td>Open command palette</td></tr>
+            <tr><td><kbd>/</kbd></td><td>Open command palette</td></tr>
+            <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Close any overlay</td></tr>
+            <tr><td><kbd>G</kbd> then <kbd>H</kbd></td><td>Go to Home</td></tr>
+            <tr><td><kbd>G</kbd> then <kbd>E</kbd></td><td>Go to Events</td></tr>
+            <tr><td><kbd>G</kbd> then <kbd>T</kbd></td><td>Go to Teams</td></tr>
+            <tr><td><kbd>C</kbd> (on team page)</td><td>Toggle team in comparison tray</td></tr>
+            <tr><td><kbd>F</kbd> (on event page)</td><td>Search teams within the event</td></tr>
+            <tr><td><kbd>G</kbd> then <kbd>C</kbd></td><td>Open comparison modal</td></tr>
+          </tbody>
+        </table>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// The Apple-style shareable team card is kept here but not surfaced yet.
+const SHOW_TEAM_SHARE_CARD = false;
+
+function myTeamDateLabel(iso?: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", year: "numeric" }).format(d);
+}
+
+type MyTeamTimelineRow = {
+  event: Event;
+  state: "live" | "up" | "done";
+  start: number;
+  isNext: boolean;
+  awardTitle: string | null;
+  rank: number | null;
+  record: string | null;
+  skills: number | null;
+  days: number | null;
+  nextMatch: string | null;
+};
+
+function MyTeamPage() {
+  const { profile, ready } = useAuth();
+  const teamNumber = profile?.team_number?.trim() ?? "";
+  const teamProgramId = profile?.team_program ? Number(profile.team_program) : null;
+  const [playback, setPlayback] = useState<MatchPlayback | null>(null);
+
+  // Resolve the team object from the signed-in user's profile team.
+  const lookup = useAsync(async () => {
+    if (!teamNumber || !teamProgramId) return null;
+    const res = await api.robotEventsTeams({ number: teamNumber.toUpperCase(), "program[]": [teamProgramId], per_page: 50 });
+    return res.data[0] ?? null;
+  }, [teamNumber, teamProgramId]);
+  const team = lookup.data ?? null;
+  const id = team ? String(team.id) : "";
+  const isIq = isIqProgramInfo(team?.program);
+
+  // All events → most-recent season.
+  const events = useAsync(async () => {
+    if (!team) return null;
+    return collectAllPages<Event>((page) => api.teamEvents(id, { per_page: 250, page }));
+  }, [id]);
+  const teamEvents = useMemo(() => events.data?.data ?? [], [events.data]);
+  const eventIndex = useMemo(() => makeEventIndex(teamEvents), [teamEvents]);
+  const season = useMemo(() => {
+    let best: { id: number; name: string; latest: number } | null = null;
+    for (const e of teamEvents) {
+      const t = new Date(e.start ?? 0).getTime();
+      if (!best || t > best.latest) best = { id: e.season.id, name: e.season.name, latest: t };
+    }
+    return best;
+  }, [teamEvents]);
+  const seasonId = season?.id ?? null;
+  const liveRefresh = teamEvents.some(eventIsLive) ? liveEventRefreshMs : 0;
+
+  // Season data buckets.
+  const matches = useAsync(async () => {
+    if (!team || !seasonId) return null;
+    return collectAllPages<Match>((page) => api.teamMatches(id, { "season[]": [seasonId], per_page: 250, page }));
+  }, [id, seasonId], 0, liveRefresh);
+  const rankings = useAsync(async () => {
+    if (!team || !seasonId) return null;
+    return collectAllPages<Ranking>((page) => api.teamRankings(id, { "season[]": [seasonId], per_page: 250, page }));
+  }, [id, seasonId], 300, liveRefresh);
+  const skills = useAsync(async () => {
+    if (!team || !seasonId) return null;
+    return collectAllPages<Skill>((page) => api.teamSkills(id, { "season[]": [seasonId], per_page: 250, page }));
+  }, [id, seasonId], 600);
+  const awards = useAsync(async () => {
+    if (!team || !seasonId) return null;
+    return collectAllPages<Award>((page) => api.teamAwards(id, { "season[]": [seasonId], per_page: 250, page }));
+  }, [id, seasonId], 900);
+
+  const grade = team?.grade ?? "";
+  const worldSkills = useAsync(async () => {
+    if (!seasonId || !grade) return null;
+    return loadWorldSkills(seasonId, grade);
+  }, [seasonId, grade]);
+  const wsEntry = useMemo(() => {
+    if (!worldSkills.data || !team) return null;
+    return (
+      worldSkills.data.find((e) => e.team.id === team.id) ??
+      worldSkills.data.find((e) => e.team.team?.toUpperCase() === team.number.toUpperCase()) ??
+      null
+    );
+  }, [worldSkills.data, team]);
+
+  const seasonMatches = useMemo(() => matches.data?.data ?? [], [matches.data]);
+  const seasonRankings = useMemo(() => rankings.data?.data ?? [], [rankings.data]);
+  const seasonSkills = useMemo(() => skills.data?.data ?? [], [skills.data]);
+  const seasonAwards = useMemo(() => awards.data?.data ?? [], [awards.data]);
+
+  // Season record from real match results (qualification + elims), excluding practice/scrimmage.
+  const record = useMemo(() => {
+    let w = 0, l = 0, t = 0;
+    if (!isIq && team) {
+      for (const m of seasonMatches) {
+        if (/practice/i.test(m.name)) continue;
+        if (isScrimmageEvent(eventIndex.get(m.event.id))) continue;
+        const color = teamAllianceColor(m, team.id);
+        if (!color) continue;
+        const { winner } = matchWinner(m);
+        if (winner === "-") continue;
+        if (winner === "Tie") t += 1;
+        else if (winner.toLowerCase() === color.toLowerCase()) w += 1;
+        else l += 1;
+      }
+    }
+    return { w, l, t };
+  }, [seasonMatches, eventIndex, isIq, team]);
+  const totalGames = record.w + record.l + record.t;
+  const winPct = totalGames ? Math.round((record.w / totalGames) * 1000) / 10 : 0;
+  const seasonSkillsSummary = useMemo(() => skillSummary(seasonSkills), [seasonSkills]);
+
+  // Live event (running today) within the current season.
+  const seasonEvents = useMemo(() => teamEvents.filter((e) => !seasonId || e.season.id === seasonId), [teamEvents, seasonId]);
+  const liveEvent = useMemo(() => seasonEvents.find(eventIsLive) ?? null, [seasonEvents]);
+  const liveRanking = useMemo(() => (liveEvent ? seasonRankings.find((r) => r.event.id === liveEvent.id) ?? null : null), [liveEvent, seasonRankings]);
+  const liveSkills = useMemo(() => (liveEvent ? skillSummary(seasonSkills.filter((s) => s.event.id === liveEvent.id)) : null), [liveEvent, seasonSkills]);
+  const liveMatches = useMemo(
+    () => (liveEvent ? seasonMatches.filter((m) => m.event.id === liveEvent.id).slice().sort((a, b) => compareMatchesDisplay(a, b)) : []),
+    [liveEvent, seasonMatches],
+  );
+  const nextUp = useMemo(() => liveMatches.find((m) => !m.scored) ?? null, [liveMatches]);
+  const partner = useMemo(() => {
+    if (!nextUp || !team) return null;
+    for (const alliance of nextUp.alliances) {
+      const mine = alliance.teams.find((x) => x.team.id === team.id);
+      if (mine) return alliance.teams.map((x) => x.team).find((tm) => tm.id !== team.id) ?? null;
+    }
+    return null;
+  }, [nextUp, team]);
+
+  // Jumper livestream timestamps for the live event (drives the play button).
+  const preset = useAsync(async () => {
+    if (!liveEvent) return null;
+    return api.jumperPresetEventExists(liveEvent.sku);
+  }, [liveEvent?.sku]);
+  const matchTimestamps = useAsync(async () => {
+    if (!liveEvent || !preset.data?.exists) return null;
+    return api.jumperMatchTimestamps(liveEvent.sku, { offsetSeconds: -5 });
+  }, [liveEvent?.sku, preset.data?.exists]);
+  const timestampMap = useMemo(() => new Map((matchTimestamps.data ?? []).map((ts) => [ts.id, ts])), [matchTimestamps.data]);
+  const presetSupported = !!preset.data?.exists;
+
+  // Next upcoming event (any season) for the idle "Up next" panel.
+  const now = today.getTime();
+  const upcoming = useMemo(
+    () => teamEvents.filter((e) => new Date(e.start ?? 0).getTime() > now && !eventIsLive(e)).sort((a, b) => new Date(a.start ?? 0).getTime() - new Date(b.start ?? 0).getTime()),
+    [teamEvents, now],
+  );
+  const nextEvent = upcoming[0] ?? null;
+
+  // Season timeline rows (current season + any future events), ascending.
+  const timeline = useMemo<MyTeamTimelineRow[]>(() => {
+    const source = teamEvents.filter((e) => e.season.id === seasonId || new Date(e.start ?? 0).getTime() > now);
+    const rows = source.map((event) => {
+      const start = new Date(event.start ?? 0).getTime();
+      const live = eventIsLive(event);
+      const up = !live && start > now;
+      const state: MyTeamTimelineRow["state"] = live ? "live" : up ? "up" : "done";
+      const evAwards = seasonAwards.filter((a) => a.event.id === event.id).map((a) => a.title);
+      const awardTitle = evAwards.length ? evAwards.slice().sort((a, b) => awardPriority({ title: a } as Award) - awardPriority({ title: b } as Award))[0] : null;
+      const rk = seasonRankings.find((r) => r.event.id === event.id) ?? null;
+      const sk = skillSummary(seasonSkills.filter((s) => s.event.id === event.id));
+      return {
+        event,
+        state,
+        start,
+        isNext: false,
+        awardTitle,
+        rank: rk?.rank ?? null,
+        record: rk ? `${rk.wins ?? 0}–${rk.losses ?? 0}` : null,
+        skills: sk.combined ?? null,
+        days: up ? Math.max(0, Math.round((start - now) / oneDay)) : null,
+        nextMatch: live && nextUp ? shortMatchName(nextUp.name) : null,
+      };
+    });
+    rows.sort((a, b) => a.start - b.start);
+    const firstUp = rows.find((r) => r.state === "up");
+    if (firstUp) firstUp.isNext = true;
+    return rows;
+  }, [teamEvents, seasonId, seasonAwards, seasonRankings, seasonSkills, nextUp, now]);
+
+  // Height-match the live timeline to the matches panel and open scrolled to "now".
+  const matchesPanelRef = useRef<HTMLDivElement>(null);
+  const tlPanelRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!liveEvent) return;
+    const mp = matchesPanelRef.current, tp = tlPanelRef.current;
+    if (!mp || !tp) return;
+    if (window.matchMedia("(max-width:880px)").matches) { tp.style.height = ""; return; }
+    tp.style.height = `${mp.offsetHeight}px`;
+    const scroll = tp.querySelector<HTMLElement>(".myteam-tl-scroll");
+    const node = tp.querySelector<HTMLElement>(".myteam-node.live");
+    if (scroll && node) scroll.scrollTop = Math.max(0, node.offsetTop - 8);
+  }, [liveEvent, liveMatches.length, timeline.length]);
+
+  // ── states ──────────────────────────────────────────────────────────────
+  if (ready && (!teamNumber || !teamProgramId)) {
+    return (
+      <section className="page myteam-page">
+        <div className="panel myteam-empty">
+          <Star size={26} />
+          <h2>Set your team</h2>
+          <p>Add your team number and program to your profile to unlock the My Team tab — your live events, matches, and season at a glance.</p>
+          <Link href="/settings" className="button-link">Go to settings</Link>
         </div>
-        <div className="shortcuts-body">
-          <table className="shortcuts-table">
-            <tbody>
-              <tr><td><kbd>{isMac ? "⌘K" : "Ctrl+K"}</kbd></td><td>Open command palette</td></tr>
-              <tr><td><kbd>/</kbd></td><td>Open command palette</td></tr>
-              <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
-              <tr><td><kbd>Esc</kbd></td><td>Close any overlay</td></tr>
-              <tr><td><kbd>G</kbd> then <kbd>H</kbd></td><td>Go to Home</td></tr>
-              <tr><td><kbd>G</kbd> then <kbd>E</kbd></td><td>Go to Events</td></tr>
-              <tr><td><kbd>G</kbd> then <kbd>T</kbd></td><td>Go to Teams</td></tr>
-              <tr><td><kbd>C</kbd> (on team page)</td><td>Toggle team in comparison tray</td></tr>
-              <tr><td><kbd>F</kbd> (on event page)</td><td>Search teams within the event</td></tr>
-              <tr><td><kbd>G</kbd> then <kbd>C</kbd></td><td>Open comparison modal</td></tr>
-            </tbody>
-          </table>
+      </section>
+    );
+  }
+  if (lookup.loading || (!team && events.loading)) {
+    return <section className="page myteam-page"><Status loading={true} error={null} /></section>;
+  }
+  if (!team) {
+    return <section className="page myteam-page"><div className="panel myteam-empty"><h2>Team not found</h2><p>We couldn't find {programLabel(profile?.team_program)} {teamNumber}.</p><Link href="/settings" className="button-link">Update profile</Link></div></section>;
+  }
+
+  const renderPieces = (row: MyTeamTimelineRow) => {
+    const pieces: ReactNode[] = [];
+    if (row.state === "up") {
+      pieces.push("Registered");
+      if (row.days != null) pieces.push(<>in <b>{row.days}</b> days</>);
+    } else if (row.state === "live") {
+      if (row.rank != null) pieces.push(<>Rank <b>#{row.rank}</b></>);
+      if (row.record) pieces.push(<b>{row.record}</b>);
+      if (row.nextMatch) pieces.push(<>Next <b>{row.nextMatch}</b></>);
+      if (!pieces.length) pieces.push("In progress");
+    } else {
+      if (row.awardTitle) pieces.push(row.awardTitle);
+      if (row.record) pieces.push(<b>{row.record}</b>);
+      if (row.skills) pieces.push(<>Skills <b>{row.skills}</b></>);
+      if (!pieces.length) pieces.push("Played");
+    }
+    return pieces.map((p, i) => <span key={i} className={`myteam-rp${i === 0 ? " lead" : ""}`}>{p}</span>);
+  };
+
+  const liveAlliances = (m: Match) => {
+    const { red, blue } = matchWinner(m);
+    return { red, blue };
+  };
+
+  const header = (
+    <div className="myteam-head">
+      <span className="myteam-num">{team.number}</span>
+      <div>
+        <h1>{team.team_name || team.number}</h1>
+        <div className="myteam-meta">
+          {team.organization && <span>{team.organization}</span>}
+          <span>{locationLine(team)}</span>
+          <span className="badge">{programSlug(team.program)}</span>
+          {team.grade && <span className="badge">{team.grade}</span>}
         </div>
       </div>
+      <div className="myteam-actions">
+        <Link href="/settings" className="button-link secondary sm">Change team</Link>
+      </div>
     </div>
+  );
+
+  const statStrip = (
+    <div className="myteam-stats">
+      <div className="myteam-stat"><div className="k">Record</div><div className="v">{record.w}–{record.l}{record.t ? `–${record.t}` : ""}</div><div className="sub">{totalGames} matches played</div></div>
+      <div className="myteam-stat"><div className="k">Win rate</div><div className="v">{winPct}<small>%</small></div><div className="sub">season to date</div></div>
+      <div className="myteam-stat"><div className="k">Skills score</div><div className="v">{seasonSkillsSummary.combined ?? "–"}</div><div className="sub">{seasonSkillsSummary.programming?.score ?? 0} auto / {seasonSkillsSummary.driver?.score ?? 0} driver</div></div>
+      <div className="myteam-stat"><div className="k">World skills rank</div><div className="v">{worldSkills.loading ? "…" : wsEntry ? `#${wsEntry.rank.toLocaleString()}` : "—"}</div><div className="sub">globally this season</div></div>
+      <div className="myteam-stat"><div className="k">Awards</div><div className="v">{seasonAwards.length}</div><div className="sub">this season</div></div>
+    </div>
+  );
+
+  const liveBand = liveEvent && (
+    <section className="panel myteam-live">
+      <h2>
+        <span className="ttl"><span className="live-dot">Competing now</span><span className="myteam-evname">{liveEvent.name}</span></span>
+        <Link className="myteam-act" href={eventPath(liveEvent)}>Event page →</Link>
+      </h2>
+      <div className="myteam-live-body">
+        <div className="myteam-seg">
+          <div className="myteam-seg-lab">Next up {nextUp && <span className="q">queuing</span>}</div>
+          {nextUp ? (
+            <>
+              <div className="myteam-deck">
+                <span className="myteam-mname">{shortMatchName(nextUp.name)}</span>
+                <span className="alliance-cell red-alliance-cell"><AllianceTeamLinks teams={liveAlliances(nextUp).red?.teams} focusTeamId={team.id} /></span>
+                <span className="myteam-vs">vs</span>
+                <span className="alliance-cell blue-alliance-cell"><AllianceTeamLinks teams={liveAlliances(nextUp).blue?.teams} focusTeamId={team.id} /></span>
+              </div>
+              <div className="myteam-kvrow">
+                {nextUp.field && <div className="myteam-kv"><span className="kl">Field</span><span className="kv-v">{nextUp.field}</span></div>}
+                {formatMatchClock(nextUp) && <div className="myteam-kv"><span className="kl">Est. time</span><span className="kv-v">{formatMatchClock(nextUp)}</span></div>}
+                {partner && <div className="myteam-kv"><span className="kl">Partner</span><span className="kv-v">{partner.name}</span></div>}
+              </div>
+            </>
+          ) : (
+            <div className="myteam-seg-empty">All qualification matches complete.</div>
+          )}
+        </div>
+        <div className="myteam-seg">
+          <div className="myteam-seg-lab">Qualification</div>
+          {liveRanking ? (
+            <>
+              <div className="myteam-seg-rank"><span className="n">#{liveRanking.rank}</span>{liveRanking.division?.name && <span className="of">{liveRanking.division.name}</span>}</div>
+              <div className="myteam-kvrow">
+                <div className="myteam-kv"><span className="kl">Record</span><span className="kv-v">{liveRanking.wins ?? 0}–{liveRanking.losses ?? 0}{liveRanking.ties ? `–${liveRanking.ties}` : ""}</span></div>
+                <div className="myteam-kv"><span className="kl">WP</span><span className="kv-v">{liveRanking.wp ?? 0}</span></div>
+                <div className="myteam-kv"><span className="kl">AP</span><span className="kv-v">{liveRanking.ap ?? 0}</span></div>
+                <div className="myteam-kv"><span className="kl">SP</span><span className="kv-v">{liveRanking.sp ?? 0}</span></div>
+              </div>
+            </>
+          ) : (
+            <div className="myteam-seg-empty">Rankings not posted yet.</div>
+          )}
+        </div>
+        <div className="myteam-seg">
+          <div className="myteam-seg-lab">Skills</div>
+          {liveSkills && liveSkills.combined != null ? (
+            <>
+              <div className="myteam-seg-rank"><span className="n">{liveSkills.rank ? `#${liveSkills.rank}` : "—"}</span><span className="of">{liveSkills.combined} pts</span></div>
+              <div className="myteam-kvrow">
+                <div className="myteam-kv"><span className="kl">Auto</span><span className="kv-v">{liveSkills.programming?.score ?? 0}</span></div>
+                <div className="myteam-kv"><span className="kl">Driver</span><span className="kv-v">{liveSkills.driver?.score ?? 0}</span></div>
+              </div>
+            </>
+          ) : (
+            <div className="myteam-seg-empty">No skills runs yet.</div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+
+  const upNextPanel = !liveEvent && (
+    <section className="panel myteam-upnext-panel">
+      <h2><span className="ttl">Up next</span><span className="myteam-act muted-act">Not currently at an event</span></h2>
+      {nextEvent ? (
+        <div className="myteam-upnext">
+          <div className="myteam-cal"><div className="mo">{new Intl.DateTimeFormat("en-US", { month: "short" }).format(new Date(nextEvent.start ?? 0))}</div><div className="day">{new Date(nextEvent.start ?? 0).getDate()}</div></div>
+          <div className="info">
+            <div className="nm">{nextEvent.name}</div>
+            <div className="sub"><span>{locationLine(nextEvent)}</span><span className={`event-priority priority-${eventCategory(nextEvent).rank}`}>{eventCategory(nextEvent).label}</span><span>{myTeamDateLabel(nextEvent.start)}</span></div>
+          </div>
+          <div className="right">
+            <div className="count"><div className="n">{Math.max(0, Math.round((new Date(nextEvent.start ?? 0).getTime() - now) / oneDay))}</div><div className="l">days away</div></div>
+            <Link className="button-link sm" href={eventPath(nextEvent)}>Event page →</Link>
+          </div>
+        </div>
+      ) : (
+        <div className="myteam-upnext-empty">No upcoming events on the calendar.</div>
+      )}
+    </section>
+  );
+
+  const matchesPanel = liveEvent && (
+    <div className="panel myteam-matches-panel" ref={matchesPanelRef}>
+      <h2><span className="ttl">Matches</span><span className="myteam-act muted-act">{liveEvent.name}</span></h2>
+      <table className="results-match-table">
+        <colgroup>
+          <col className="results-play-col" />
+          <col className="results-match-col" />
+          <col className="results-alliance-col" />
+          <col className="results-alliance-col" />
+          <col className="results-score-col" />
+        </colgroup>
+        <thead><tr><th aria-label="Play" /><th>Match</th><th>Red Alliance</th><th>Blue Alliance</th><th>Score</th></tr></thead>
+        <tbody>
+          {liveMatches.map((m) => {
+            const { red, blue, redScore, blueScore, winner } = matchWinner(m);
+            const hasScore = winner !== "-";
+            const ts = timestampMap.get(m.id);
+            const canPlay = presetSupported && ts && ts.timestamp !== null && ts.videoId;
+            const isNext = nextUp?.id === m.id;
+            const clock = formatMatchClock(m);
+            return (
+              <tr key={m.id} className={isNext ? "myteam-next-row" : ""}>
+                <td className="play-cell">
+                  {canPlay ? (
+                    <button className="play-dot active" onClick={() => onMyTeamOpenMatch(m, ts!, setPlayback)} title={`Play ${m.name}`} />
+                  ) : (
+                    <span className="play-dot disabled" />
+                  )}
+                </td>
+                <td className="result-match-name">
+                  <span className="result-match-line">
+                    <span className="result-match-label">{shortMatchName(m.name)}</span>
+                    {m.field && <span className="result-field-name">{m.field}</span>}
+                  </span>
+                </td>
+                <td className={`alliance-cell red-alliance-cell ${winner === "Red" ? "winning-alliance-cell" : ""}`}><AllianceTeamLinks teams={red?.teams} focusTeamId={team.id} /></td>
+                <td className={`alliance-cell blue-alliance-cell ${winner === "Blue" ? "winning-alliance-cell" : ""}`}><AllianceTeamLinks teams={blue?.teams} focusTeamId={team.id} /></td>
+                <td className="score-cell">
+                  {hasScore ? (
+                    <>
+                      <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore}</span>
+                      <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore}</span>
+                    </>
+                  ) : isNext ? (
+                    <span className="myteam-nextpill">Next up</span>
+                  ) : (
+                    <span className="result-match-time">{clock}</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+          {!liveMatches.length && <tr><td colSpan={5}><Empty>No matches posted yet.</Empty></td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const timelineNode = (row: MyTeamTimelineRow) => (
+    <>
+      <div className="row"><span className="nm">{row.event.name}</span><span className="dt">{myTeamDateLabel(row.event.start)}</span></div>
+      <div className="myteam-evmeta"><span className="loc">{locationLine(row.event)}</span><span className={`event-priority priority-${eventCategory(row.event).rank}`}>{eventCategory(row.event).label}</span></div>
+      <div className="myteam-resline">{renderPieces(row)}</div>
+    </>
+  );
+
+  const liveTimeline = liveEvent && (
+    <div className="panel myteam-tl-panel" ref={tlPanelRef}>
+      <h2><span className="ttl">Season timeline</span><span className="myteam-act muted-act">{timeline.length} events</span></h2>
+      <div className="myteam-tl-scroll">
+        <div className="myteam-timeline">
+          {timeline.map((row) => (
+            <div key={row.event.id} className={`myteam-node ${row.state}`}>{timelineNode(row)}</div>
+          ))}
+        </div>
+      </div>
+      <div className="myteam-tl-legend">
+        <span><i className="live" /> Live</span><span><i className="done" /> Completed</span><span><i className="up" /> Upcoming</span>
+      </div>
+    </div>
+  );
+
+  const fullTimeline = !liveEvent && (
+    <section className="panel myteam-tl2-panel">
+      <h2><span className="ttl">Season timeline</span><span className="myteam-act muted-act">{timeline.length} events</span></h2>
+      <div className="myteam-timeline2">
+        {timeline.map((row, i) => (
+          <div key={row.event.id} className={`myteam-tnode ${i % 2 ? "right" : "left"} ${row.state} ${row.isNext ? "next" : ""}`}>
+            <div className="myteam-tcard">{timelineNode(row)}</div>
+          </div>
+        ))}
+        {!timeline.length && <div className="myteam-upnext-empty">No events this season yet.</div>}
+      </div>
+      <div className="myteam-tl-legend center">
+        <span><i className="nextpt" /> Next up</span><span><i className="up" /> Upcoming</span><span><i className="done" /> Completed</span>
+      </div>
+    </section>
+  );
+
+  return (
+    <section className="page myteam-page">
+      {header}
+      {liveBand}
+      {upNextPanel}
+      {statStrip}
+      {liveEvent ? (
+        <div className="myteam-lower">{matchesPanel}{liveTimeline}</div>
+      ) : (
+        fullTimeline
+      )}
+      {SHOW_TEAM_SHARE_CARD && (
+        <TeamShareCard team={team} record={record} winPct={winPct} skills={seasonSkillsSummary.combined} worldRank={wsEntry?.rank ?? null} awards={seasonAwards.length} season={season?.name} />
+      )}
+      {playback && <MatchVideoOverlay playback={playback} onClose={() => setPlayback(null)} />}
+    </section>
+  );
+}
+
+function onMyTeamOpenMatch(match: Match, timestamp: MatchTimestamp, setPlayback: (p: MatchPlayback) => void) {
+  setPlayback({ match, timestamp });
+}
+
+// Apple-style shareable team card. Kept for later; gated behind SHOW_TEAM_SHARE_CARD.
+function TeamShareCard({ team, record, winPct, skills, worldRank, awards, season }: {
+  team: Team;
+  record: { w: number; l: number; t: number };
+  winPct: number;
+  skills: number | null;
+  worldRank: number | null;
+  awards: number;
+  season?: string;
+}) {
+  return (
+    <section className="panel myteam-share">
+      <svg viewBox="0 0 1600 900" className="myteam-share-svg" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="0" width="1600" height="900" rx="28" fill="#08090b" />
+        <text x="64" y="120" fill="#7fe9f7" fontFamily="var(--font-geist-mono)" fontSize="22" letterSpacing="6">MY TEAM {season ? `· ${season}` : ""}</text>
+        <text x="60" y="280" fill="#22d3ee" fontFamily="var(--font-geist-mono)" fontSize="130" fontWeight="700">{team.number}</text>
+        <text x="62" y="390" fill="#ffffff" fontSize="92" fontWeight="600">{team.team_name || team.number}</text>
+        <text x="64" y="520" fill="#c7cbd2" fontSize="40" fontWeight="600">{record.w}–{record.l}{record.t ? `–${record.t}` : ""} · {winPct}% win</text>
+        <text x="64" y="600" fill="#c7cbd2" fontSize="40" fontWeight="600">Skills {skills ?? "–"}{worldRank ? ` · #${worldRank} world` : ""}</text>
+        <text x="64" y="680" fill="#c7cbd2" fontSize="40" fontWeight="600">{awards} awards</text>
+        <text x="64" y="840" fill="#5a5e66" fontFamily="var(--font-geist-mono)" fontSize="20" letterSpacing="2">OPENSCOUT.APP</text>
+      </svg>
+    </section>
   );
 }
 
@@ -11683,12 +12964,14 @@ function route(path: string) {
   if (path === "/events") return <EventsPage />;
   if (path === "/teams") return <TeamsPage />;
   if (path === "/skills") return <WorldSkillsPage />;
+  if (path === "/my-team") return <MyTeamPage />;
   if (path === "/insights") return <InsightsPage />;
   if (path === "/terms") return <TermsPage />;
+  if (path === "/privacy") return <PrivacyPage />;
   const joinMatch = path.match(/^\/join\/([0-9a-f-]+)$/i);
   if (joinMatch) return <JoinOrgPage token={joinMatch[1]} />;
-  const orgMatch = path.match(/^\/org\/([0-9a-f-]+)\/settings$/i);
-  if (orgMatch) return <OrgSettingsPage orgId={orgMatch[1]} />;
+  const orgMatch = path.match(/^\/org\/([0-9a-f-]+)(?:\/settings)?$/i);
+  if (orgMatch) return <OrgWorkspacePage orgId={orgMatch[1]} />;
   const compareMatch = path.match(/^\/compare\/(.+)$/);
   if (compareMatch) return <CompareFromUrl param={compareMatch[1]} />;
   const eventMatch = path.match(/^\/events?\/(.+)$/);
@@ -11773,7 +13056,6 @@ export default function App() {
 
   return (
     <>
-      <BetaDisclaimer />
       <Layout path={path}>{route(path)}</Layout>
       <OnboardingModal />
       {spotlightOpen && <CommandPalette onClose={closeSpotlight} />}

@@ -1,10 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { LogIn, LogOut, Settings } from "lucide-react";
+import { ChevronRight, LogOut, Settings, User as UserIcon } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./supabase";
+import { useOrgs } from "./orgs";
 import { setTheme, useTheme } from "./theme";
-import { setUiStyle, useUiStyle } from "./settings";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export type Profile = {
   id: string;
@@ -235,6 +240,13 @@ function GoogleLogo() {
 
 // The one reusable sign-in surface — used in the header dropdown and on the
 // home page. Drop it anywhere a sign-in prompt is needed.
+// SPA navigation that matches App's history-based router.
+function navTo(href: string) {
+  window.history.pushState(null, "", href);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 export function SignInButtons() {
   const { signInWithDiscord, signInWithGoogle, configured } = useAuth();
   if (!configured) return null;
@@ -250,6 +262,17 @@ export function SignInButtons() {
         Sign in with Google
       </button>
       <p className="auth-appearance-hint">Log in to change appearance!</p>
+      <p className="auth-legal">
+        By signing up you agree to our{" "}
+        <a href="/terms" onClick={(e) => { e.preventDefault(); navTo("/terms"); }}>
+          Terms of Service
+        </a>{" "}
+        and{" "}
+        <a href="/privacy" onClick={(e) => { e.preventDefault(); navTo("/privacy"); }}>
+          Privacy Policy
+        </a>
+        .
+      </p>
     </div>
   );
 }
@@ -297,12 +320,18 @@ export function useOutsideClick<T extends HTMLElement>(onClose: () => void) {
 export function AuthSlot() {
   const { ready, configured, user, profile, signOut, updateProfile } = useAuth();
   const theme = useTheme();
-  const uiStyle = useUiStyle();
+  const orgs = useOrgs();
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(() => setOpen(false));
 
+  // Client-side nav that mirrors App's navigate() (popstate triggers the router).
+  const goTo = (path: string) => {
+    setOpen(false);
+    navTo(path);
+  };
+
   // Theme writes go to both the global store (instant) and the cloud profile,
-  // matching the Settings page. UI style syncs itself via the settings store.
+  // matching the Settings page.
   const chooseTheme = (value: "light" | "dark" | "system") => {
     setTheme(value);
     void updateProfile({ theme: value });
@@ -313,9 +342,14 @@ export function AuthSlot() {
   if (!user) {
     return (
       <div className="auth-slot" ref={ref}>
-        <button type="button" className="auth-signin-btn" onClick={() => setOpen((value) => !value)}>
-          <LogIn size={15} />
-          Sign up / Log in
+        <button
+          type="button"
+          className="auth-circle-btn"
+          onClick={() => setOpen((value) => !value)}
+          aria-label="Sign up / Log in"
+          title="Sign up / Log in"
+        >
+          <UserIcon size={18} />
         </button>
         {open && (
           <div className="auth-dropdown">
@@ -362,34 +396,32 @@ export function AuthSlot() {
               </button>
             ))}
           </div>
-          <div className="auth-menu-seg" role="group" aria-label="Interface style">
-            <button
-              type="button"
-              className={`auth-seg-btn ${uiStyle === "classic" ? "active" : ""}`}
-              onClick={() => setUiStyle("classic")}
-              aria-pressed={uiStyle === "classic"}
-            >
-              Default
-            </button>
-            <button
-              type="button"
-              className={`auth-seg-btn ${uiStyle === "modern" ? "active" : ""}`}
-              onClick={() => setUiStyle("modern")}
-              aria-pressed={uiStyle === "modern"}
-            >
-              Modern
-            </button>
-          </div>
+          {orgs.length > 0 && (
+            <div className="auth-menu-orgs">
+              <div className="auth-menu-section-label">Your {orgs.length === 1 ? "org" : "orgs"}</div>
+              {orgs.map((org) => (
+                <button
+                  key={org.orgId}
+                  type="button"
+                  className="auth-menu-item auth-menu-org"
+                  onClick={() => goTo(`/org/${org.orgId}`)}
+                >
+                  <span className="auth-menu-org-badge">{(org.name || "?").charAt(0).toUpperCase()}</span>
+                  <span className="auth-menu-org-id">
+                    <span className="auth-menu-org-name">{org.name}</span>
+                    <span className="auth-menu-org-role">
+                      {org.role}{org.teamNumber ? ` · ${programLabel(org.teamProgram)} ${org.teamNumber}`.trimEnd() : ""}
+                    </span>
+                  </span>
+                  <ChevronRight size={14} className="auth-menu-org-go" />
+                </button>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             className="auth-menu-item"
-            onClick={() => {
-              setOpen(false);
-              // Route to the dedicated /settings page (mirrors App's navigate()).
-              window.history.pushState(null, "", "/settings");
-              window.dispatchEvent(new PopStateEvent("popstate"));
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
+            onClick={() => goTo("/settings")}
           >
             <Settings size={15} />
             Settings
@@ -442,8 +474,6 @@ export function OnboardingModal() {
     setProgram(profile?.team_program ?? "");
   }, [visible, user, profile, profileEditorOpen]);
 
-  if (!visible) return null;
-
   const close = () => {
     seededFor.current = null;
     closeProfileEditor();
@@ -470,80 +500,90 @@ export function OnboardingModal() {
   const editing = profileEditorOpen && !auto;
 
   return (
-    <div className="auth-overlay" role="dialog" aria-modal="true" aria-label="Set up your profile">
-      <div className="auth-modal onboard-modal">
-        <h2 className="onboard-title">{editing ? "Profile settings" : "Welcome to stemScout"}</h2>
-        <p className="onboard-sub">
-          {editing
-            ? "Update your details anytime. Everything here is optional."
-            : "Tell us a little about you. All optional, but your name and team help personalize stemScout."}
-        </p>
+    <Dialog open={visible} onOpenChange={(o) => { if (!o) void skip(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{editing ? "Profile settings" : "Welcome to OpenScout"}</DialogTitle>
+          <DialogDescription>
+            {editing
+              ? "Update your details anytime. Everything here is optional."
+              : "Tell us a little about you. All optional, but your name and team help personalize OpenScout."}
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="onboard-grid">
-          <label className="onboard-field">
-            <span>Name</span>
-            <input
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="onboard-name">Name</FieldLabel>
+            <Input
+              id="onboard-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
               maxLength={24}
               placeholder="Your name"
               autoFocus
             />
-          </label>
-          <label className="onboard-field onboard-field-team">
-            <span>Team Number</span>
-            <input
-              value={teamNumber}
-              onChange={(event) => setTeamNumber(event.target.value.toUpperCase())}
-              maxLength={10}
-              placeholder="169W"
-            />
-          </label>
-          <label className="onboard-field onboard-field-program">
-            <span>Program</span>
-            <select value={program} onChange={(event) => setProgram(event.target.value)}>
-              <option value="">—</option>
-              {AUTH_PROGRAMS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="onboard-prefs">
-          <span className="onboard-prefs-label">Appearance</span>
-          <div className="theme-picker">
-            {THEME_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`theme-tile ${theme === option.value ? "active" : ""} theme-tile-${option.value}`}
-                onClick={() => setTheme(option.value)}
-                aria-pressed={theme === option.value}
-              >
-                <span className="theme-wire" aria-hidden="true">
-                  <span className="theme-wire-bar" />
-                  <span className="theme-wire-line" />
-                  <span className="theme-wire-line short" />
-                </span>
-                <span className="theme-tile-label">{option.label}</span>
-              </button>
-            ))}
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <FieldLabel htmlFor="onboard-team">Team Number</FieldLabel>
+              <Input
+                id="onboard-team"
+                value={teamNumber}
+                onChange={(event) => setTeamNumber(event.target.value.toUpperCase())}
+                maxLength={10}
+                placeholder="169W"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="onboard-program">Program</FieldLabel>
+              <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
+                <SelectTrigger id="onboard-program" className="w-full">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {AUTH_PROGRAMS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
-          <p className="onboard-hint">Applies instantly and syncs to your account.</p>
-        </div>
 
-        <div className="onboard-actions">
-          <button type="button" className="onboard-skip" onClick={() => void skip()} disabled={saving}>
+          <Field>
+            <FieldLabel>Appearance</FieldLabel>
+            <div className="theme-picker">
+              {THEME_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`theme-tile ${theme === option.value ? "active" : ""} theme-tile-${option.value}`}
+                  onClick={() => setTheme(option.value)}
+                  aria-pressed={theme === option.value}
+                >
+                  <span className="theme-wire" aria-hidden="true">
+                    <span className="theme-wire-bar" />
+                    <span className="theme-wire-line" />
+                    <span className="theme-wire-line short" />
+                  </span>
+                  <span className="theme-tile-label">{option.label}</span>
+                </button>
+              ))}
+            </div>
+          </Field>
+        </FieldGroup>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => void skip()} disabled={saving}>
             {editing ? "Cancel" : "Skip for now"}
-          </button>
-          <button type="button" className="onboard-finish" onClick={() => void finish()} disabled={saving}>
+          </Button>
+          <Button type="button" onClick={() => void finish()} disabled={saving}>
             {saving ? "Saving…" : editing ? "Save changes" : "Finish setup"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

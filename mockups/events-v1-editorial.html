@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OpenScout — Events (V1 · Editorial)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --canvas:#FBFBFA; --surface:#FFFFFF; --surface-2:#F7F6F3; --surface-3:#F1F0EE;
+    --border:#EAEAEA; --border-soft:rgba(0,0,0,.06); --hair:rgba(0,0,0,.08);
+    --ink:#1C1C1A; --text:#2F2E2B; --muted:#787774; --faint:#9B9A97;
+    --link:#2563724d; --link-ink:#1F6C9F;
+    --sig-bg:#FBF3DB; --sig-ink:#876100;
+    --world-bg:#FDEBEC; --world-ink:#9F2F2D;
+    --champ-bg:#E1F3FE; --champ-ink:#1F6C9F;
+    --other-bg:#F1F0EE; --other-ink:#6B6A66;
+    --sans:'Geist',-apple-system,'Helvetica Neue',Arial,sans-serif;
+    --mono:'Geist Mono','SF Mono',ui-monospace,monospace;
+    --serif:'Newsreader',Georgia,'Times New Roman',serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:var(--canvas); color:var(--text);
+    font-family:var(--sans); font-size:14px; line-height:1.55;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  a{color:inherit;text-decoration:none;}
+  .shell{max-width:1200px;margin:0 auto;padding:0 24px 96px;}
+
+  /* ── Top bar ─────────────────────────────── */
+  .topbar{
+    display:flex;align-items:center;gap:20px;
+    max-width:1200px;margin:18px auto 0;padding:11px 18px;
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  }
+  .brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;letter-spacing:-.01em;color:var(--ink);}
+  .brand .mark{width:22px;height:22px;border-radius:6px;background:conic-gradient(from 210deg,#7c5cff,#23a6d5,#ff5c8a);}
+  .nav{display:flex;gap:4px;margin-left:8px;}
+  .nav a{padding:6px 11px;border-radius:7px;font-size:13.5px;color:var(--muted);}
+  .nav a.active{background:var(--surface-3);color:var(--ink);font-weight:500;}
+  .nav a:hover:not(.active){color:var(--ink);}
+  .spacer{flex:1;}
+  .search{display:flex;align-items:center;gap:8px;width:300px;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--faint);font-size:13px;}
+  .search .kbd{margin-left:auto;font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:4px;padding:1px 5px;background:var(--surface);}
+  .icon-btn{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--muted);}
+  .avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#c8b6ff,#8ad0e6);border:1px solid var(--border);}
+
+  /* ── Page head ───────────────────────────── */
+  .pagehead{display:flex;align-items:flex-end;justify-content:space-between;margin:40px 0 22px;}
+  .pagehead h1{font-family:var(--serif);font-weight:400;font-size:46px;line-height:1;letter-spacing:-.02em;color:var(--ink);margin:0;}
+  .pagehead .sub{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);margin-top:10px;}
+
+  /* ── Layout ──────────────────────────────── */
+  .layout{display:grid;grid-template-columns:1fr 288px;gap:28px;align-items:start;}
+
+  /* ── Event list ──────────────────────────── */
+  .listcard{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+  .list-search{padding:14px 18px;border-bottom:1px solid var(--border);}
+  .list-search input{width:100%;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);padding:9px 12px;font-family:var(--sans);font-size:13.5px;color:var(--text);outline:none;}
+  .list-search input::placeholder{color:var(--faint);}
+  .list-search input:focus{border-color:#cfcfca;background:var(--surface);}
+
+  .thead{display:grid;grid-template-columns:1fr 104px 70px 52px 96px;gap:14px;padding:13px 18px 11px;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);border-bottom:1px solid var(--border);}
+  .row{display:grid;grid-template-columns:1fr 104px 70px 52px 96px;gap:14px;padding:15px 18px;border-bottom:1px solid var(--border-soft);align-items:center;transition:background .12s;}
+  .row:last-child{border-bottom:0;}
+  .row:hover{background:var(--surface-2);}
+  .ev-name{font-size:14px;font-weight:500;color:var(--link-ink);letter-spacing:-.005em;}
+  .ev-name:hover{text-decoration:underline;}
+  .ev-sku{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:3px;letter-spacing:.02em;}
+
+  .pill{display:inline-flex;align-items:center;padding:3px 9px;border-radius:9999px;font-family:var(--mono);font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;}
+  .pill.sig{background:var(--sig-bg);color:var(--sig-ink);}
+  .pill.world{background:var(--world-bg);color:var(--world-ink);}
+  .pill.champ{background:var(--champ-bg);color:var(--champ-ink);}
+  .pill.other{background:var(--other-bg);color:var(--other-ink);}
+
+  .cell-mono{font-family:var(--mono);font-size:12px;color:var(--text);}
+  .grade{font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .grade.tag{display:inline-block;padding:1.5px 6px;background:var(--surface-3);border-radius:5px;}
+  .dates{font-size:12.5px;color:var(--text);font-variant-numeric:tabular-nums;}
+
+  /* ── Filters ─────────────────────────────── */
+  .filters{position:sticky;top:24px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;}
+  .filters-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:18px;}
+  .filters-head h2{font-size:14px;font-weight:600;color:var(--ink);margin:0;}
+  .filters-head .reset{font-size:11.5px;color:var(--link-ink);}
+  .fgroup{margin-bottom:20px;}
+  .flabel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:9px;}
+  .seg{display:flex;flex-direction:column;gap:6px;}
+  .seg.row2{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .seg button{appearance:none;text-align:left;padding:8px 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-family:var(--sans);font-size:13px;cursor:pointer;transition:.12s;}
+  .seg.row2 button{text-align:center;}
+  .seg button:hover{border-color:#d8d8d2;}
+  .seg button.active{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:500;}
+  .select{position:relative;}
+  .select select{appearance:none;width:100%;padding:8px 30px 8px 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-family:var(--sans);font-size:13px;color:var(--text);cursor:pointer;}
+  .select::after{content:"";position:absolute;right:12px;top:50%;width:7px;height:7px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:translateY(-65%) rotate(45deg);pointer-events:none;}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .check{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text);cursor:pointer;padding-top:4px;}
+  .check .box{width:16px;height:16px;border-radius:4px;background:var(--ink);display:grid;place-items:center;}
+  .check .box svg{width:10px;height:10px;}
+
+  .foot{margin-top:36px;font-family:var(--mono);font-size:11px;color:var(--faint);text-align:center;letter-spacing:.04em;}
+  @media(max-width:900px){.layout{grid-template-columns:1fr;}.filters{position:static;}}
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark"></span>OpenScout</div>
+    <nav class="nav">
+      <a class="active" href="#">Events</a>
+      <a href="#">Teams</a>
+      <a href="#">Skills</a>
+    </nav>
+    <span class="spacer"></span>
+    <div class="search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      Search teams or events…
+      <span class="kbd">⌘K</span>
+    </div>
+    <button class="icon-btn" title="Theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+    </button>
+    <div class="avatar"></div>
+  </header>
+
+  <div class="shell">
+    <div class="pagehead">
+      <div>
+        <h1>Events</h1>
+        <div class="sub">Override season · 642 results</div>
+      </div>
+      <button class="icon-btn" title="Filters">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+      </button>
+    </div>
+
+    <div class="layout">
+      <!-- Event list -->
+      <section class="listcard">
+        <div class="list-search">
+          <input placeholder="Quick search event name" />
+        </div>
+        <div class="thead">
+          <span>Event</span><span>Priority</span><span>Program</span><span>Grade</span><span>Dates</span>
+        </div>
+
+        <div class="row">
+          <div><a class="ev-name">The Silk Road Link: VEX V5 Robotics Competition Override™ (HS)</a><div class="ev-sku">RE-V5RC-26-4392</div></div>
+          <div><span class="pill sig">Signature</span></div>
+          <div class="cell-mono">V5RC</div>
+          <div><span class="grade">All</span></div>
+          <div class="dates">Aug 2–5, 2026</div>
+        </div>
+        <div class="row">
+          <div><a class="ev-name">The Silk Road Link: VEX V5 Robotics Competition Override™ (MS)</a><div class="ev-sku">RE-V5RC-26-4393</div></div>
+          <div><span class="pill sig">Signature</span></div>
+          <div class="cell-mono">V5RC</div>
+          <div><span class="grade">All</span></div>
+          <div class="dates">Aug 2–5, 2026</div>
+        </div>
+        <div class="row">
+          <div><a class="ev-name">University of North Dakota Signature at the Mall of America: High School Presented by the College of Engineering and Mines</a><div class="ev-sku">RE-V5RC-26-4244</div></div>
+          <div><span class="pill sig">Signature</span></div>
+          <div class="cell-mono">V5RC</div>
+          <div><span class="grade tag">HS</span></div>
+          <div class="dates">Aug 5–7, 2026</div>
+        </div>
+        <div class="row">
+          <div><a class="ev-name">Speedway: Override™ V5RC Blended Signature Event, Presented by the Chrysalis Global Foundation</a><div class="ev-sku">RE-V5RC-26-4359</div></div>
+          <div><span class="pill sig">Signature</span></div>
+          <div class="cell-mono">V5RC</div>
+          <div><span class="grade">All</span></div>
+          <div class="dates">Sep 17–19, 2026</div>
+        </div>
+        <div class="row">
+          <div><a class="ev-name">The Highlander Summit 2026: VEX V5 Robotics Competition High School Override™</a><div class="ev-sku">RE-V5RC-26-4246</div></div>
+          <div><span class="pill sig">Signature</span></div>
+          <div class="cell-mono">V5RC</div>
+          <div><span class="grade tag">HS</span></div>
+          <div class="dates">Sep 24–26, 2026</div>
+        </div>
+        <div class="row">
+          <div><a class="ev-name">VIC | VEX V5 Robotics Competition™ (Blended): Override™ Tournament @ Templestowe College — Season Opener</a><div class="ev-sku">RE-V5RC-26-4228</div></div>
+          <div><span class="pill other">Other</span></div>
+          <div class="cell-mono">V5RC</div>
+          <div><span class="grade">All</span></div>
+          <div class="dates">Jun 21, 2026</div>
+        </div>
+        <div class="row">
+          <div><a class="ev-name">Auckland | VEX V5 Robotics Competition™ (Blended): Override™ Scrimmage #1 @ Glenfield College</a><div class="ev-sku">RE-V5RC-26-4486</div></div>
+          <div><span class="pill other">Other</span></div>
+          <div class="cell-mono">V5RC</div>
+          <div><span class="grade">All</span></div>
+          <div class="dates">Jun 26, 2026</div>
+        </div>
+        <div class="row">
+          <div><a class="ev-name">Palmerston North VEX V5 Robotics Competition™ Tournament 1: Override™ @ Palmerston North Boys' High School</a><div class="ev-sku">RE-V5RC-26-4606</div></div>
+          <div><span class="pill other">Other</span></div>
+          <div class="cell-mono">V5RC</div>
+          <div><span class="grade tag">HS</span></div>
+          <div class="dates">Jun 26, 2026</div>
+        </div>
+        <div class="row">
+          <div><a class="ev-name">2026-2027赛季VEX机器人公开赛北京城市赛 V5RC_HS</a><div class="ev-sku">RE-V5RC-26-4551</div></div>
+          <div><span class="pill other">Other</span></div>
+          <div class="cell-mono">V5RC</div>
+          <div><span class="grade">All</span></div>
+          <div class="dates">Jul 18–19, 2026</div>
+        </div>
+        <div class="row">
+          <div><a class="ev-name">SA | VEX V5 Robotics Competition™ (Blended) Flinders NVI Open: Override™ Tournament @ Flinders University</a><div class="ev-sku">RE-V5RC-26-4409</div></div>
+          <div><span class="pill other">Other</span></div>
+          <div class="cell-mono">V5RC</div>
+          <div><span class="grade">All</span></div>
+          <div class="dates">Jul 22, 2026</div>
+        </div>
+      </section>
+
+      <!-- Filters -->
+      <aside class="filters">
+        <div class="filters-head">
+          <h2>Filters</h2>
+          <a class="reset" href="#">Reset to defaults</a>
+        </div>
+
+        <div class="fgroup">
+          <div class="flabel">Time</div>
+          <div class="seg">
+            <button class="active">Near today</button>
+            <button>Upcoming</button>
+            <button>All</button>
+          </div>
+        </div>
+
+        <div class="fgroup">
+          <div class="flabel">Type</div>
+          <div class="seg row2">
+            <button class="active">All</button>
+            <button>Worlds</button>
+            <button>Signature</button>
+            <button>Championships</button>
+            <button style="grid-column:1/-1">Other</button>
+          </div>
+        </div>
+
+        <div class="fgroup">
+          <div class="flabel">Seasons</div>
+          <div class="select"><select><option>Override</option><option>Push Back</option><option>High Stakes</option></select></div>
+        </div>
+
+        <div class="fgroup two">
+          <div>
+            <div class="flabel">Programs</div>
+            <div class="select"><select><option>V5RC</option><option>VIQRC</option><option>VURC</option></select></div>
+          </div>
+          <div>
+            <div class="flabel">Grade</div>
+            <div class="select"><select><option>All grades</option><option>HS</option><option>MS</option></select></div>
+          </div>
+        </div>
+
+        <div class="fgroup">
+          <div class="flabel">Region</div>
+          <div class="select"><select><option>All regions</option><option>Minnesota</option><option>New Zealand</option></select></div>
+        </div>
+
+        <div class="fgroup" style="margin-bottom:14px">
+          <div class="flabel">Sort</div>
+          <div class="select"><select><option>Smart Sort</option><option>Date ↑</option><option>Date ↓</option></select></div>
+        </div>
+
+        <label class="check">
+          <span class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5"><path d="M5 13l4 4L19 7"/></svg></span>
+          Hide canceled
+        </label>
+      </aside>
+    </div>
+
+    <div class="foot">OpenScout · Editorial mockup — V1</div>
+  </div>
+</body>
+</html>
