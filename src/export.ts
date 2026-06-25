@@ -16,5 +16,7 @@ export function downloadCsv(filename: string, csv: string): void {
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  // Defer revocation: some browsers (Firefox, iOS Safari) cancel the download
+  // if the object URL is revoked synchronously before the click is processed.
+  setTimeout(() => URL.revokeObjectURL(url), 100);
 }
