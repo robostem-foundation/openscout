@@ -9949,3 +9949,26 @@ a.org-note-row:hover { background: var(--surface-2); }
 .quick-view-spark-chart { flex: 1; min-width: 0; max-width: 160px; }
 .quick-view-spark-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 .quick-view-spark-label strong { color: var(--text-2); }
+
+/* ── Sortable table headers ──────────────────────────────────────────────── */
+.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.sortable-th:hover { color: var(--text); }
+.sortable-th.sorted { color: var(--text); }
+.sort-caret {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-left: 3px;
+  color: var(--accent);
+}
+
+/* Secondary stat columns — lightly de-emphasized vs the primary ranking columns. */
+td.col-muted { color: var(--text-2); }
+.sortable-th.col-muted { color: var(--text-2); }
+/* …but full-strength when that column is the active sort or hovered. */
+.sortable-th.col-muted:hover,
+.sortable-th.col-muted.sorted { color: var(--text); }
