@@ -327,9 +327,7 @@ export function AuthSlot() {
   // Client-side nav that mirrors App's navigate() (popstate triggers the router).
   const goTo = (path: string) => {
     setOpen(false);
-    window.history.pushState(null, "", path);
-    window.dispatchEvent(new PopStateEvent("popstate"));
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    navTo(path);
   };
 
   // Theme writes go to both the global store (instant) and the cloud profile,
