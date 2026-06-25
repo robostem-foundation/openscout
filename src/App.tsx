@@ -9190,39 +9190,94 @@ function DroppedScores({ dropped }: { dropped: Array<{ matchnum: number; score: 
   );
 }
 
+type SortState = { key: string; dir: "asc" | "desc" };
+
+/** Clickable, sort-toggling table header cell with an asc/desc caret. */
+function SortableTh({ col, label, sort, onSort, title, className }: { col: string; label: ReactNode; sort: SortState; onSort: (key: string) => void; title?: string; className?: string }) {
+  const active = sort.key === col;
+  return (
+    <th
+      className={`sortable-th${active ? " sorted" : ""}${className ? ` ${className}` : ""}`}
+      title={title}
+      onClick={() => onSort(col)}
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}
+    >
+      {label}
+      <span className="sort-caret">{active && (sort.dir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}</span>
+    </th>
+  );
+}
+
 function RankingsTable({ rankings, isIq = false, matches = [], allMatches, orgId, eventId }: { rankings: Ranking[]; isIq?: boolean; matches?: Match[]; allMatches?: Match[]; orgId?: string; eventId?: string }) {
-  const sortedRankings = [...rankings].sort((a, b) => a.rank - b.rank);
   const programCode = useContext(ProgramContext);
   const showPicklist = !!(orgId && eventId);
+  // Rank ascending is the natural default; clicking a column sorts by it
+  // (numeric cols default to descending = best first), re-clicking flips.
+  const [sort, setSort] = useState<SortState>({ key: "rank", dir: "asc" });
+  const onSort = (key: string) =>
+    setSort((p) => (p.key === key ? { key, dir: p.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "rank" || key === "team" ? "asc" : "desc" }));
+
   // Per-event OPR/DPR/CCWM from this event's qual matches. CCWM/DPR are only
   // meaningful where alliances oppose each other (V5RC/VURC), not IQ teamwork.
   // Use the unfiltered match set so a team-search filter doesn't skew the solve.
   const oprMatches = allMatches ?? matches;
   const oprMap = useMemo(() => computeEventOpr(oprMatches), [oprMatches]);
+  // IQ avg/high/low come from per-team qual matches — compute once for sort + render.
+  const iqStatsByRow = useMemo(() => {
+    const m = new Map<number, ReturnType<typeof iqTeamQualStats>>();
+    if (isIq) for (const r of rankings) m.set(r.team.id, iqTeamQualStats(matches, r.team.id, r));
+    return m;
+  }, [isIq, rankings, matches]);
   const fmtRating = (v: number | undefined) => (v === undefined ? "-" : formatNumber(v));
+
+  const sortValue = (row: Ranking): number | string => {
+    const o = oprMap.get(row.team.id);
+    const iq = iqStatsByRow.get(row.team.id);
+    switch (sort.key) {
+      case "team": return row.team.name;
+      case "record": return row.wins ?? -Infinity;
+      case "wp": return row.wp ?? -Infinity;
+      case "ap": return row.ap ?? -Infinity;
+      case "awp": return rankingAwp(row);
+      case "sp": return row.sp ?? -Infinity;
+      case "high": return isIq ? (iq?.high ?? -Infinity) : (row.high_score ?? -Infinity);
+      case "avg": return isIq ? (iq?.avg ?? -Infinity) : (row.average_points ?? -Infinity);
+      case "low": return iq?.low ?? -Infinity;
+      case "opr": return o?.opr ?? -Infinity;
+      case "dpr": return o?.dpr ?? -Infinity;
+      case "ccwm": return o?.ccwm ?? -Infinity;
+      default: return row.rank;
+    }
+  };
+  const dir = sort.dir === "asc" ? 1 : -1;
+  const displayRows = [...rankings].sort((a, b) => {
+    const va = sortValue(a), vb = sortValue(b);
+    if (typeof va === "string" || typeof vb === "string") return dir * String(va).localeCompare(String(vb), undefined, { numeric: true });
+    return dir * ((va as number) - (vb as number));
+  });
 
   function exportRankings() {
     const headers = isIq
       ? ["Rank", "Team #", "Avg", "High", "Low", "OPR"]
-      : ["Rank", "Team #", "W", "L", "T", "WP", "AP", "SP", "High", "Avg", "OPR", "DPR", "CCWM"];
-    const rows = sortedRankings.map((row) => {
+      : ["Rank", "Team #", "W", "L", "T", "WP", "AP", "SP", "AWP", "High", "Avg", "OPR", "DPR", "CCWM"];
+    const rows = displayRows.map((row) => {
       const o = oprMap.get(row.team.id);
       const opr = o ? Number(o.opr.toFixed(1)) : "";
       if (isIq) {
-        const stats = iqTeamQualStats(matches, row.team.id, row);
-        return [row.rank, row.team.name, stats.avg ?? "", stats.high ?? "", stats.low ?? "", opr];
+        const stats = iqStatsByRow.get(row.team.id);
+        return [row.rank, row.team.name, stats?.avg ?? "", stats?.high ?? "", stats?.low ?? "", opr];
       }
       return [
         row.rank, row.team.name,
         row.wins ?? 0, row.losses ?? 0, row.ties ?? 0,
-        row.wp ?? "", row.ap ?? "", row.sp ?? "", row.high_score ?? "", row.average_points ?? "",
+        row.wp ?? "", row.ap ?? "", row.sp ?? "", rankingAwp(row), row.high_score ?? "", row.average_points ?? "",
         opr, o ? Number(o.dpr.toFixed(1)) : "", o ? Number(o.ccwm.toFixed(1)) : "",
       ];
     });
     downloadCsvFile(`rankings-${eventId ?? "event"}.csv`, toCsv(headers, rows));
   }
 
-  const exportBtn = sortedRankings.length ? (
+  const exportBtn = displayRows.length ? (
     <button type="button" className="ws-csv-btn" onClick={exportRankings} title="Download rankings (with OPR) as CSV">
       <Download size={13} /> CSV
     </button>
@@ -9234,32 +9289,32 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, orgId
         <table>
           <thead>
             <tr>
-              <th>Rank</th>
-              <th>Team</th>
-              <th>Avg</th>
-              <th>High</th>
-              <th>Low</th>
-              <th title="Offensive Power Rating (this event)">OPR</th>
+              <SortableTh col="rank" label="Rank" sort={sort} onSort={onSort} />
+              <SortableTh col="team" label="Team" sort={sort} onSort={onSort} />
+              <SortableTh col="avg" label="Avg" sort={sort} onSort={onSort} />
+              <SortableTh col="high" label="High" sort={sort} onSort={onSort} />
+              <SortableTh col="low" label="Low" sort={sort} onSort={onSort} />
+              <SortableTh col="opr" label="OPR" sort={sort} onSort={onSort} title="Offensive Power Rating (this event)" />
               <th>Dropped scores</th>
               <th className="compare-col">Compare</th>
               {showPicklist && <th className="picklist-col">Picklist</th>}
             </tr>
           </thead>
           <tbody>
-            {sortedRankings.map((row) => {
-              const stats = iqTeamQualStats(matches, row.team.id, row);
+            {displayRows.map((row) => {
+              const stats = iqStatsByRow.get(row.team.id);
               return (
                 <tr key={row.id}>
                   <td>{row.rank}</td>
                   <td className="team-cell">
                     <CompareTeamLink teamId={row.team.id} teamNumber={row.team.name} programCode={programCode} />
                   </td>
-                  <td>{formatNumber(stats.avg)}</td>
-                  <td>{stats.high ?? "-"}</td>
-                  <td>{stats.low ?? "-"}</td>
+                  <td>{formatNumber(stats?.avg)}</td>
+                  <td>{stats?.high ?? "-"}</td>
+                  <td>{stats?.low ?? "-"}</td>
                   <td>{fmtRating(oprMap.get(row.team.id)?.opr)}</td>
                   <td>
-                    <DroppedScores dropped={stats.dropped} />
+                    <DroppedScores dropped={stats?.dropped ?? []} />
                   </td>
                   <td className="compare-col">
                     <CompareRowBtn teamId={row.team.id} teamNumber={row.team.name} programCode={programCode ?? ""} />
@@ -9272,7 +9327,7 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, orgId
                 </tr>
               );
             })}
-            {!sortedRankings.length && (
+            {!displayRows.length && (
               <tr>
                 <td colSpan={showPicklist ? 9 : 8}>
                   <Empty>No rankings returned.</Empty>
@@ -9290,23 +9345,24 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, orgId
       <table>
         <thead>
           <tr>
-            <th>Rank</th>
-            <th>Team</th>
-            <th>Record</th>
-            <th>WP</th>
-            <th>AP</th>
-            <th>SP</th>
-            <th>High</th>
-            <th>Avg</th>
-            <th title="Offensive Power Rating (this event)">OPR</th>
-            <th title="Defensive Power Rating (this event)">DPR</th>
-            <th title="Calculated Contribution to Winning Margin (OPR − DPR)">CCWM</th>
+            <SortableTh col="rank" label="Rank" sort={sort} onSort={onSort} />
+            <SortableTh col="team" label="Team" sort={sort} onSort={onSort} />
+            <SortableTh col="record" label="Record" sort={sort} onSort={onSort} title="Sort by wins" />
+            <SortableTh col="wp" label="WP" sort={sort} onSort={onSort} />
+            <SortableTh col="ap" label="AP" sort={sort} onSort={onSort} />
+            <SortableTh col="sp" label="SP" sort={sort} onSort={onSort} />
+            <SortableTh col="awp" label="AWP" sort={sort} onSort={onSort} title="Autonomous Win Points" />
+            <SortableTh col="high" label="High" sort={sort} onSort={onSort} className="col-muted" />
+            <SortableTh col="avg" label="Avg" sort={sort} onSort={onSort} className="col-muted" />
+            <SortableTh col="opr" label="OPR" sort={sort} onSort={onSort} title="Offensive Power Rating (this event)" className="col-muted" />
+            <SortableTh col="dpr" label="DPR" sort={sort} onSort={onSort} title="Defensive Power Rating (this event)" className="col-muted" />
+            <SortableTh col="ccwm" label="CCWM" sort={sort} onSort={onSort} title="Calculated Contribution to Winning Margin (OPR − DPR)" />
             <th className="compare-col">Compare</th>
             {showPicklist && <th className="picklist-col">Picklist</th>}
           </tr>
         </thead>
         <tbody>
-          {sortedRankings.map((row) => {
+          {displayRows.map((row) => {
             const o = oprMap.get(row.team.id);
             return (
             <tr key={row.id}>
@@ -9320,10 +9376,11 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, orgId
               <td>{row.wp ?? "-"}</td>
               <td>{row.ap ?? "-"}</td>
               <td>{row.sp ?? "-"}</td>
-              <td>{row.high_score ?? "-"}</td>
-              <td>{formatNumber(row.average_points)}</td>
-              <td>{fmtRating(o?.opr)}</td>
-              <td>{fmtRating(o?.dpr)}</td>
+              <td>{rankingAwp(row)}</td>
+              <td className="col-muted">{row.high_score ?? "-"}</td>
+              <td className="col-muted">{formatNumber(row.average_points)}</td>
+              <td className="col-muted">{fmtRating(o?.opr)}</td>
+              <td className="col-muted">{fmtRating(o?.dpr)}</td>
               <td>{fmtRating(o?.ccwm)}</td>
               <td className="compare-col">
                 <CompareRowBtn teamId={row.team.id} teamNumber={row.team.name} programCode={programCode ?? ""} />
@@ -9336,9 +9393,9 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, orgId
             </tr>
             );
           })}
-          {!sortedRankings.length && (
+          {!displayRows.length && (
             <tr>
-              <td colSpan={showPicklist ? 13 : 12}>
+              <td colSpan={showPicklist ? 14 : 13}>
                 <Empty>No rankings returned.</Empty>
               </td>
             </tr>
