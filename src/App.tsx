@@ -11391,10 +11391,11 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
 
 // ── Org Workspace (/org/:id) ──────────────────────────────────────────────────
 
-const ORG_WORKSPACE_TABS = ["dashboard", "notes", "picklists", "activity", "export", "settings"] as const;
+const ORG_WORKSPACE_TABS = ["dashboard", "favorites", "notes", "picklists", "activity", "export", "settings"] as const;
 type OrgWorkspaceTab = typeof ORG_WORKSPACE_TABS[number];
 const ORG_WORKSPACE_NAV: Array<{ value: OrgWorkspaceTab; label: string; icon: ReactNode }> = [
   { value: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={15} /> },
+  { value: "favorites", label: "Favorites", icon: <Star size={15} /> },
   { value: "notes",     label: "Notes",     icon: <StickyNote size={15} /> },
   { value: "picklists", label: "Picklists", icon: <ListOrdered size={15} /> },
   { value: "activity",  label: "Activity",  icon: <Activity size={15} /> },
@@ -11434,6 +11435,19 @@ function OrgActivityRow({ item, eventName }: { item: ActivityItem; eventName: st
     : <div className="org-activity-row">{body}</div>;
 }
 
+function OrgFavoritesTab({ orgId }: { orgId: string }) {
+  return (
+    <div className="org-ws-section">
+      <div className="org-ws-block">
+        <div className="org-ws-block-head">
+          <h3>Shared favorites</h3>
+        </div>
+        <OrgFavoritesList orgId={orgId} />
+      </div>
+    </div>
+  );
+}
+
 function OrgDashboardTab({ orgId, onNavigate }: { orgId: string; onNavigate: (tab: OrgWorkspaceTab) => void }) {
   const favs = useOrgFavorites(orgId);
   const notes = useOrgNotesList(orgId);
@@ -11455,7 +11469,7 @@ function OrgDashboardTab({ orgId, onNavigate }: { orgId: string; onNavigate: (ta
   const tiles: Array<{ label: string; value: number | string; icon: ReactNode; tab?: OrgWorkspaceTab }> = [
     { label: "Notes",            value: notes.length,                            icon: <StickyNote size={16} />,  tab: "notes" },
     { label: "Active picklists", value: picks.loading ? "…" : picks.data.length, icon: <ListOrdered size={16} />, tab: "picklists" },
-    { label: "Shared favorites", value: favCount,                                icon: <Star size={16} /> },
+    { label: "Shared favorites", value: favCount,                                icon: <Star size={16} />,       tab: "favorites" },
     { label: "Members",          value: memberCount ?? "…",                      icon: <Users size={16} />,       tab: "settings" },
   ];
 
@@ -11766,6 +11780,7 @@ function OrgWorkspacePage({ orgId }: { orgId: string }) {
         </nav>
         <div className="settings-content">
           {tab === "dashboard" && <OrgDashboardTab orgId={orgId} onNavigate={setTab} />}
+          {tab === "favorites" && <OrgFavoritesTab orgId={orgId} />}
           {tab === "notes"     && <OrgNotesHubTab orgId={orgId} />}
           {tab === "picklists" && <OrgPicklistsTab orgId={orgId} />}
           {tab === "activity"  && <OrgActivityTab orgId={orgId} />}
