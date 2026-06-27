@@ -21,7 +21,12 @@ export type OrgInvite = {
   orgId: string;
   createdBy: string | null;
   usedBy: string | null;
-  expiresAt: string;
+  /** Max number of joins allowed; null = unlimited. */
+  maxUses: number | null;
+  /** Joins consumed so far. */
+  useCount: number;
+  /** ISO timestamp, or null = never expires. */
+  expiresAt: string | null;
   createdAt: string;
 };
 
@@ -199,25 +204,48 @@ export async function deleteOrg(orgId: string): Promise<void> {
   setState({ orgs: state.orgs.filter((o) => o.orgId !== orgId) });
 }
 
-/** Generate a new invite link for the org. */
-export async function generateInvite(orgId: string): Promise<OrgInvite> {
-  const sb = supabase;
-  if (!sb || !userId) throw new Error("Not signed in");
-  const { data, error } = await sb
-    .from("org_invites")
-    .insert({ org_id: orgId, created_by: userId })
-    .select()
-    .single();
-  if (error || !data) throw error ?? new Error("Failed to generate invite");
-  const row = data as { id: string; org_id: string; created_by: string | null; used_by: string | null; expires_at: string; created_at: string };
+type OrgInviteRow = {
+  id: string;
+  org_id: string;
+  created_by: string | null;
+  used_by: string | null;
+  max_uses: number | null;
+  use_count: number;
+  expires_at: string | null;
+  created_at: string;
+};
+
+function mapInvite(row: OrgInviteRow): OrgInvite {
   return {
     id: row.id,
     orgId: row.org_id,
     createdBy: row.created_by,
     usedBy: row.used_by,
+    maxUses: row.max_uses,
+    useCount: row.use_count,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
   };
+}
+
+/**
+ * Generate a new invite link for the org.
+ * @param maxUses  number of allowed joins, or null for unlimited
+ * @param expiresAt ISO timestamp the link expires, or null to never expire
+ */
+export async function generateInvite(
+  orgId: string,
+  { maxUses, expiresAt }: { maxUses: number | null; expiresAt: string | null },
+): Promise<OrgInvite> {
+  const sb = supabase;
+  if (!sb || !userId) throw new Error("Not signed in");
+  const { data, error } = await sb
+    .from("org_invites")
+    .insert({ org_id: orgId, created_by: userId, max_uses: maxUses, expires_at: expiresAt })
+    .select()
+    .single();
+  if (error || !data) throw error ?? new Error("Failed to generate invite");
+  return mapInvite(data as OrgInviteRow);
 }
 
 /** Revoke (delete) an invite by its UUID. */
@@ -227,25 +255,22 @@ export async function revokeInvite(inviteId: string): Promise<void> {
   await sb.from("org_invites").delete().eq("id", inviteId);
 }
 
-/** Fetch active (non-expired, unused) invites for an org. */
+/** Fetch active (non-expired, non-exhausted) invites for an org. */
 export async function getOrgInvites(orgId: string): Promise<OrgInvite[]> {
   const sb = supabase;
   if (!sb) return [];
+  const nowIso = new Date().toISOString();
   const { data } = await sb
     .from("org_invites")
-    .select("id, org_id, created_by, used_by, expires_at, created_at")
+    .select("id, org_id, created_by, used_by, max_uses, use_count, expires_at, created_at")
     .eq("org_id", orgId)
-    .is("used_by", null)
-    .gt("expires_at", new Date().toISOString())
+    // Keep links that never expire OR have not yet expired.
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order("created_at", { ascending: false });
-  return (data ?? []).map((row: { id: string; org_id: string; created_by: string | null; used_by: string | null; expires_at: string; created_at: string }) => ({
-    id: row.id,
-    orgId: row.org_id,
-    createdBy: row.created_by,
-    usedBy: row.used_by,
-    expiresAt: row.expires_at,
-    createdAt: row.created_at,
-  }));
+  return (data ?? [])
+    .map((row) => mapInvite(row as OrgInviteRow))
+    // Drop exhausted links (capped invites whose uses are all consumed).
+    .filter((invite) => invite.maxUses === null || invite.useCount < invite.maxUses);
 }
 
 /** Fetch members of an org, joined to their profile info. */

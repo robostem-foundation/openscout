@@ -65,6 +65,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -11223,11 +11224,26 @@ function OrgMembersTab({ orgId, org }: { orgId: string; org: OrgMembership | und
   );
 }
 
+// Format a Date as a local yyyy-mm-dd string for <input type="date">.
+function toDateInputValue(d: Date): string {
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+const INVITE_USE_OPTIONS = ["1", "2", "3", "4", "5", "10", "unlimited"] as const;
+
 function OrgInvitesTab({ orgId }: { orgId: string }) {
   const [invites, setInvites] = useState<OrgInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [maxUsesValue, setMaxUsesValue] = useState<string>("1");
+  const [noExpiry, setNoExpiry] = useState(false);
+  const [expiryDate, setExpiryDate] = useState<string>(() =>
+    toDateInputValue(new Date(Date.now() + 7 * 86400000)),
+  );
+
+  const todayInputValue = toDateInputValue(new Date());
 
   useEffect(() => {
     getOrgInvites(orgId).then((data) => { setInvites(data); setLoading(false); });
@@ -11235,7 +11251,11 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
 
   const handleGenerate = async () => {
     setGenerating(true);
-    const invite = await generateInvite(orgId);
+    const maxUses = maxUsesValue === "unlimited" ? null : Number(maxUsesValue);
+    // Expire at the end of the chosen day (local), so "expires Jun 30" stays
+    // valid through all of Jun 30.
+    const expiresAt = noExpiry ? null : new Date(`${expiryDate}T23:59:59`).toISOString();
+    const invite = await generateInvite(orgId, { maxUses, expiresAt });
     setInvites((prev) => [invite, ...prev]);
     setGenerating(false);
   };
@@ -11264,25 +11284,66 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
     setTimeout(() => setCopied((c) => (c === inviteId ? null : c)), 2000);
   };
 
-  const formatExpiry = (iso: string) => {
-    const d = new Date(iso);
-    return `Expires ${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
-  };
+  const formatExpiry = (iso: string | null) =>
+    iso
+      ? `Expires ${new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+      : "No expiration";
+
+  const formatUses = (invite: OrgInvite) =>
+    invite.maxUses === null
+      ? `${invite.useCount} joined · unlimited`
+      : `${invite.useCount} / ${invite.maxUses} used`;
 
   if (loading) return <p className="join-org-meta">Loading…</p>;
 
   return (
     <div>
-      <Button
-        variant="outline"
-        size="sm"
-        className="mb-4"
-        onClick={() => void handleGenerate()}
-        disabled={generating}
-      >
-        <Link2 data-icon="inline-start" />
-        {generating ? "Generating…" : "Generate invite link"}
-      </Button>
+      <div className="org-invite-form">
+        <label className="org-invite-field">
+          <span className="org-invite-field-label">Uses</span>
+          <Select value={maxUsesValue} onValueChange={setMaxUsesValue}>
+            <SelectTrigger size="sm" className="w-[120px]" aria-label="Number of uses">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {INVITE_USE_OPTIONS.map((opt) => (
+                <SelectItem key={opt} value={opt}>
+                  {opt === "unlimited" ? "Unlimited" : `${opt} use${opt === "1" ? "" : "s"}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="org-invite-field">
+          <span className="org-invite-field-label">Expires</span>
+          <Input
+            type="date"
+            className="w-[150px]"
+            value={expiryDate}
+            min={todayInputValue}
+            disabled={noExpiry}
+            onChange={(e) => setExpiryDate(e.target.value)}
+            aria-label="Expiration date"
+          />
+        </label>
+        <label className="org-invite-noexpiry">
+          <Checkbox
+            checked={noExpiry}
+            onCheckedChange={(v) => setNoExpiry(v === true)}
+            aria-label="No expiration"
+          />
+          <span>No expiration</span>
+        </label>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void handleGenerate()}
+          disabled={generating || (!noExpiry && !expiryDate)}
+        >
+          <Link2 data-icon="inline-start" />
+          {generating ? "Generating…" : "Generate invite link"}
+        </Button>
+      </div>
       {invites.length === 0 && (
         <p style={{ fontSize: 13, color: "var(--text-muted)" }}>No active invite links.</p>
       )}
@@ -11308,6 +11369,7 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
               >
                 {copied === invite.id ? <Check size={13} /> : <LinkIcon size={13} />}
               </Button>
+              <span className="org-invite-expiry">{formatUses(invite)}</span>
               <span className="org-invite-expiry">{formatExpiry(invite.expiresAt)}</span>
               <Button
                 variant="ghost"

@@ -6841,6 +6841,28 @@ td.quick-look-col {
 .org-role-badge.member { background: transparent;      color: var(--text-faint); border: 1px solid var(--border); }
 
 /* Org Invites */
+.org-invite-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.org-invite-field { display: flex; flex-direction: column; gap: 4px; }
+.org-invite-field-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.org-invite-noexpiry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  height: 32px;
+  cursor: pointer;
+}
 .org-invite-list { display: flex; flex-direction: column; gap: 10px; }
 .org-invite-item { display: flex; align-items: center; gap: 6px; }
 .org-invite-link-input {
