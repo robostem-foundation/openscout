@@ -854,8 +854,8 @@ async function collectAllPages<T>(loader: (page: number) => Promise<Paginated<T>
   };
 }
 
-function cachedTeamsKey(program: string, registered: string) {
-  return JSON.stringify({ program, registered });
+function cachedTeamsKey(program: string, registered: string, regionKeys: string[] = []) {
+  return JSON.stringify({ program, registered, regions: [...regionKeys].sort() });
 }
 
 // The full team list for one program is large (~6 MB for V5RC), which exceeds
@@ -906,11 +906,53 @@ async function idbSetTeams(key: string, entry: { data: Paginated<Team>; updatedA
   }
 }
 
-async function loadCachedTeams(cacheKey: string, query: Parameters<typeof api.teams>[0], force = false) {
+// `teams_light` returns the whole matching set in one request, but region/country
+// filters AND together server-side, so heterogeneous region selections are split
+// into separate queries here and unioned (deduped by id) into one Paginated<Team>.
+async function fetchTeamsLightUnion(queries: Parameters<typeof api.teamsLight>[0][]): Promise<Paginated<Team>> {
+  const results = await Promise.all(queries.map((query) => api.teamsLight(query)));
+  const data = uniqueTeams(results.flatMap((result) => result.data));
+  const meta = results[0]?.meta ?? {
+    current_page: 1,
+    last_page: 1,
+    next_page_url: null,
+    prev_page_url: null,
+    per_page: 0,
+    total: 0,
+    from: null,
+    to: null,
+  };
+  return {
+    meta: { ...meta, per_page: data.length, total: data.length, from: data.length ? 1 : null, to: data.length || null },
+    data,
+  };
+}
+
+// Teams tab search: query teams_light (region-filtered) and, when the query is a
+// complete team number ({1-5 digits}{one letter}, e.g. 32K), also hit the official
+// RobotEvents API in parallel — that team may exist there before RoboSTEM ingests
+// it. Results merge and dedupe by id, then rank against the query.
+async function searchTeamsTabTeams(
+  query: string,
+  regionQueries: Parameters<typeof api.teamsLight>[0][],
+): Promise<Paginated<Team>> {
+  const trimmed = query.trim();
+  const isCompleteNumber = /^\d{1,5}[a-z]$/i.test(trimmed);
+  const [rse, vex] = await Promise.all([
+    fetchTeamsLightUnion(regionQueries.map((regionQuery) => ({ ...regionQuery, teamSearch: query }))),
+    isCompleteNumber
+      ? api.robotEventsTeams({ number: trimmed, "program[]": vexProgramIds, per_page: 20 })
+      : Promise.resolve(null),
+  ]);
+  const merged = uniqueTeams([...(vex?.data ?? []), ...rse.data]);
+  return { ...rse, data: rankTeamsForSearch(merged, query) };
+}
+
+async function loadCachedTeams(cacheKey: string, queries: Parameters<typeof api.teamsLight>[0][], force = false) {
   const cached = teamListCache.get(cacheKey);
   if (!force && cached?.promise) return cached.promise;
 
-  const promise = collectAllPages<Team>((page) => api.teams({ ...query, page })).then((result) => {
+  const promise = fetchTeamsLightUnion(queries).then((result) => {
     const sortedResult = { ...result, data: [...result.data].sort(compareTeamsNatural) };
     const updatedAt = Date.now();
     teamListCache.set(cacheKey, { data: sortedResult, updatedAt });
@@ -1195,23 +1237,6 @@ function eventMatchesRegionOption(event: Event, option: RegionOption) {
 function eventMatchesRegionOptions(event: Event, options: RegionOption[]) {
   if (!options.length) return true;
   return options.some((option) => eventMatchesRegionOption(event, option));
-}
-
-function teamMatchesRegionOption(team: Team, option: RegionOption) {
-  const country = normalizeText(team.location?.country);
-  const region = normalizeText(team.location?.region);
-
-  if (option.kind === "country") return country === normalizeText(option.countryName);
-  if (option.kind === "subdivision") {
-    const countryMatches = !option.countryName || country === normalizeText(option.countryName);
-    return countryMatches && region === normalizeText(option.regionName);
-  }
-  return region === normalizeText(option.vexLabel);
-}
-
-function teamMatchesRegionOptions(team: Team, options: RegionOption[]) {
-  if (!options.length) return true;
-  return options.some((option) => teamMatchesRegionOption(team, option));
 }
 
 function shortSeasonName(name?: string | null) {
@@ -3808,7 +3833,7 @@ function TeamsPage() {
     );
   }, [seasonsAsync.data, program]);
   const reloadTeamsRef = useRef<() => void>(() => {});
-  const cacheKey = cachedTeamsKey(program, registered);
+  const cacheKey = cachedTeamsKey(program, registered, selectedRegionKeys);
   const committedSearch = submittedSearch.trim();
   const isSearchingTeams = !!committedSearch;
   const countries = useAsync(() => api.robotEventsCountries(), []);
@@ -3820,6 +3845,60 @@ function TeamsPage() {
     }),
     [program, registered],
   );
+  const countryOptions = useMemo(() => dedupeCountryGroups(countries.data ?? []), [countries.data]);
+  const countryById = useMemo(() => new Map(countryOptions.map((country) => [country.value, country])), [countryOptions]);
+  // teams_light has no per-team location, so region options come solely from the
+  // canonical RobotEvents countries/regions lists (no team-derived "vex-region").
+  const regionOptions = useMemo<RegionOption[]>(() => {
+    const countryItems = countryOptions.map((country) => ({
+      key: optionKey("country", country.value),
+      kind: "country" as const,
+      label: country.label,
+      badge: "Country",
+      countryId: country.value,
+      countryName: country.label,
+    }));
+    const subdivisionItems = (countryRegions.data ?? []).map((region) => {
+      const country = countryById.get(region.country_id);
+      return {
+        key: optionKey("subdivision", region.id),
+        kind: "subdivision" as const,
+        label: country ? `${region.name}, ${country.label}` : region.name,
+        badge: country?.country_id === "US" ? "State" : "State / Province",
+        countryId: region.country_id,
+        countryName: country?.label,
+        regionName: region.name,
+      };
+    });
+    return [...countryItems, ...subdivisionItems].sort((a, b) => a.label.localeCompare(b.label));
+  }, [countryOptions, countryRegions.data, countryById]);
+  const selectedRegionOptions = useMemo(
+    () => regionOptions.filter((option) => selectedRegionKeys.includes(option.key)),
+    [regionOptions, selectedRegionKeys],
+  );
+  // teams_light region[] and country[] AND together server-side, so a mix of whole
+  // countries and individual states (or states across countries) can't be a single
+  // request. Split into one query per country-group and union the results.
+  const regionQueries = useMemo<Parameters<typeof api.teamsLight>[0][]>(() => {
+    const countryNames = selectedRegionOptions
+      .filter((option) => option.kind === "country" && option.countryName)
+      .map((option) => option.countryName as string);
+    const subdivisionsByCountry = new Map<string, string[]>();
+    selectedRegionOptions
+      .filter((option) => option.kind === "subdivision" && option.regionName)
+      .forEach((option) => {
+        const country = option.countryName ?? "";
+        const list = subdivisionsByCountry.get(country) ?? [];
+        list.push(option.regionName as string);
+        subdivisionsByCountry.set(country, list);
+      });
+    const queries: Parameters<typeof api.teamsLight>[0][] = [];
+    if (countryNames.length) queries.push({ ...baseQuery, "country[]": countryNames });
+    subdivisionsByCountry.forEach((regions, country) => {
+      queries.push({ ...baseQuery, "region[]": regions, ...(country ? { "country[]": [country] } : {}) });
+    });
+    return queries.length ? queries : [baseQuery];
+  }, [baseQuery, selectedRegionOptions]);
 
   useEffect(() => {
     let live = true;
@@ -3831,25 +3910,11 @@ function TeamsPage() {
 
       try {
         const result = isSearchingTeams
-          ? await collectAllPages<Team>((page) =>
-              api.teams({
-                ...baseQuery,
-                teamSearch: committedSearch,
-                page,
-                per_page: 250,
-              }),
-            )
-          : await loadCachedTeams(
-              cacheKey,
-              {
-                ...baseQuery,
-                per_page: 250,
-              },
-              force,
-            );
+          ? await searchTeamsTabTeams(committedSearch, regionQueries)
+          : await loadCachedTeams(cacheKey, regionQueries, force);
 
         if (live) {
-          setData(isSearchingTeams ? { ...result, data: rankTeamsForSearch(result.data, committedSearch) } : result);
+          setData(result);
           if (!isSearchingTeams) setLastUpdated(teamListCache.get(cacheKey)?.updatedAt ?? Date.now());
         }
       } catch (err) {
@@ -3902,52 +3967,10 @@ function TeamsPage() {
       live = false;
       window.clearInterval(interval);
     };
-  }, [baseQuery, cacheKey, committedSearch, isSearchingTeams, page]);
+  }, [cacheKey, committedSearch, isSearchingTeams, page, regionQueries]);
 
   const cachedTeams = teamListCache.get(cacheKey)?.data?.data;
   const quickSourceTeams = cachedTeams ?? (!isSearchingTeams ? data?.data : []) ?? [];
-  const countryOptions = useMemo(() => dedupeCountryGroups(countries.data ?? []), [countries.data]);
-  const countryById = useMemo(() => new Map(countryOptions.map((country) => [country.value, country])), [countryOptions]);
-  const regionOptions = useMemo<RegionOption[]>(() => {
-    const countryItems = countryOptions.map((country) => ({
-      key: optionKey("country", country.value),
-      kind: "country" as const,
-      label: country.label,
-      badge: "Country",
-      countryId: country.value,
-      countryName: country.label,
-    }));
-    const subdivisionItems = (countryRegions.data ?? []).map((region) => {
-      const country = countryById.get(region.country_id);
-      return {
-        key: optionKey("subdivision", region.id),
-        kind: "subdivision" as const,
-        label: country ? `${region.name}, ${country.label}` : region.name,
-        badge: country?.country_id === "US" ? "State" : "State / Province",
-        countryId: region.country_id,
-        countryName: country?.label,
-        regionName: region.name,
-      };
-    });
-    const teamRegionItems = new Map<string, RegionOption>();
-    (data?.data ?? cachedTeams ?? []).forEach((team) => {
-      const label = team.location?.region?.trim();
-      if (!label) return;
-      const key = optionKey("vex-region", label);
-      if (!teamRegionItems.has(key)) {
-        teamRegionItems.set(key, {
-          key,
-          kind: "vex-region",
-          label,
-          badge: "Region",
-          vexLabel: label,
-        });
-      }
-    });
-
-    return [...countryItems, ...subdivisionItems, ...teamRegionItems.values()].sort((a, b) => a.label.localeCompare(b.label));
-  }, [cachedTeams, countryOptions, countryRegions.data, countryById, data]);
-  const selectedRegionOptions = regionOptions.filter((option) => selectedRegionKeys.includes(option.key));
   const regionButtonLabel =
     selectedRegionOptions.length === 0
       ? "All regions"
@@ -3972,9 +3995,10 @@ function TeamsPage() {
   const localQuickResults = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return [];
+    // Region is filtered server-side via teams_light, so quickSourceTeams (the
+    // cached browse set) is already scoped to the selected regions — no client filter.
     return rankTeamsForSearch(
       quickSourceTeams.filter((team) => {
-        if (!teamMatchesRegionOptions(team, selectedRegionOptions)) return false;
         const haystack = [team.number, team.team_name, team.organization, team.grade, team.registered ? "registered" : "inactive", locationLine(team)]
           .filter(Boolean)
           .join(" ")
@@ -3983,14 +4007,13 @@ function TeamsPage() {
       }),
       search,
     );
-  }, [quickSourceTeams, search, selectedRegionOptions]);
+  }, [quickSourceTeams, search]);
 
   const quickResults = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return [];
     return rankTeamsForSearch(
       uniqueTeams([...localQuickResults, ...quickData]).filter((team) => {
-        if (!teamMatchesRegionOptions(team, selectedRegionOptions)) return false;
         const haystack = [team.number, team.team_name, team.organization, team.grade, team.registered ? "registered" : "inactive", locationLine(team)]
           .filter(Boolean)
           .join(" ")
@@ -3999,13 +4022,13 @@ function TeamsPage() {
       }),
       search,
     );
-  }, [localQuickResults, quickData, search, selectedRegionOptions]);
+  }, [localQuickResults, quickData, search]);
 
   const sortedTeams = useMemo(() => [...(data?.data ?? [])].sort(isSearchingTeams ? compareTeamsForSearch(committedSearch) : compareTeamsNatural), [committedSearch, data, isSearchingTeams]);
 
   const tableTeams = useMemo(
-    () => (isSearchingTeams ? sortedTeams : data?.data ?? []).filter((team) => teamMatchesRegionOptions(team, selectedRegionOptions)),
-    [data, isSearchingTeams, selectedRegionOptions, sortedTeams],
+    () => (isSearchingTeams ? sortedTeams : data?.data ?? []),
+    [data, isSearchingTeams, sortedTeams],
   );
 
   useEffect(() => {
@@ -4074,15 +4097,9 @@ function TeamsPage() {
     }
 
     setQuickLoading(true);
-    api
-      .teams({
-        ...baseQuery,
-        teamSearch: needle,
-        page: 1,
-        per_page: 50,
-      })
+    searchTeamsTabTeams(needle, regionQueries)
       .then((result) => {
-        if (live) setQuickData(rankTeamsForSearch(result.data, needle));
+        if (live) setQuickData(result.data);
       })
       .catch(() => {
         if (live) setQuickData([]);
@@ -4094,7 +4111,7 @@ function TeamsPage() {
     return () => {
       live = false;
     };
-  }, [baseQuery, debouncedQuickSearch]);
+  }, [debouncedQuickSearch, regionQueries]);
 
   const submitSearch = () => {
     const nextSearch = search.trim();
@@ -4145,9 +4162,6 @@ function TeamsPage() {
                   </button>
                   <button type="button" className={regionTab === "subdivision" ? "active" : ""} onClick={() => setRegionTab("subdivision")}>
                     State / Province
-                  </button>
-                  <button type="button" className={regionTab === "vex-region" ? "active" : ""} onClick={() => setRegionTab("vex-region")}>
-                    Region
                   </button>
                 </div>
                 <input className="picker-search" value={regionSearch} onChange={(event) => setRegionSearch(event.target.value)} placeholder="Search regions" />

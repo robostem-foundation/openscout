@@ -14,6 +14,7 @@ import type {
   Skill,
   SuperscoreRow,
   Team,
+  TeamLight,
   WorldSkillsEntry,
 } from "./types";
 
@@ -87,6 +88,38 @@ export const api = {
   eventAwards: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Award>>(`events/${id}/awards`, query),
   robotEventsTeams: (query: Query = {}) => robotEventsJson<Paginated<Team>>("teams", query),
   teams: (query: Query = {}) => rseJson<Paginated<Team>>("teams", query),
+  // `teams_light` is optimized for bulk lookups: it returns the *entire* matching
+  // set as a flat, unpaginated array (sorted by team number) in a single request,
+  // with a leaner record than `teams` (no location/grade/registered/robot_name).
+  // We adapt it into the same `Paginated<Team>` shape the rest of the app expects,
+  // synthesizing single-page meta so callers (caching, sorting, table) are unchanged.
+  teamsLight: async (query: Query = {}): Promise<Paginated<Team>> => {
+    const raw = await rseJson<TeamLight[]>("teams_light", query);
+    const data: Team[] = raw.map((team) => ({
+      id: team.team_id,
+      number: team.team_num,
+      team_name: team.team_name ?? null,
+      robot_name: null,
+      organization: team.org ?? null,
+      location: null,
+      registered: undefined,
+      program: team.program,
+      grade: null,
+    }));
+    return {
+      meta: {
+        current_page: 1,
+        last_page: 1,
+        next_page_url: null,
+        prev_page_url: null,
+        per_page: data.length,
+        total: data.length,
+        from: data.length ? 1 : null,
+        to: data.length ? data.length : null,
+      },
+      data,
+    };
+  },
   team: (id: string | number) => robotEventsJson<Team>(`teams/${id}`),
   teamEvents: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Event>>(`teams/${id}/events`, query),
   teamMatches: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Match>>(`teams/${id}/matches`, query),
