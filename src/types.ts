@@ -103,6 +103,15 @@ export type Team = {
   grade?: string | null;
 };
 
+// Raw record from the RoboSTEM `teams_light` endpoint (flat, leaner than `Team`).
+export type TeamLight = {
+  team_id: number;
+  team_num: string;
+  team_name?: string | null;
+  org?: string | null;
+  program: IdInfo;
+};
+
 export type AllianceTeam = {
   team: IdInfo;
   sitting?: boolean;
