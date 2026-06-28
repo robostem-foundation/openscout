@@ -54,8 +54,8 @@ import {
   Youtube,
   Zap,
 } from "lucide-react";
-import { createContext, Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { Dispatch, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
+import { Component, createContext, Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { Dispatch, ErrorInfo, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
@@ -1779,6 +1779,48 @@ function LoadingTable({ columns = 4 }: { columns?: number }) {
       ))}
     </tbody>
   );
+}
+
+// Catches render-time exceptions in its subtree so a single broken component
+// degrades to a contained message instead of unmounting the whole React tree
+// (which renders a blank/black screen). Wrap the page content and each overlay
+// so a crash in one area never takes down the rest of the app.
+//   - `silent`: render nothing on error (for overlays/modals — the panel simply
+//     doesn't appear and the page underneath stays usable).
+//   - reset via key change: the page boundary is keyed by route, so navigating
+//     elsewhere clears a caught error automatically.
+type ErrorBoundaryProps = { children: ReactNode; silent?: boolean };
+type ErrorBoundaryState = { error: Error | null };
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // Keep the crash visible in the console for diagnostics even though the UI
+    // recovers gracefully.
+    console.error("Render error caught by ErrorBoundary:", error, info.componentStack);
+  }
+
+  reset = () => this.setState({ error: null });
+
+  render() {
+    if (this.state.error) {
+      if (this.props.silent) return null;
+      return (
+        <Alert variant="destructive" className="m-4 w-auto">
+          <AlertDescription>
+            Something went wrong displaying this content.
+            <Button variant="outline" size="sm" className="ml-3" onClick={this.reset}>Try again</Button>
+          </AlertDescription>
+        </Alert>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 function Status({ loading, error }: { loading: boolean; error: string | null }) {
@@ -14086,14 +14128,18 @@ export default function App() {
   }, []); // intentionally stable — reads module-level _spotlightOpen directly
 
   return (
-    <>
-      <Layout path={path}>{route(path)}</Layout>
-      <OnboardingModal />
-      {spotlightOpen && <CommandPalette onClose={closeSpotlight} />}
-      {shortcutsOpen && <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />}
-      {trayEntries.length > 0 && <CompareTray entries={trayEntries} />}
-      {compareModalOpen && <ComparisonModal entries={trayEntries} onClose={closeCompareModal} />}
-      {quickView && <TeamQuickView state={quickView} onClose={closeQuickView} />}
-    </>
+    <ErrorBoundary>
+      <Layout path={path}>
+        {/* Keyed by route so a caught error clears automatically when the user
+            navigates elsewhere; the nav shell (Layout) stays mounted. */}
+        <ErrorBoundary key={path}>{route(path)}</ErrorBoundary>
+      </Layout>
+      <ErrorBoundary silent><OnboardingModal /></ErrorBoundary>
+      {spotlightOpen && <ErrorBoundary silent><CommandPalette onClose={closeSpotlight} /></ErrorBoundary>}
+      {shortcutsOpen && <ErrorBoundary silent><ShortcutsOverlay onClose={() => setShortcutsOpen(false)} /></ErrorBoundary>}
+      {trayEntries.length > 0 && <ErrorBoundary silent><CompareTray entries={trayEntries} /></ErrorBoundary>}
+      {compareModalOpen && <ErrorBoundary silent><ComparisonModal entries={trayEntries} onClose={closeCompareModal} /></ErrorBoundary>}
+      {quickView && <ErrorBoundary silent><TeamQuickView state={quickView} onClose={closeQuickView} /></ErrorBoundary>}
+    </ErrorBoundary>
   );
 }
