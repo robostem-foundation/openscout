@@ -3387,9 +3387,8 @@ function Home() {
           <Panel title="VEX Skill Leaderboards" icon={<Trophy />}>
             <div className="skills-leaderboard-list">
               <Link href="/skills" className="skills-lb-openscout">
-                <BarChart3 size={14} />
                 <span>View leaderboards on OpenScout</span>
-                <ChevronRight size={14} className="arrow" />
+                <ChevronRight size={15} className="arrow" />
               </Link>
               {skillsLeaderboards.map((lb) => (
                 <a

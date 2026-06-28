@@ -1239,7 +1239,9 @@ main {
   padding: 12px;
 }
 
-/* Internal shortcut row — opens the in-app Skills page instead of vex.com. */
+/* Internal shortcut row — opens the in-app Skills page instead of vex.com.
+   A flat hairline row like the rest; accent text + chevron mark it as the
+   primary in-app destination without a heavy tinted fill. */
 .skills-lb-openscout {
   display: flex;
   align-items: center;
@@ -1247,9 +1249,9 @@ main {
   min-height: 36px;
   margin-bottom: 4px;
   padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  background: var(--surface);
   color: var(--accent);
   font-size: 13.5px;
   font-weight: 600;
@@ -1257,81 +1259,107 @@ main {
   transition: background 0.15s, border-color 0.15s;
 }
 
-.skills-lb-openscout svg {
-  flex: 0 0 auto;
-  color: var(--accent);
+.skills-lb-openscout > span {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .skills-lb-openscout .arrow {
+  flex: 0 0 auto;
   margin-left: auto;
+  color: var(--accent);
+  transition: transform 0.15s;
 }
 
 .skills-lb-openscout:hover {
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: var(--surface-2);
+  border-color: var(--border-strong);
   text-decoration: none;
 }
 
+.skills-lb-openscout:hover .arrow {
+  transform: translateX(2px);
+}
+
+/* Flat hairline rows matching the rest of the sidebar (favorites, recents).
+   Program identity is carried by a quiet color dot rather than a loud outline. */
 .skills-lb-btn {
-  --skill-color: #c9302c;
+  --skill-color: var(--text-faint);
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  min-height: 34px;
-  padding: 7px 10px 7px 12px;
-  border: 1px solid var(--skill-color);
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 500;
   text-decoration: none;
   transition:
     background 0.15s,
-    border-color 0.15s,
-    color 0.15s;
+    border-color 0.15s;
+}
+
+/* Program dot. */
+.skills-lb-btn::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--skill-color);
+}
+
+/* Label fills the row so the external-link icon sits flush right. */
+.skills-lb-btn > span {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .skills-lb-btn.v5 {
-  --skill-color: #c9302c;
+  --skill-color: #d0524d;
 }
 
 .skills-lb-btn.iq {
-  --skill-color: #337ab7;
+  --skill-color: #3b7fb5;
 }
 
 .skills-lb-btn.vexu {
-  --skill-color: #555;
+  --skill-color: var(--text-faint);
 }
 
-/* Brighten the outline colors so the thin border stays legible on the near-black
-   dark surface. */
+/* Brighten the dots slightly against the near-black dark surface. */
 [data-theme="dark"] .skills-lb-btn.v5 {
-  --skill-color: #ef4444;
+  --skill-color: #f0625d;
 }
 [data-theme="dark"] .skills-lb-btn.iq {
-  --skill-color: #3b82f6;
+  --skill-color: #5a9bd4;
 }
 [data-theme="dark"] .skills-lb-btn.vexu {
   --skill-color: #a1a1a1;
 }
 
 .skills-lb-btn svg {
-  color: var(--skill-color);
   flex: 0 0 auto;
+  color: var(--text-faint);
+  transition: color 0.15s;
 }
 
 .skills-lb-btn:hover {
-  border-color: var(--skill-color);
-  background: color-mix(in srgb, var(--skill-color) 8%, var(--surface));
-  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
   text-decoration: none;
 }
 
-.skills-lb-btn:focus {
-  border-color: var(--skill-color);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--skill-color) 20%, transparent);
+.skills-lb-btn:hover svg {
+  color: var(--text-muted);
+}
+
+.skills-lb-btn:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
   outline: 0;
 }
 
