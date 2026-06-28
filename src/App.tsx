@@ -202,14 +202,30 @@ let olderSeasonEventSearchCache:{ data?: Event[]; updatedAt: number; promise?: P
 // in-flight promise per season+grade for the whole session — subsequent team
 // views in the same season reuse it instantly.
 const worldSkillsCache = new Map<string, Promise<WorldSkillsEntry[]>>();
+// The world-skills endpoint's `grade_level` vocabulary differs from the grade
+// stored on team profiles: profiles say "Elementary School", but the endpoint
+// only accepts "Elementary" (and rejects "Elementary School" with an "Invalid
+// Grade Level" error). High/Middle School and College already match. Map to the
+// endpoint's spelling so elementary teams get their real standings.
+function worldSkillsGrade(grade: string) {
+  return grade === "Elementary School" ? "Elementary" : grade;
+}
+
 function loadWorldSkills(seasonId: number, grade: string) {
-  const key = `${seasonId}:${grade}`;
+  const gradeLevel = worldSkillsGrade(grade);
+  const key = `${seasonId}:${gradeLevel}`;
   let promise = worldSkillsCache.get(key);
   if (!promise) {
-    promise = api.worldSkills(seasonId, grade).catch((err: Error) => {
-      worldSkillsCache.delete(key);
-      throw err;
-    });
+    promise = api.worldSkills(seasonId, gradeLevel)
+      // Defense-in-depth: an unsupported grade level makes the endpoint answer
+      // HTTP 200 with a non-array error object `{ error, data }` instead of
+      // rejecting. Normalize any non-array payload to [] so every consumer can
+      // safely treat the result as a list (this is what prevented the crash).
+      .then((res) => (Array.isArray(res) ? res : []))
+      .catch((err: Error) => {
+        worldSkillsCache.delete(key);
+        throw err;
+      });
     worldSkillsCache.set(key, promise);
   }
   return promise;
