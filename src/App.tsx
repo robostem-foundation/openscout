@@ -3194,17 +3194,11 @@ function PaginatedEventList({
 // A single Upcoming level section. Mirrors the events-tab TierSection: the
 // marquee tiers (Worlds / Signature / Championship) collapse to a short preview
 // with a fade + "Show all", while "Other Events" paginates 7 per page.
-function HomeUpcomingTier({
-  label,
-  events,
-  collapsible,
-}: {
-  label: string;
-  events: Event[];
-  collapsible: boolean;
-}) {
+// A marquee level section (Worlds / Signature / Championship): preview the
+// first few with a fade + "Show all". The level name lives in the table header.
+function HomeUpcomingTier({ label, events }: { label: string; events: Event[] }) {
   const [expanded, setExpanded] = useState(false);
-  const showFade = collapsible && events.length > TIER_COLLAPSE_THRESHOLD && !expanded;
+  const showFade = events.length > TIER_COLLAPSE_THRESHOLD && !expanded;
   const displayEvents = showFade ? events.slice(0, TIER_COLLAPSE_THRESHOLD) : events;
   const groupLabel = (
     <>
@@ -3214,30 +3208,28 @@ function HomeUpcomingTier({
 
   return (
     <div className="tier-section">
-      {collapsible ? (
-        <div className={`tier-collapse${showFade ? " is-collapsed" : ""}`}>
-          <EventTable events={displayEvents} loading={false} compact showPriority showProgram headerLabel={groupLabel} />
-          {showFade && (
-            <button className="alliance-show-all" onClick={() => setExpanded(true)}>
-              Show all {events.length} <ChevronDown size={15} />
-            </button>
-          )}
-          {expanded && (
-            <button className="alliance-show-all alliance-show-less" onClick={() => setExpanded(false)}>
-              <ChevronUp size={18} />
-            </button>
-          )}
-        </div>
-      ) : (
-        <PaginatedEventList events={events} loading={false} pagers="bottom" headerLabel={groupLabel} />
-      )}
+      <div className={`tier-collapse${showFade ? " is-collapsed" : ""}`}>
+        <EventTable events={displayEvents} loading={false} compact showPriority showProgram headerLabel={groupLabel} />
+        {showFade && (
+          <button className="alliance-show-all" onClick={() => setExpanded(true)}>
+            Show all {events.length} <ChevronDown size={15} />
+          </button>
+        )}
+        {expanded && (
+          <button className="alliance-show-all alliance-show-less" onClick={() => setExpanded(false)}>
+            <ChevronUp size={18} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 // Upcoming tab: events grouped into level sections (Worlds → Signature →
 // Championship → Other), chronological within each. Marquee tiers collapse with
-// a fade; "Other" paginates.
+// a fade; "Other Events" paginates. The Other-Events pager is hoisted to wrap
+// the whole view so its controls sit above all groups (top) and below them
+// (bottom), rather than floating between sections.
 function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: boolean }) {
   const sections = useMemo(() => {
     const tiers: Array<{ label: string; category: EventCategory; collapsible: boolean }> = [
@@ -3251,19 +3243,43 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
       .filter((tier) => tier.events.length > 0);
   }, [events]);
 
+  const otherEvents = useMemo(() => sections.find((section) => !section.collapsible)?.events ?? [], [sections]);
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [otherEvents]);
+
+  const totalPages = Math.max(1, Math.ceil(otherEvents.length / HOME_EVENTS_PAGE_SIZE));
+  const current = Math.min(page, totalPages);
+  const otherSlice = otherEvents.slice((current - 1) * HOME_EVENTS_PAGE_SIZE, current * HOME_EVENTS_PAGE_SIZE);
+
   if (loading) return <EventTable events={[]} loading compact showPriority showProgram />;
   if (!sections.length) return <Empty />;
 
   return (
     <div className="home-events-groups">
-      {sections.map((section) => (
-        <HomeUpcomingTier
-          key={section.category}
-          label={section.label}
-          events={section.events}
-          collapsible={section.collapsible}
-        />
-      ))}
+      <EventsPager page={current} totalPages={totalPages} onPage={setPage} placement="top" />
+      {sections.map((section) =>
+        section.collapsible ? (
+          <HomeUpcomingTier key={section.category} label={section.label} events={section.events} />
+        ) : (
+          <div className="tier-section" key={section.category}>
+            <EventTable
+              events={otherSlice}
+              loading={false}
+              compact
+              showPriority
+              showProgram
+              headerLabel={
+                <>
+                  {section.label} <span className="tier-count">({section.events.length})</span>
+                </>
+              }
+            />
+          </div>
+        ),
+      )}
+      <EventsPager page={current} totalPages={totalPages} onPage={setPage} placement="bottom" />
     </div>
   );
 }
