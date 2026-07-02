@@ -103,12 +103,17 @@ export type Team = {
   grade?: string | null;
 };
 
-// Raw record from the RoboSTEM `teams_light` endpoint (flat, leaner than `Team`).
+// Raw record from the RoboSTEM `teams_light` endpoint. Leaner field *names* than
+// `teams` (team_id/team_num/org), but as of the alphabetical-ordering update it now
+// carries location, grade, and registered too.
 export type TeamLight = {
   team_id: number;
   team_num: string;
   team_name?: string | null;
   org?: string | null;
+  location?: Location | null;
+  grade?: string | null;
+  registered?: boolean;
   program: IdInfo;
 };
 

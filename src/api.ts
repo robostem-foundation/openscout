@@ -66,6 +66,20 @@ const jsonFrom = <T>(source: "rse" | "re" | "re-root" | "jumper", path: string, 
   return dedupedJson<T>(`/api/${source}/${path}${params.size ? `?${params.toString()}` : ""}`);
 };
 
+// Adapt a raw `teams_light` record into the app-wide `Team` shape. Kept in one place
+// so the flat-array and paginated fetches map fields identically.
+const mapTeamLight = (team: TeamLight): Team => ({
+  id: team.team_id,
+  number: team.team_num,
+  team_name: team.team_name ?? null,
+  robot_name: null,
+  organization: team.org ?? null,
+  location: team.location ?? null,
+  registered: team.registered,
+  program: team.program,
+  grade: team.grade ?? null,
+});
+
 const rseJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("rse", path, query);
 const robotEventsJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("re", path, query);
 const robotEventsRootJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("re-root", path, query);
@@ -88,24 +102,17 @@ export const api = {
   eventAwards: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Award>>(`events/${id}/awards`, query),
   robotEventsTeams: (query: Query = {}) => robotEventsJson<Paginated<Team>>("teams", query),
   teams: (query: Query = {}) => rseJson<Paginated<Team>>("teams", query),
-  // `teams_light` is optimized for bulk lookups: it returns the *entire* matching
-  // set as a flat, unpaginated array (sorted by team number) in a single request,
-  // with a leaner record than `teams` (no location/grade/registered/robot_name).
-  // We adapt it into the same `Paginated<Team>` shape the rest of the app expects,
-  // synthesizing single-page meta so callers (caching, sorting, table) are unchanged.
+  // `teams_light` is optimized for bulk lookups: with no `per_page` it returns the
+  // *entire* matching set as a flat, unpaginated array, sorted alphabetically by
+  // team number (2A before 10000P). It carries a leaner record than `teams` (uses
+  // team_id/team_num/org names, no robot_name) but does include location, grade, and
+  // registered. We adapt it into the `Paginated<Team>` shape the rest of the app
+  // expects, synthesizing single-page meta so callers (caching, sorting, table) are
+  // unchanged. Pass a `per_page` to instead get one server-paginated page — see
+  // `teamsLightPage`.
   teamsLight: async (query: Query = {}): Promise<Paginated<Team>> => {
     const raw = await rseJson<TeamLight[]>("teams_light", query);
-    const data: Team[] = raw.map((team) => ({
-      id: team.team_id,
-      number: team.team_num,
-      team_name: team.team_name ?? null,
-      robot_name: null,
-      organization: team.org ?? null,
-      location: null,
-      registered: undefined,
-      program: team.program,
-      grade: null,
-    }));
+    const data = raw.map(mapTeamLight);
     return {
       meta: {
         current_page: 1,
@@ -119,6 +126,14 @@ export const api = {
       },
       data,
     };
+  },
+  // One server-paginated page of `teams_light` (requires `per_page`). Passing
+  // `per_page` flips the endpoint from a flat array to a `{ meta, data }` envelope;
+  // we pass its real meta straight through so the caller can see `last_page`/`total`.
+  // Used for the fast first-page render before the full set streams in.
+  teamsLightPage: async (query: Query = {}): Promise<Paginated<Team>> => {
+    const res = await rseJson<Paginated<TeamLight>>("teams_light", query);
+    return { meta: res.meta, data: res.data.map(mapTeamLight) };
   },
   team: (id: string | number) => robotEventsJson<Team>(`teams/${id}`),
   teamEvents: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Event>>(`teams/${id}/events`, query),
