@@ -13915,6 +13915,18 @@ function MyTeamPage() {
   const totalGames = record.w + record.l + record.t;
   const winPct = totalGames ? Math.round((record.w / totalGames) * 1000) / 10 : 0;
   const seasonSkillsSummary = useMemo(() => skillSummary(seasonSkills), [seasonSkills]);
+  // VEX IQ is cooperative (no win/loss), so show teamwork stats instead of a W-L
+  // record / win rate in the summary strip.
+  const iqTeamworkSummary = useMemo(() => {
+    const avgs = seasonRankings
+      .map((r) => r.average_points)
+      .filter((n): n is number => n != null);
+    const avgTeamwork = avgs.length
+      ? Math.round((avgs.reduce((sum, v) => sum + v, 0) / avgs.length) * 10) / 10
+      : null;
+    const eventCount = new Set(seasonRankings.map((r) => r.event.id)).size;
+    return { avgTeamwork, eventCount };
+  }, [seasonRankings]);
 
   // Live event (running today) within the current season.
   const seasonEvents = useMemo(() => teamEvents.filter((e) => !seasonId || e.season.id === seasonId), [teamEvents, seasonId]);
@@ -14069,8 +14081,17 @@ function MyTeamPage() {
 
   const statStrip = (
     <div className="myteam-stats">
-      <div className="myteam-stat"><div className="k">Record</div><div className="v">{record.w}–{record.l}{record.t ? `–${record.t}` : ""}</div><div className="sub">{totalGames} matches played</div></div>
-      <div className="myteam-stat"><div className="k">Win rate</div><div className="v">{winPct}<small>%</small></div><div className="sub">season to date</div></div>
+      {isIq ? (
+        <>
+          <div className="myteam-stat"><div className="k">Avg teamwork</div><div className="v">{iqTeamworkSummary.avgTeamwork ?? "—"}</div><div className="sub">qualification avg</div></div>
+          <div className="myteam-stat"><div className="k">Events</div><div className="v">{iqTeamworkSummary.eventCount}</div><div className="sub">this season</div></div>
+        </>
+      ) : (
+        <>
+          <div className="myteam-stat"><div className="k">Record</div><div className="v">{record.w}–{record.l}{record.t ? `–${record.t}` : ""}</div><div className="sub">{totalGames} matches played</div></div>
+          <div className="myteam-stat"><div className="k">Win rate</div><div className="v">{winPct}<small>%</small></div><div className="sub">season to date</div></div>
+        </>
+      )}
       <div className="myteam-stat"><div className="k">Skills score</div><div className="v"><ScoreBreakdown combined={seasonSkillsSummary.combined} programming={seasonSkillsSummary.programming?.score} driver={seasonSkillsSummary.driver?.score} /></div><div className="sub">{seasonSkillsSummary.programming?.score ?? 0} auto / {seasonSkillsSummary.driver?.score ?? 0} driver</div></div>
       <div className="myteam-stat"><div className="k">World skills rank</div><div className="v">{worldSkills.loading ? "…" : wsEntry ? `#${wsEntry.rank.toLocaleString()}` : "—"}</div><div className="sub">globally this season</div></div>
       <div className="myteam-stat"><div className="k">Awards</div><div className="v">{seasonAwards.length}</div><div className="sub">this season</div></div>
