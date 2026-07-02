@@ -8956,6 +8956,7 @@ function TeamAwardsByEvent({
 
   return (
     <Panel title="Awards" icon={<Medal />} collapsible={collapsible} defaultCollapsed={defaultCollapsed}>
+      <div className="team-awards-body">
       {quals.length > 0 && (
         <div className="team-quals" role="group" aria-label="Qualifications">
           <div className="team-quals-head">
@@ -9029,6 +9030,7 @@ function TeamAwardsByEvent({
           </article>
         ))}
         {!groups.length && <Empty>No awards returned for this season.</Empty>}
+      </div>
       </div>
     </Panel>
   );

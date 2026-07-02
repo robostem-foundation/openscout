@@ -5410,6 +5410,9 @@ a.team-card-num:hover {
 
 /* Team-page awards: one card per event — event on the left, a divider, then the
    full list of awards won on the right (no truncation). */
+.team-awards-body {
+  padding: 16px 18px;
+}
 .award-cards {
   display: flex;
   flex-direction: column;
