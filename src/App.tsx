@@ -4536,6 +4536,17 @@ function TeamsPage() {
     return "1";
   });
   const programSeeded = useRef(false);
+  // Captured once at mount — BEFORE the persist effect writes localStorage — so the
+  // seed effect can tell whether the user had a genuine prior choice. (Reading
+  // localStorage inside the seed effect would always see the value the persist
+  // effect just wrote, defeating the profile-based default.)
+  const [hadStoredProgram] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("teamsProgram") !== null;
+    } catch {
+      return false;
+    }
+  });
   const [selectedRegionKeys, setSelectedRegionKeys] = useState<string[]>([]);
   const [regionMenuOpen, setRegionMenuOpen] = useState(false);
   const [regionTab, setRegionTab] = useState<RegionOptionKind>("country");
@@ -4811,13 +4822,7 @@ function TeamsPage() {
   // last pick (localStorage) takes precedence over their profile default.
   useEffect(() => {
     if (programSeeded.current) return;
-    let hasStored = false;
-    try {
-      hasStored = localStorage.getItem("teamsProgram") !== null;
-    } catch {
-      // ignore storage failures (private mode, etc.)
-    }
-    if (hasStored) {
+    if (hadStoredProgram) {
       programSeeded.current = true;
       return;
     }
@@ -4825,7 +4830,7 @@ function TeamsPage() {
       setProgram(profile.team_program);
       programSeeded.current = true;
     }
-  }, [profile]);
+  }, [profile, hadStoredProgram]);
 
   // World Skills scores load in the background after the team list, keyed by the
   // current program's season + grade levels. The table shows a skeleton until the
