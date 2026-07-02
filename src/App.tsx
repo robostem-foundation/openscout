@@ -1691,7 +1691,11 @@ function groupItemsByEvent<T extends { event: { id: number; name: string } }>(
 
   items.forEach((item) => {
     const event = eventIndex.get(item.event.id);
-    if (seasonId && event?.season.id !== seasonId) return;
+    // Server already scoped awards/rankings/skills by season[]; only drop when
+    // we positively resolve the event to a *different* season. Never exclude on
+    // a missing event (off-season events like iSTEAM January, or events absent
+    // from teams/{id}/events) — those are legitimately in the queried season.
+    if (seasonId && event && event.season?.id != null && event.season.id !== seasonId) return;
 
     const group: { eventRef: T["event"]; event?: Event; items: T[] } = groups.get(item.event.id) ?? { eventRef: item.event, event, items: [] };
     group.items.push(item);
@@ -7663,7 +7667,7 @@ function EventGroupTitle({
 }) {
   return (
     <>
-      <span>
+      <span className="event-group-head-main">
         {onViewMatches ? (
           <button className="event-group-name-btn" onClick={(e) => { e.preventDefault(); onViewMatches(eventRef.id); }}>
             {eventRef.name}
@@ -7671,10 +7675,11 @@ function EventGroupTitle({
         ) : (
           <Link href={event ? eventPath(event) : `/event/${eventRef.code ?? eventRef.id}`}>{eventRef.name}</Link>
         )}
-        <small>{event?.sku ?? eventRef.code ?? ""}</small>
+        {(event?.sku || eventRef.code) && <small>{event?.sku ?? eventRef.code}</small>}
       </span>
       <span className="event-group-meta">
-        {event ? formatEventDateRange(event.start, event.end) : "Date unavailable"} · {count.toLocaleString()}
+        {event ? formatEventDateRange(event.start, event.end) : "Date unavailable"}
+        {count > 1 ? ` · ${count.toLocaleString()}` : ""}
       </span>
     </>
   );
@@ -8470,33 +8475,36 @@ function TeamAwardsByEvent({
             <div className="award-list">
               {sortAwards(group.items).map((award) => {
                 const tier = awardPriority(award);
-                // Split "Design Award (VRC/VEXU/VAIRC)" → main + qualifier
-                const parenIdx = award.title.indexOf(" (");
-                const mainTitle = parenIdx > 0 ? award.title.slice(0, parenIdx) : award.title;
-                const qualifier = parenIdx > 0 ? award.title.slice(parenIdx + 1) : null;
+                // Strip trailing program-scope parenthetical, e.g.
+                // "Design Award (VRC/VEXU/VAIRC)" → "Design Award". Anchored to
+                // the end so an early paren in a legit title is preserved.
+                const mainTitle = award.title.replace(/\s*\([^)]*\)\s*$/, "").trim();
                 const TierIcon = tier === 0 ? Star : tier === 1 ? Trophy : tier === 3 ? Medal : null;
                 return (
                   <article className={`award-item award-tier-${tier}`} key={award.id}>
-                    {TierIcon && (
-                      <span className="award-item-icon" aria-hidden="true">
-                        <TierIcon size={13} />
-                      </span>
-                    )}
-                    <h3>
-                      {mainTitle}
-                      {qualifier && <span className="award-qualifier">{qualifier}</span>}
-                    </h3>
-                    {awardTeamWinners(award).map((winner) => (
-                      <TeamQuickLink
-                        key={`${award.id}-${winner.team.id}`}
-                        teamId={winner.team.id}
-                        teamNumber={winner.team.name}
-                        programCode={programCode}
-                        className={`winner-pill ${winner.team.id === focusTeamId ? "" : "other"}`}
-                      >
-                        {winner.team.name}
-                      </TeamQuickLink>
-                    ))}
+                    <div className="award-item-title">
+                      {TierIcon && (
+                        <span className="award-item-icon" aria-hidden="true">
+                          <TierIcon size={15} />
+                        </span>
+                      )}
+                      <h3>{mainTitle}</h3>
+                      {/* Qualification badge (ERC/Worlds/Signature) would slot in here,
+                          driven by a static award-name → qual-type mapping table. */}
+                    </div>
+                    <div className="award-item-winners">
+                      {awardTeamWinners(award).map((winner) => (
+                        <TeamQuickLink
+                          key={`${award.id}-${winner.team.id}`}
+                          teamId={winner.team.id}
+                          teamNumber={winner.team.name}
+                          programCode={programCode}
+                          className={`winner-pill ${winner.team.id === focusTeamId ? "" : "other"}`}
+                        >
+                          {winner.team.name}
+                        </TeamQuickLink>
+                      ))}
+                    </div>
                   </article>
                 );
               })}
