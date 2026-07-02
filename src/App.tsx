@@ -1857,6 +1857,35 @@ function LocalPager({ page, totalPages, onPage }: { page: number; totalPages: nu
   );
 }
 
+// Tap/hover reveal for a SKILLS score's auto (programming) vs driver split.
+// The split only exists for skills — a per-match auto/driver breakdown is NOT
+// available from the RobotEvents match feed (`Alliance` carries a single
+// `score`), so a true match-level split would need new data and is not done here.
+// Hover shows the breakdown on desktop; tap toggles it open for touch devices,
+// reusing the `data-tip`-style tooltip convention.
+function ScoreBreakdown({ combined, programming, driver }: { combined: number | null | undefined; programming: number | null | undefined; driver: number | null | undefined }) {
+  const [open, setOpen] = useState(false);
+  const auto = programming ?? 0;
+  const drv = driver ?? 0;
+  return (
+    <button
+      type="button"
+      className={`score-breakdown${open ? " open" : ""}`}
+      aria-expanded={open}
+      aria-label={`Skills score ${combined ?? "unknown"}. Autonomous ${auto}, driver ${drv}.`}
+      onClick={() => setOpen((v) => !v)}
+      onBlur={() => setOpen(false)}
+    >
+      <span className="score-breakdown-value">{combined ?? "–"}</span>
+      <span className="score-breakdown-pop" role="tooltip">
+        <span className="score-breakdown-line"><span className="k">Autonomous</span><span className="v">{auto}</span></span>
+        <span className="score-breakdown-line"><span className="k">Driver</span><span className="v">{drv}</span></span>
+        <span className="score-breakdown-line total"><span className="k">Combined</span><span className="v">{combined ?? auto + drv}</span></span>
+      </span>
+    </button>
+  );
+}
+
 function ProgramBadge({ program }: { program?: { code?: string | null; name?: string } }) {
   return <Badge variant="secondary">{program?.code ?? program?.name ?? "VEX"}</Badge>;
 }
@@ -2612,8 +2641,15 @@ function CrossFade({
     prev.current = trigger;
     const el = ref.current;
     if (!el) return;
+    // Cancel any in-flight fade first. Rapid trigger changes (clear→retype on the
+    // Teams / World Skills search) otherwise stack overlapping WAAPI animations
+    // that can leave the node stuck at opacity 0 — a blank/faded graphic.
+    el.getAnimations?.().forEach((a) => a.cancel());
+    // Force a guaranteed-visible end state so an interrupted animation can never
+    // leave the content invisible.
+    el.style.opacity = "1";
     if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    el.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease" });
+    el.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease", fill: "both" });
   }, [trigger, duration]);
   return (
     <div ref={ref} className={className}>
@@ -4535,12 +4571,16 @@ function TeamsPage() {
     (async () => {
       let cached = teamListCache.get(cacheKey);
       // Hydrate the in-memory cache from IndexedDB so a reload shows data instantly.
+      // Guard the read: an IndexedDB failure must not skip the fetch below and
+      // leave `loading` stuck on (a permanent skeleton).
       if (!cached?.data) {
-        const stored = await idbGetTeams(cacheKey);
-        if (stored?.data) {
-          teamListCache.set(cacheKey, stored);
-          cached = stored;
-        }
+        try {
+          const stored = await idbGetTeams(cacheKey);
+          if (stored?.data) {
+            teamListCache.set(cacheKey, stored);
+            cached = stored;
+          }
+        } catch { /* fall through to a live fetch */ }
       }
 
       if (cached?.data && live) {
@@ -4552,6 +4592,10 @@ function TeamsPage() {
       const cacheAge = cached?.updatedAt ? Date.now() - cached.updatedAt : Number.POSITIVE_INFINITY;
       if (!cached?.data || cacheAge >= teamCacheRefreshMs) {
         void loadTeams({ background: !!cached?.data });
+      } else if (live) {
+        // Fresh cache, no fetch scheduled — make sure loading is cleared even on
+        // the no-`cached.data` edge so we never sit on a stale skeleton.
+        setLoading(false);
       }
     })();
 
@@ -5333,6 +5377,18 @@ function EventDetail({ param }: { param: string }) {
     return null;
   });
   const [tab, setTab] = useState<EventDetailTab>(() => eventInitialTab(!!new URLSearchParams(window.location.search).get("focusTeam")));
+  // Match to scroll to + flash when deep-linked from a scouting note. Read once
+  // then stripped from the URL so refresh/scroll-restore doesn't re-trigger it.
+  const [focusMatchId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const match = params.get("match");
+    if (match) {
+      params.delete("match");
+      const qs = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`);
+    }
+    return match;
+  });
   const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
   const [teamsDivFilter, setTeamsDivFilter] = useState<number | null>(null);
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
@@ -5713,6 +5769,7 @@ function EventDetail({ param }: { param: string }) {
           isIq={isIqProgram(event)}
           scoreTier={iqScoreTier}
           eventId={event.id}
+          focusMatchId={focusMatchId}
         />
       )}
       {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} allMatches={matches.data?.data ?? []} orgId={primaryOrg?.orgId} eventId={String(event.id)} />}
@@ -8624,6 +8681,7 @@ function MatchesTable({
   isIq = false,
   scoreTier,
   eventId,
+  focusMatchId,
 }: {
   matches: Match[];
   timestampMap: Map<number, MatchTimestamp>;
@@ -8634,6 +8692,7 @@ function MatchesTable({
   isIq?: boolean;
   scoreTier?: (score: number | null | undefined) => ScoreTier;
   eventId?: number;
+  focusMatchId?: string | null;
 }) {
   const [qualificationDirection, setQualificationDirection] = useState<DateDirection>("asc");
   const [bracketOpen, setBracketOpen] = useState(false);
@@ -8683,6 +8742,7 @@ function MatchesTable({
             showNoteRail={showNoteRail}
             eventId={eventId}
             eventTeams={eventTeams}
+            focusMatchId={focusMatchId}
           />
         </section>
       ));
@@ -8727,6 +8787,7 @@ function MatchesTable({
             showNoteRail
             eventId={eventId}
             eventTeams={eventTeams}
+            focusMatchId={focusMatchId}
           />
         )}
       </section>
@@ -8758,6 +8819,7 @@ function MatchesTable({
               isIq
               markWinningIqScore
               labelFor={(match) => iqFinalsLabelMap?.get(match.id)}
+              focusMatchId={focusMatchId}
             />
           </>
         ) : (
@@ -9007,6 +9069,7 @@ function ResultsMatchTable({
   showNoteRail = false,
   eventId,
   eventTeams,
+  focusMatchId,
 }: {
   matches: Match[];
   emptyText: string;
@@ -9026,6 +9089,9 @@ function ResultsMatchTable({
   showNoteRail?: boolean;
   eventId?: number;
   eventTeams?: { id: number; number: string }[];
+  // When arriving from a scouting-note deep link (`/event/{id}?match={matchId}`),
+  // the matching row is scrolled into view and briefly flashed.
+  focusMatchId?: string | null;
 }) {
   const tbodyRef = useRef<HTMLTableSectionElement>(null);
   const rafRef = useRef(0);
@@ -9041,6 +9107,23 @@ function ResultsMatchTable({
     [],
   );
   const noteColSpan = showNoteRail ? 6 : 5;
+
+  // One-shot scroll-to + flash for a match deep-linked from a scouting note.
+  // Guarded so it fires once even if `matches` re-renders (live refresh, sort).
+  const focusConsumedRef = useRef(false);
+  useEffect(() => {
+    if (!focusMatchId || focusConsumedRef.current) return;
+    const row = tbodyRef.current?.querySelector<HTMLElement>(`#match-row-${CSS.escape(focusMatchId)}`);
+    if (!row) return; // target isn't on this table/tab — no-op gracefully
+    focusConsumedRef.current = true;
+    const raf = requestAnimationFrame(() => row.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" }));
+    row.classList.add("match-row-flash");
+    const timer = window.setTimeout(() => row.classList.remove("match-row-flash"), 2000);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+    };
+  }, [focusMatchId, matches, reduceMotion]);
 
   // Dock-style fisheye: while the cursor is over the left rail band, scale each
   // dot by a gaussian of its distance to the cursor (closer = bigger). Written
@@ -9167,7 +9250,7 @@ function ResultsMatchTable({
           return (
             <Fragment key={match.id}>
               {dayDivider}
-              <tr>
+              <tr id={`match-row-${match.id}`} data-match-id={match.id}>
               {showNoteRail && (
                 <td className="note-rail-cell">
                   <NoteRailDot
@@ -12168,7 +12251,11 @@ function OrgNotesHubTab({ orgId }: { orgId: string }) {
               <span className="org-ws-badge">{items.length}</span>
             </div>
             {items.map((n) => {
-              const href = n.eventId ? urlWithHash(`/event/${n.eventId}`, "matches") : null;
+              // Carry the match id in the query string (hash is reserved for the
+              // tab selector) so the event page can scroll to + flash that row.
+              const href = n.eventId
+                ? `/event/${n.eventId}?match=${encodeURIComponent(n.matchId)}#matches`
+                : null;
               const inner = <span className="org-note-body">{n.body}</span>;
               return href
                 ? <Link key={n.matchId} href={href} className="org-note-row">{inner}<ChevronRight size={14} className="org-note-go" /></Link>
@@ -13795,7 +13882,7 @@ function MyTeamPage() {
     <div className="myteam-stats">
       <div className="myteam-stat"><div className="k">Record</div><div className="v">{record.w}–{record.l}{record.t ? `–${record.t}` : ""}</div><div className="sub">{totalGames} matches played</div></div>
       <div className="myteam-stat"><div className="k">Win rate</div><div className="v">{winPct}<small>%</small></div><div className="sub">season to date</div></div>
-      <div className="myteam-stat"><div className="k">Skills score</div><div className="v">{seasonSkillsSummary.combined ?? "–"}</div><div className="sub">{seasonSkillsSummary.programming?.score ?? 0} auto / {seasonSkillsSummary.driver?.score ?? 0} driver</div></div>
+      <div className="myteam-stat"><div className="k">Skills score</div><div className="v"><ScoreBreakdown combined={seasonSkillsSummary.combined} programming={seasonSkillsSummary.programming?.score} driver={seasonSkillsSummary.driver?.score} /></div><div className="sub">{seasonSkillsSummary.programming?.score ?? 0} auto / {seasonSkillsSummary.driver?.score ?? 0} driver</div></div>
       <div className="myteam-stat"><div className="k">World skills rank</div><div className="v">{worldSkills.loading ? "…" : wsEntry ? `#${wsEntry.rank.toLocaleString()}` : "—"}</div><div className="sub">globally this season</div></div>
       <div className="myteam-stat"><div className="k">Awards</div><div className="v">{seasonAwards.length}</div><div className="sub">this season</div></div>
     </div>
