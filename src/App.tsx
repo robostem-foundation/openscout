@@ -1761,7 +1761,7 @@ function eventWindowDates(eventWindow: EventWindow) {
   return { start: dateOnly(addDays(today, -30)), end: dateOnly(addDays(today, 120)) };
 }
 
-function Empty({ children = "No data returned." }: { children?: ReactNode }) {
+function Empty({ children = "Nothing here yet." }: { children?: ReactNode }) {
   return <div className="empty">{children}</div>;
 }
 
@@ -1840,7 +1840,7 @@ function Status({ loading, error }: { loading: boolean; error: string | null }) 
 }
 
 function LocalPager({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (page: number) => void }) {
-  if (totalPages <= 1) return null;
+  if (!Number.isFinite(totalPages) || totalPages <= 1) return null;
 
   return (
     <div className="pager">
@@ -3185,7 +3185,7 @@ function EventsPager({
   onPage: (page: number) => void;
   placement: "top" | "bottom";
 }) {
-  if (totalPages <= 1) return null;
+  if (!Number.isFinite(totalPages) || totalPages <= 1) return null;
   return (
     <div className={`events-pager events-pager-${placement}`}>
       <span className="events-pager-label">
@@ -3312,7 +3312,7 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
   const otherSlice = otherEvents.slice((current - 1) * HOME_EVENTS_PAGE_SIZE, current * HOME_EVENTS_PAGE_SIZE);
 
   if (loading) return <EventTable events={[]} loading compact showPriority showProgram />;
-  if (!sections.length) return <Empty />;
+  if (!sections.length) return <Empty>No upcoming events for this program yet.</Empty>;
 
   return (
     <div className="home-events-groups">
@@ -3948,7 +3948,7 @@ function EventsPageInner() {
               {regionButtonLabel}
             </button>
             {regionMenuOpen && (
-              <div className="picker-menu-list region-menu-list" style={{ zIndex: lastOpenedMenu === "region" ? 20 : 10 }}>
+              <div className="picker-menu-list region-menu-list">
                 <div className="picker-tabs">
                   <button type="button" className={regionTab === "country" ? "active" : ""} onClick={() => setRegionTab("country")}>
                     Countries
@@ -4098,7 +4098,34 @@ function EventsPageInner() {
               />
             ) : (
               <>
-                <EventTable events={pageEvents} loading={loading} showPriority showGrade showSeason={!selectedSeasonIds.length || allSeasonsSelected} />
+                <EventTable
+                  events={pageEvents}
+                  loading={loading}
+                  showPriority
+                  showGrade
+                  showSeason={!selectedSeasonIds.length || allSeasonsSelected}
+                  emptyMessage={(() => {
+                    const q = quickSearch.trim();
+                    const looksLikeTeam = /^\d{1,5}[a-z]?$/i.test(q);
+                    if (looksLikeTeam) {
+                      return (
+                        <>
+                          No events match “{q}”. This looks like a team number — search by <strong>event name</strong>, or find the team on the{" "}
+                          <Link href="/teams" className="empty-link">Teams</Link> page.
+                        </>
+                      );
+                    }
+                    if (q) {
+                      return <>No events match “{q}”. Try a different name or clear the search.</>;
+                    }
+                    return (
+                      <>
+                        No events match these filters. Try widening the region, time, or type filters — or{" "}
+                        <button type="button" className="empty-link" onClick={resetFilters}>reset to defaults</button>.
+                      </>
+                    );
+                  })()}
+                />
                 {!loading && (
                   <div className="pager">
                     <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
@@ -4281,6 +4308,7 @@ function EventTable({
   headerLabel,
   dateSortDir,
   onDateSortToggle,
+  emptyMessage,
 }: {
   events: Event[];
   loading: boolean;
@@ -4294,6 +4322,7 @@ function EventTable({
   headerLabel?: ReactNode;
   dateSortDir?: "asc" | "desc";
   onDateSortToggle?: () => void;
+  emptyMessage?: ReactNode;
 }) {
   const showProgram = showProgramProp ?? !compact;
   const showLevel = !compact && !showPriority;
@@ -4380,7 +4409,7 @@ function EventTable({
           {!events.length && (
             <tr>
               <td colSpan={columnCount}>
-                <Empty />
+                <Empty>{emptyMessage ?? "No events found."}</Empty>
               </td>
             </tr>
           )}
@@ -4993,7 +5022,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap, splitN
             {!teams.length && (
               <tr>
                 <td colSpan={colCount}>
-                  <Empty />
+                  <Empty>No teams found.</Empty>
                 </td>
               </tr>
             )}
@@ -5040,7 +5069,7 @@ function TeamGrid({ teams, loading, localPageSize }: { teams: Team[]; loading: b
         </div>
       ) : !teams.length ? (
         <div className="team-grid-empty">
-          <Empty />
+          <Empty>No teams found.</Empty>
         </div>
       ) : (
         <div className="team-grid">
@@ -10346,7 +10375,7 @@ function WorldSkillsPageInner() {
   }, [wsData, debouncedSearch, filterCountries, filterRegions]);
 
   const PAGE_SIZE = 80;
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const visibleRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   useEffect(() => { setPage(1); }, [debouncedSearch, filterCountries, filterRegions, resolvedSeasonId, grade]);
