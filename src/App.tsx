@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  ChevronsLeft,
   ChevronsRight,
   CornerDownLeft,
   ExternalLink,
@@ -766,9 +767,11 @@ function GlobalSearch({ className = "" }: { className?: string }) {
     </div>
   );
 
-  const dropdown = showDropdown ? (
-    <div className="global-search-dropdown">
-      {/* Teams section */}
+  // Number-like queries are almost always team lookups, so surface Teams first;
+  // otherwise lead with Events.
+  const teamNumberLike = /^\d+[a-z]?$/i.test(searchTerm);
+  const teamsSection = (
+    <>
       <div className="gs-section-label">Teams</div>
       {teamsLoading && !teams.length && (
         <div className="gs-loading">Loading...</div>
@@ -794,8 +797,10 @@ function GlobalSearch({ className = "" }: { className?: string }) {
       >
         Find more teams...
       </button>
-
-      {/* Events section */}
+    </>
+  );
+  const eventsSection = (
+    <>
       <div className="gs-section-label">Events</div>
       {eventsLoading && !events.length && (
         <div className="gs-loading">Loading...</div>
@@ -821,6 +826,11 @@ function GlobalSearch({ className = "" }: { className?: string }) {
       >
         Find more events...
       </button>
+    </>
+  );
+  const dropdown = showDropdown ? (
+    <div className="global-search-dropdown">
+      {teamNumberLike ? <>{teamsSection}{eventsSection}</> : <>{eventsSection}{teamsSection}</>}
     </div>
   ) : null;
 
@@ -951,17 +961,25 @@ async function fetchTeamsLightUnion(queries: Parameters<typeof api.teamsLight>[0
 async function searchTeamsTabTeams(
   query: string,
   regionQueries: Parameters<typeof api.teamsLight>[0][],
+  programId: string, // "" = All Programs
 ): Promise<Paginated<Team>> {
   const trimmed = query.trim();
   const isCompleteNumber = /^\d{1,5}[a-z]$/i.test(trimmed);
+  // Scope the exact-match RSE lookup to the selected program so we don't even
+  // fetch other VEX programs (defense in depth); fall back to all VEX programs
+  // when "All" is selected.
+  const rsePrograms = programId ? [programId] : vexProgramIds;
   const [rse, vex] = await Promise.all([
     fetchTeamsLightUnion(regionQueries.map((regionQuery) => ({ ...regionQuery, teamSearch: query }))),
     isCompleteNumber
-      ? api.robotEventsTeams({ number: trimmed, "program[]": vexProgramIds, per_page: 20 })
+      ? api.robotEventsTeams({ number: trimmed, "program[]": rsePrograms, per_page: 20 })
       : Promise.resolve(null),
   ]);
   const merged = uniqueTeams([...(vex?.data ?? []), ...rse.data]);
-  return { ...rse, data: rankTeamsForSearch(merged, query) };
+  // RSE program[] isn't fully trustworthy for a single-team number lookup, so
+  // hard-filter by the selected program after merge, before ranking.
+  const scoped = programId ? merged.filter((team) => String(team.program?.id) === programId) : merged;
+  return { ...rse, data: rankTeamsForSearch(scoped, query) };
 }
 
 async function loadCachedTeams(cacheKey: string, queries: Parameters<typeof api.teamsLight>[0][], force = false) {
@@ -1205,8 +1223,38 @@ function compareTeamsForSearch(query: string) {
   return (a: Team, b: Team) => teamSearchRank(a, query) - teamSearchRank(b, query) || compareTeamsNatural(a, b);
 }
 
+// Any kind of match (number, name, org, location) — teamSearchRank 0-4; 5 = nothing matched.
+function teamMatchesQuery(team: Team, query: string): boolean {
+  const needle = normalizedTeamQuery(query);
+  if (!needle) return true;
+  return teamSearchRank(team, query) < 5;
+}
+
+// Number-only match: the team's *number* must match the needle (exact, numeric
+// core, prefix, or substring). Text-field matches (name/org/location) don't count.
+function teamNumberMatches(team: Team, needle: string): boolean {
+  const teamNumber = normalizedTeamQuery(team.number);
+  const numeric = /^\d+$/.test(needle);
+  const parts = teamNumberParts(team.number);
+  return (
+    teamNumber === needle ||                          // exact
+    (numeric && String(parts.numeric) === needle) ||  // numeric core (drop suffix)
+    teamNumber.startsWith(needle) ||                  // prefix
+    teamNumber.includes(needle)                       // substring in number
+  );
+}
+
 function rankTeamsForSearch(teams: Team[], query: string) {
-  return [...teams].sort(compareTeamsForSearch(query));
+  const needle = normalizedTeamQuery(query);
+  // For number-like queries (e.g. "14141" or "14141X") only keep teams whose
+  // number matches — loosely-related rank-5 rows must be dropped, not just sorted
+  // last, or the .slice() window can still surface them. For text queries keep
+  // any match (name/org/location) and drop only true non-matches (rank 5).
+  const isNumberLike = /^\d+[a-z]?$/i.test(needle);
+  const pool = isNumberLike
+    ? teams.filter((team) => teamNumberMatches(team, needle))
+    : teams.filter((team) => teamMatchesQuery(team, query));
+  return pool.sort(compareTeamsForSearch(query));
 }
 
 function uniqueTeams(teams: Team[]) {
@@ -1284,6 +1332,14 @@ function shortSeasonName(name?: string | null) {
   if (!name) return "Unknown Season";
   return name.split(":").pop()?.trim() || name;
 }
+
+// Earliest season RobotEvents has usable data for (VIQRC Crossover / V5RC Starstruck,
+// 2016-2017). Older seasons return empty matches/skills/rankings, so we hide them from
+// every season picker. Season ids increase monotonically with time, so a numeric floor
+// keeps this correct as new seasons are added.
+const MIN_SEASON_ID = 114;
+
+const seasonHasData = (season: Pick<Season, "id">) => season.id >= MIN_SEASON_ID;
 
 // Compact two-year season label, e.g. "2025-2026: Push Back" -> "25-26".
 function seasonYearLabel(name?: string | null) {
@@ -1691,7 +1747,11 @@ function groupItemsByEvent<T extends { event: { id: number; name: string } }>(
 
   items.forEach((item) => {
     const event = eventIndex.get(item.event.id);
-    if (seasonId && event?.season.id !== seasonId) return;
+    // Server already scoped awards/rankings/skills by season[]; only drop when
+    // we positively resolve the event to a *different* season. Never exclude on
+    // a missing event (off-season events like iSTEAM January, or events absent
+    // from teams/{id}/events) — those are legitimately in the queried season.
+    if (seasonId && event && event.season?.id != null && event.season.id !== seasonId) return;
 
     const group: { eventRef: T["event"]; event?: Event; items: T[] } = groups.get(item.event.id) ?? { eventRef: item.event, event, items: [] };
     group.items.push(item);
@@ -1761,7 +1821,7 @@ function eventWindowDates(eventWindow: EventWindow) {
   return { start: dateOnly(addDays(today, -30)), end: dateOnly(addDays(today, 120)) };
 }
 
-function Empty({ children = "No data returned." }: { children?: ReactNode }) {
+function Empty({ children = "Nothing here yet." }: { children?: ReactNode }) {
   return <div className="empty">{children}</div>;
 }
 
@@ -1840,7 +1900,7 @@ function Status({ loading, error }: { loading: boolean; error: string | null }) 
 }
 
 function LocalPager({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (page: number) => void }) {
-  if (totalPages <= 1) return null;
+  if (!Number.isFinite(totalPages) || totalPages <= 1) return null;
 
   return (
     <div className="pager">
@@ -1854,6 +1914,35 @@ function LocalPager({ page, totalPages, onPage }: { page: number; totalPages: nu
         <ChevronRight size={16} />
       </button>
     </div>
+  );
+}
+
+// Tap/hover reveal for a SKILLS score's auto (programming) vs driver split.
+// The split only exists for skills — a per-match auto/driver breakdown is NOT
+// available from the RobotEvents match feed (`Alliance` carries a single
+// `score`), so a true match-level split would need new data and is not done here.
+// Hover shows the breakdown on desktop; tap toggles it open for touch devices,
+// reusing the `data-tip`-style tooltip convention.
+function ScoreBreakdown({ combined, programming, driver }: { combined: number | null | undefined; programming: number | null | undefined; driver: number | null | undefined }) {
+  const [open, setOpen] = useState(false);
+  const auto = programming ?? 0;
+  const drv = driver ?? 0;
+  return (
+    <button
+      type="button"
+      className={`score-breakdown${open ? " open" : ""}`}
+      aria-expanded={open}
+      aria-label={`Skills score ${combined ?? "unknown"}. Autonomous ${auto}, driver ${drv}.`}
+      onClick={() => setOpen((v) => !v)}
+      onBlur={() => setOpen(false)}
+    >
+      <span className="score-breakdown-value">{combined ?? "–"}</span>
+      <span className="score-breakdown-pop" role="tooltip">
+        <span className="score-breakdown-line"><span className="k">Autonomous</span><span className="v">{auto}</span></span>
+        <span className="score-breakdown-line"><span className="k">Driver</span><span className="v">{drv}</span></span>
+        <span className="score-breakdown-line total"><span className="k">Combined</span><span className="v">{combined ?? auto + drv}</span></span>
+      </span>
+    </button>
   );
 }
 
@@ -2612,8 +2701,15 @@ function CrossFade({
     prev.current = trigger;
     const el = ref.current;
     if (!el) return;
+    // Cancel any in-flight fade first. Rapid trigger changes (clear→retype on the
+    // Teams / World Skills search) otherwise stack overlapping WAAPI animations
+    // that can leave the node stuck at opacity 0 — a blank/faded graphic.
+    el.getAnimations?.().forEach((a) => a.cancel());
+    // Force a guaranteed-visible end state so an interrupted animation can never
+    // leave the content invisible.
+    el.style.opacity = "1";
     if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    el.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease" });
+    el.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease", fill: "both" });
   }, [trigger, duration]);
   return (
     <div ref={ref} className={className}>
@@ -2715,15 +2811,16 @@ const homeEventTabs: Array<{ label: string; value: HomeEventTab }> = [
   { label: "Today", value: "today" },
   { label: "Near Today", value: "nearToday" },
   { label: "Near me", value: "nearMe" },
-  { label: "Sigs", value: "sigs" },
+  { label: "Signature", value: "sigs" },
 ];
 
-// Home events program filter — a compact multi-select toggle. "…" groups every
-// non-V5/IQ program (VEX U + VEX AI) under one button.
+// Home events program filter — a compact multi-select toggle. VEX U and VEX AI
+// get their own explicit "U"/"AI" chips (clearer than the old "…" group).
 const HOME_PROGRAM_GROUPS: Array<{ key: string; label: string; title: string; ids: string[] }> = [
   { key: "v5", label: "V5", title: "VEX V5 Robotics Competition", ids: ["1"] },
   { key: "iq", label: "IQ", title: "VEX IQ Robotics Competition", ids: ["41"] },
-  { key: "other", label: "…", title: "Other events (VEX U, VEX AI)", ids: ["4", "57"] },
+  { key: "u", label: "U", title: "VEX U", ids: ["4"] },
+  { key: "ai", label: "AI", title: "VEX AI", ids: ["57"] },
 ];
 
 function HomeProgramToggle({ selected, onChange }: { selected: string[]; onChange: (ids: string[]) => void }) {
@@ -3185,7 +3282,7 @@ function EventsPager({
   onPage: (page: number) => void;
   placement: "top" | "bottom";
 }) {
-  if (totalPages <= 1) return null;
+  if (!Number.isFinite(totalPages) || totalPages <= 1) return null;
   return (
     <div className={`events-pager events-pager-${placement}`}>
       <span className="events-pager-label">
@@ -3312,7 +3409,7 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
   const otherSlice = otherEvents.slice((current - 1) * HOME_EVENTS_PAGE_SIZE, current * HOME_EVENTS_PAGE_SIZE);
 
   if (loading) return <EventTable events={[]} loading compact showPriority showProgram />;
-  if (!sections.length) return <Empty />;
+  if (!sections.length) return <Empty>No upcoming events for this program yet.</Empty>;
 
   return (
     <div className="home-events-groups">
@@ -3695,6 +3792,7 @@ function EventsPageInner() {
   const seasonOptions = useMemo(() => {
     const selectedPrograms = new Set(selectedProgramIds.map(Number));
     return (seasons.data?.data ?? [])
+      .filter(seasonHasData)
       .filter((season) => !season.program || (vexProgramIds.includes(season.program.id) && (!selectedPrograms.size || selectedPrograms.has(season.program.id))))
       .map((season) => ({ id: season.id, label: shortSeasonName(season.name), program: season.program?.code ?? "" }))
       .sort((a, b) => b.id - a.id);
@@ -3948,7 +4046,7 @@ function EventsPageInner() {
               {regionButtonLabel}
             </button>
             {regionMenuOpen && (
-              <div className="picker-menu-list region-menu-list" style={{ zIndex: lastOpenedMenu === "region" ? 20 : 10 }}>
+              <div className="picker-menu-list region-menu-list">
                 <div className="picker-tabs">
                   <button type="button" className={regionTab === "country" ? "active" : ""} onClick={() => setRegionTab("country")}>
                     Countries
@@ -4098,7 +4196,34 @@ function EventsPageInner() {
               />
             ) : (
               <>
-                <EventTable events={pageEvents} loading={loading} showPriority showGrade showSeason={!selectedSeasonIds.length || allSeasonsSelected} />
+                <EventTable
+                  events={pageEvents}
+                  loading={loading}
+                  showPriority
+                  showGrade
+                  showSeason={!selectedSeasonIds.length || allSeasonsSelected}
+                  emptyMessage={(() => {
+                    const q = quickSearch.trim();
+                    const looksLikeTeam = /^\d{1,5}[a-z]?$/i.test(q);
+                    if (looksLikeTeam) {
+                      return (
+                        <>
+                          No events match “{q}”. This looks like a team number — search by <strong>event name</strong>, or find the team on the{" "}
+                          <Link href="/teams" className="empty-link">Teams</Link> page.
+                        </>
+                      );
+                    }
+                    if (q) {
+                      return <>No events match “{q}”. Try a different name or clear the search.</>;
+                    }
+                    return (
+                      <>
+                        No events match these filters. Try widening the region, time, or type filters — or{" "}
+                        <button type="button" className="empty-link" onClick={resetFilters}>reset to defaults</button>.
+                      </>
+                    );
+                  })()}
+                />
                 {!loading && (
                   <div className="pager">
                     <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
@@ -4281,6 +4406,7 @@ function EventTable({
   headerLabel,
   dateSortDir,
   onDateSortToggle,
+  emptyMessage,
 }: {
   events: Event[];
   loading: boolean;
@@ -4294,6 +4420,7 @@ function EventTable({
   headerLabel?: ReactNode;
   dateSortDir?: "asc" | "desc";
   onDateSortToggle?: () => void;
+  emptyMessage?: ReactNode;
 }) {
   const showProgram = showProgramProp ?? !compact;
   const showLevel = !compact && !showPriority;
@@ -4380,7 +4507,7 @@ function EventTable({
           {!events.length && (
             <tr>
               <td colSpan={columnCount}>
-                <Empty />
+                <Empty>{emptyMessage ?? "No events found."}</Empty>
               </td>
             </tr>
           )}
@@ -4391,11 +4518,24 @@ function EventTable({
 }
 
 function TeamsPage() {
+  const { profile } = useAuth();
   const params = new URLSearchParams(window.location.search);
   const [search, setSearch] = useState(params.get("search") ?? "");
   const [submittedSearch, setSubmittedSearch] = useState(params.get("search") ?? "");
   const debouncedQuickSearch = useDebouncedValue(search.trim(), 220);
-  const [program, setProgram] = useState("1");
+  // Default the program from the last explicit choice (localStorage), else the
+  // signed-in user's profile (applied via effect below since profile isn't loaded
+  // synchronously on first render), else V5RC. "" (All) is a valid stored value.
+  const [program, setProgram] = useState<string>(() => {
+    try {
+      const stored = localStorage.getItem("teamsProgram");
+      if (stored !== null) return stored;
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+    return "1";
+  });
+  const programSeeded = useRef(false);
   const [selectedRegionKeys, setSelectedRegionKeys] = useState<string[]>([]);
   const [regionMenuOpen, setRegionMenuOpen] = useState(false);
   const [regionTab, setRegionTab] = useState<RegionOptionKind>("country");
@@ -4423,6 +4563,7 @@ function TeamsPage() {
     if (!pid) return null;
     return (
       (seasonsAsync.data?.data ?? [])
+        .filter(seasonHasData)
         .filter((season) => season.program?.id === pid)
         .sort((a, b) => b.id - a.id)[0]?.id ?? null
     );
@@ -4505,7 +4646,7 @@ function TeamsPage() {
 
       try {
         const result = isSearchingTeams
-          ? await searchTeamsTabTeams(committedSearch, regionQueries)
+          ? await searchTeamsTabTeams(committedSearch, regionQueries, program)
           : await loadCachedTeams(cacheKey, regionQueries, force);
 
         if (live) {
@@ -4536,12 +4677,16 @@ function TeamsPage() {
     (async () => {
       let cached = teamListCache.get(cacheKey);
       // Hydrate the in-memory cache from IndexedDB so a reload shows data instantly.
+      // Guard the read: an IndexedDB failure must not skip the fetch below and
+      // leave `loading` stuck on (a permanent skeleton).
       if (!cached?.data) {
-        const stored = await idbGetTeams(cacheKey);
-        if (stored?.data) {
-          teamListCache.set(cacheKey, stored);
-          cached = stored;
-        }
+        try {
+          const stored = await idbGetTeams(cacheKey);
+          if (stored?.data) {
+            teamListCache.set(cacheKey, stored);
+            cached = stored;
+          }
+        } catch { /* fall through to a live fetch */ }
       }
 
       if (cached?.data && live) {
@@ -4553,6 +4698,10 @@ function TeamsPage() {
       const cacheAge = cached?.updatedAt ? Date.now() - cached.updatedAt : Number.POSITIVE_INFINITY;
       if (!cached?.data || cacheAge >= teamCacheRefreshMs) {
         void loadTeams({ background: !!cached?.data });
+      } else if (live) {
+        // Fresh cache, no fetch scheduled — make sure loading is cleared even on
+        // the no-`cached.data` edge so we never sit on a stale skeleton.
+        setLoading(false);
       }
     })();
 
@@ -4562,7 +4711,7 @@ function TeamsPage() {
       live = false;
       window.clearInterval(interval);
     };
-  }, [cacheKey, committedSearch, isSearchingTeams, page, regionQueries]);
+  }, [cacheKey, committedSearch, isSearchingTeams, page, program, regionQueries]);
 
   const cachedTeams = teamListCache.get(cacheKey)?.data?.data;
   const quickSourceTeams = cachedTeams ?? (!isSearchingTeams ? data?.data : []) ?? [];
@@ -4649,6 +4798,35 @@ function TeamsPage() {
     }
   }, [teamView]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem("teamsProgram", program);
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+  }, [program]);
+
+  // Seed the program from the signed-in user's profile once, only when the user
+  // hasn't already made an explicit choice (no stored value) — a returning user's
+  // last pick (localStorage) takes precedence over their profile default.
+  useEffect(() => {
+    if (programSeeded.current) return;
+    let hasStored = false;
+    try {
+      hasStored = localStorage.getItem("teamsProgram") !== null;
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+    if (hasStored) {
+      programSeeded.current = true;
+      return;
+    }
+    if (profile?.team_program) {
+      setProgram(profile.team_program);
+      programSeeded.current = true;
+    }
+  }, [profile]);
+
   // World Skills scores load in the background after the team list, keyed by the
   // current program's season + grade levels. The table shows a skeleton until the
   // map arrives. Results are session-cached (loadWorldSkills) so this is cheap.
@@ -4692,7 +4870,7 @@ function TeamsPage() {
     }
 
     setQuickLoading(true);
-    searchTeamsTabTeams(needle, regionQueries)
+    searchTeamsTabTeams(needle, regionQueries, program)
       .then((result) => {
         if (live) setQuickData(result.data);
       })
@@ -4706,7 +4884,7 @@ function TeamsPage() {
     return () => {
       live = false;
     };
-  }, [debouncedQuickSearch, regionQueries]);
+  }, [debouncedQuickSearch, program, regionQueries]);
 
   const submitSearch = () => {
     const nextSearch = search.trim();
@@ -4994,7 +5172,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap, splitN
             {!teams.length && (
               <tr>
                 <td colSpan={colCount}>
-                  <Empty />
+                  <Empty>No teams found.</Empty>
                 </td>
               </tr>
             )}
@@ -5041,7 +5219,7 @@ function TeamGrid({ teams, loading, localPageSize }: { teams: Team[]; loading: b
         </div>
       ) : !teams.length ? (
         <div className="team-grid-empty">
-          <Empty />
+          <Empty>No teams found.</Empty>
         </div>
       ) : (
         <div className="team-grid">
@@ -5334,6 +5512,18 @@ function EventDetail({ param }: { param: string }) {
     return null;
   });
   const [tab, setTab] = useState<EventDetailTab>(() => eventInitialTab(!!new URLSearchParams(window.location.search).get("focusTeam")));
+  // Match to scroll to + flash when deep-linked from a scouting note. Read once
+  // then stripped from the URL so refresh/scroll-restore doesn't re-trigger it.
+  const [focusMatchId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const match = params.get("match");
+    if (match) {
+      params.delete("match");
+      const qs = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`);
+    }
+    return match;
+  });
   const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
   const [teamsDivFilter, setTeamsDivFilter] = useState<number | null>(null);
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
@@ -5714,6 +5904,7 @@ function EventDetail({ param }: { param: string }) {
           isIq={isIqProgram(event)}
           scoreTier={iqScoreTier}
           eventId={event.id}
+          focusMatchId={focusMatchId}
         />
       )}
       {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} allMatches={matches.data?.data ?? []} orgId={primaryOrg?.orgId} eventId={String(event.id)} />}
@@ -7487,8 +7678,9 @@ function SeasonSelector({
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoRef = useRef<number | null>(null);
   const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
-  // Whether the strip overflows past the right edge (drives the fade + chevron).
+  // Whether the strip overflows past each edge (drives the fade + chevron chips).
   const [moreRight, setMoreRight] = useState(false);
+  const [moreLeft, setMoreLeft] = useState(false);
 
   useLayoutEffect(() => {
     const measure = () => {
@@ -7502,10 +7694,11 @@ function SeasonSelector({
     return () => window.removeEventListener("resize", measure);
   }, [selectedSeasonId, seasons]);
 
-  // Track right-edge overflow as the strip scrolls / resizes.
+  // Track both-edge overflow as the strip scrolls / resizes.
   const updateEdges = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    setMoreLeft(el.scrollLeft > 1);
     setMoreRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
   }, []);
   useEffect(() => {
@@ -7579,6 +7772,17 @@ function SeasonSelector({
     };
     autoRef.current = requestAnimationFrame(step);
   }, [stopAuto]);
+  const startAutoLeft = useCallback(() => {
+    stopAuto();
+    const step = () => {
+      const el = scrollRef.current;
+      if (!el) { autoRef.current = null; return; }
+      if (el.scrollLeft <= 0.5) { autoRef.current = null; return; }
+      el.scrollLeft = Math.max(0, el.scrollLeft - 7);
+      autoRef.current = requestAnimationFrame(step);
+    };
+    autoRef.current = requestAnimationFrame(step);
+  }, [stopAuto]);
   useEffect(() => stopAuto, [stopAuto]);
 
   if (loading || !seasons.length) return null;
@@ -7587,6 +7791,20 @@ function SeasonSelector({
     <div className={`season-toolbar${hideLabel ? " season-toolbar-nolabel" : ""}`}>
       {!hideLabel && <span>Season</span>}
       <div className="season-scroll">
+        {moreLeft && (
+          <div className="season-fade season-fade-left" aria-hidden="true">
+            <button
+              type="button"
+              className="season-more"
+              aria-label="Scroll to earlier seasons"
+              onMouseEnter={startAutoLeft}
+              onMouseLeave={stopAuto}
+              onClick={() => scrollRef.current?.scrollBy({ left: -scrollRef.current.clientWidth * 0.8, behavior: "smooth" })}
+            >
+              <ChevronsLeft size={16} />
+            </button>
+          </div>
+        )}
         <div ref={scrollRef} className="season-scroll-view no-scrollbar">
           <div ref={trackRef} className="relative w-max rounded-lg bg-muted p-1">
             {pill && (
@@ -7664,7 +7882,7 @@ function EventGroupTitle({
 }) {
   return (
     <>
-      <span>
+      <span className="event-group-head-main">
         {onViewMatches ? (
           <button className="event-group-name-btn" onClick={(e) => { e.preventDefault(); onViewMatches(eventRef.id); }}>
             {eventRef.name}
@@ -7672,10 +7890,11 @@ function EventGroupTitle({
         ) : (
           <Link href={event ? eventPath(event) : `/event/${eventRef.code ?? eventRef.id}`}>{eventRef.name}</Link>
         )}
-        <small>{event?.sku ?? eventRef.code ?? ""}</small>
+        {(event?.sku || eventRef.code) && <small>{event?.sku ?? eventRef.code}</small>}
       </span>
       <span className="event-group-meta">
-        {event ? formatEventDateRange(event.start, event.end) : "Date unavailable"} · {count.toLocaleString()}
+        {event ? formatEventDateRange(event.start, event.end) : "Date unavailable"}
+        {count > 1 ? ` · ${count.toLocaleString()}` : ""}
       </span>
     </>
   );
@@ -8471,33 +8690,36 @@ function TeamAwardsByEvent({
             <div className="award-list">
               {sortAwards(group.items).map((award) => {
                 const tier = awardPriority(award);
-                // Split "Design Award (VRC/VEXU/VAIRC)" → main + qualifier
-                const parenIdx = award.title.indexOf(" (");
-                const mainTitle = parenIdx > 0 ? award.title.slice(0, parenIdx) : award.title;
-                const qualifier = parenIdx > 0 ? award.title.slice(parenIdx + 1) : null;
+                // Strip trailing program-scope parenthetical, e.g.
+                // "Design Award (VRC/VEXU/VAIRC)" → "Design Award". Anchored to
+                // the end so an early paren in a legit title is preserved.
+                const mainTitle = award.title.replace(/\s*\([^)]*\)\s*$/, "").trim();
                 const TierIcon = tier === 0 ? Star : tier === 1 ? Trophy : tier === 3 ? Medal : null;
                 return (
                   <article className={`award-item award-tier-${tier}`} key={award.id}>
-                    {TierIcon && (
-                      <span className="award-item-icon" aria-hidden="true">
-                        <TierIcon size={13} />
-                      </span>
-                    )}
-                    <h3>
-                      {mainTitle}
-                      {qualifier && <span className="award-qualifier">{qualifier}</span>}
-                    </h3>
-                    {awardTeamWinners(award).map((winner) => (
-                      <TeamQuickLink
-                        key={`${award.id}-${winner.team.id}`}
-                        teamId={winner.team.id}
-                        teamNumber={winner.team.name}
-                        programCode={programCode}
-                        className={`winner-pill ${winner.team.id === focusTeamId ? "" : "other"}`}
-                      >
-                        {winner.team.name}
-                      </TeamQuickLink>
-                    ))}
+                    <div className="award-item-title">
+                      {TierIcon && (
+                        <span className="award-item-icon" aria-hidden="true">
+                          <TierIcon size={15} />
+                        </span>
+                      )}
+                      <h3>{mainTitle}</h3>
+                      {/* Qualification badge (ERC/Worlds/Signature) would slot in here,
+                          driven by a static award-name → qual-type mapping table. */}
+                    </div>
+                    <div className="award-item-winners">
+                      {awardTeamWinners(award).map((winner) => (
+                        <TeamQuickLink
+                          key={`${award.id}-${winner.team.id}`}
+                          teamId={winner.team.id}
+                          teamNumber={winner.team.name}
+                          programCode={programCode}
+                          className={`winner-pill ${winner.team.id === focusTeamId ? "" : "other"}`}
+                        >
+                          {winner.team.name}
+                        </TeamQuickLink>
+                      ))}
+                    </div>
                   </article>
                 );
               })}
@@ -8625,6 +8847,7 @@ function MatchesTable({
   isIq = false,
   scoreTier,
   eventId,
+  focusMatchId,
 }: {
   matches: Match[];
   timestampMap: Map<number, MatchTimestamp>;
@@ -8635,6 +8858,7 @@ function MatchesTable({
   isIq?: boolean;
   scoreTier?: (score: number | null | undefined) => ScoreTier;
   eventId?: number;
+  focusMatchId?: string | null;
 }) {
   const [qualificationDirection, setQualificationDirection] = useState<DateDirection>("asc");
   const [bracketOpen, setBracketOpen] = useState(false);
@@ -8684,6 +8908,7 @@ function MatchesTable({
             showNoteRail={showNoteRail}
             eventId={eventId}
             eventTeams={eventTeams}
+            focusMatchId={focusMatchId}
           />
         </section>
       ));
@@ -8728,6 +8953,7 @@ function MatchesTable({
             showNoteRail
             eventId={eventId}
             eventTeams={eventTeams}
+            focusMatchId={focusMatchId}
           />
         )}
       </section>
@@ -8759,6 +8985,7 @@ function MatchesTable({
               isIq
               markWinningIqScore
               labelFor={(match) => iqFinalsLabelMap?.get(match.id)}
+              focusMatchId={focusMatchId}
             />
           </>
         ) : (
@@ -9008,6 +9235,7 @@ function ResultsMatchTable({
   showNoteRail = false,
   eventId,
   eventTeams,
+  focusMatchId,
 }: {
   matches: Match[];
   emptyText: string;
@@ -9027,6 +9255,9 @@ function ResultsMatchTable({
   showNoteRail?: boolean;
   eventId?: number;
   eventTeams?: { id: number; number: string }[];
+  // When arriving from a scouting-note deep link (`/event/{id}?match={matchId}`),
+  // the matching row is scrolled into view and briefly flashed.
+  focusMatchId?: string | null;
 }) {
   const tbodyRef = useRef<HTMLTableSectionElement>(null);
   const rafRef = useRef(0);
@@ -9042,6 +9273,23 @@ function ResultsMatchTable({
     [],
   );
   const noteColSpan = showNoteRail ? 6 : 5;
+
+  // One-shot scroll-to + flash for a match deep-linked from a scouting note.
+  // Guarded so it fires once even if `matches` re-renders (live refresh, sort).
+  const focusConsumedRef = useRef(false);
+  useEffect(() => {
+    if (!focusMatchId || focusConsumedRef.current) return;
+    const row = tbodyRef.current?.querySelector<HTMLElement>(`#match-row-${CSS.escape(focusMatchId)}`);
+    if (!row) return; // target isn't on this table/tab — no-op gracefully
+    focusConsumedRef.current = true;
+    const raf = requestAnimationFrame(() => row.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" }));
+    row.classList.add("match-row-flash");
+    const timer = window.setTimeout(() => row.classList.remove("match-row-flash"), 2000);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+    };
+  }, [focusMatchId, matches, reduceMotion]);
 
   // Dock-style fisheye: while the cursor is over the left rail band, scale each
   // dot by a gaussian of its distance to the cursor (closer = bigger). Written
@@ -9168,7 +9416,7 @@ function ResultsMatchTable({
           return (
             <Fragment key={match.id}>
               {dayDivider}
-              <tr>
+              <tr id={`match-row-${match.id}`} data-match-id={match.id}>
               {showNoteRail && (
                 <td className="note-rail-cell">
                   <NoteRailDot
@@ -10233,6 +10481,17 @@ function WorldSkillsPageInner() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
   const debouncedSearch = useDebouncedValue(search);
+  // Phones get a shorter placeholder so it isn't clipped in the narrow field.
+  const [isNarrow, setIsNarrow] = useState(
+    () => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(max-width: 560px)").matches,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 560px)");
+    const onChange = () => setIsNarrow(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
   const [filterCountries, setFilterCountries] = useState<string[]>(() => new URLSearchParams(window.location.search).getAll("country"));
   const [filterRegions, setFilterRegions] = useState<string[]>(() => new URLSearchParams(window.location.search).getAll("region"));
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -10247,6 +10506,7 @@ function WorldSkillsPageInner() {
   const seasonOptions = useMemo(
     () =>
       (seasonsAsync.data?.data ?? [])
+        .filter(seasonHasData)
         .filter((s) => s.program?.id === programId)
         .sort((a, b) => b.id - a.id)
         .slice(0, 8)
@@ -10347,7 +10607,7 @@ function WorldSkillsPageInner() {
   }, [wsData, debouncedSearch, filterCountries, filterRegions]);
 
   const PAGE_SIZE = 80;
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const visibleRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   useEffect(() => { setPage(1); }, [debouncedSearch, filterCountries, filterRegions, resolvedSeasonId, grade]);
@@ -10449,7 +10709,7 @@ function WorldSkillsPageInner() {
           <Search size={14} className="ws-search-icon" />
           <input
             className="ws-search-input"
-            placeholder="Search team #, name, org, region, country…"
+            placeholder={isNarrow ? "Search teams…" : "Search team #, name, org, region, country…"}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -10627,6 +10887,9 @@ function WorldSkillsPageInner() {
       <Status loading={wsLoading} error={wsError} />
       {!wsLoading && !wsError && (
         <CrossFade trigger={`${program}|${grade}|${resolvedSeasonId}|${debouncedSearch}|${filterCountries.join(",")}|${filterRegions.join(",")}|${page}`}>
+        <div className="ws-mobile-head" aria-hidden="true">
+          <span>Rank</span><span>Team</span><span>Score</span><span>Auto / Driver</span>
+        </div>
         <div className="ws-table-wrap">
           <table className="ws-table">
             <colgroup>
@@ -12169,7 +12432,11 @@ function OrgNotesHubTab({ orgId }: { orgId: string }) {
               <span className="org-ws-badge">{items.length}</span>
             </div>
             {items.map((n) => {
-              const href = n.eventId ? urlWithHash(`/event/${n.eventId}`, "matches") : null;
+              // Carry the match id in the query string (hash is reserved for the
+              // tab selector) so the event page can scroll to + flash that row.
+              const href = n.eventId
+                ? `/event/${n.eventId}?match=${encodeURIComponent(n.matchId)}#matches`
+                : null;
               const inner = <span className="org-note-body">{n.body}</span>;
               return href
                 ? <Link key={n.matchId} href={href} className="org-note-row">{inner}<ChevronRight size={14} className="org-note-go" /></Link>
@@ -12638,9 +12905,12 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
       ];
     }
     const actionMatches = SPOTLIGHT_ACTIONS.filter((a) => a.label.toLowerCase().includes(debounced.toLowerCase())).slice(0, 2);
+    // Mirror GlobalSearch: number-like queries lead with Teams, else Events first.
+    const teamNumberLike = /^\d+[a-z]?$/i.test(debounced);
+    const teamItems = teams.map((t): SpotlightItem => ({ kind: "team", team: t }));
+    const eventItems = events.map((ev): SpotlightItem => ({ kind: "event", event: ev }));
     return [
-      ...teams.map((t): SpotlightItem => ({ kind: "team", team: t })),
-      ...events.map((ev): SpotlightItem => ({ kind: "event", event: ev })),
+      ...(teamNumberLike ? [...teamItems, ...eventItems] : [...eventItems, ...teamItems]),
       ...actionMatches.map((a): SpotlightItem => ({ kind: "action", ...a })),
     ];
   }, [debounced, teams, events, recent, trayEntries, visibleRecentCount]);
@@ -13548,6 +13818,7 @@ type MyTeamTimelineRow = {
   awardTitle: string | null;
   rank: number | null;
   record: string | null;
+  avgScore: number | null;
   skills: number | null;
   days: number | null;
   nextMatch: string | null;
@@ -13645,6 +13916,18 @@ function MyTeamPage() {
   const totalGames = record.w + record.l + record.t;
   const winPct = totalGames ? Math.round((record.w / totalGames) * 1000) / 10 : 0;
   const seasonSkillsSummary = useMemo(() => skillSummary(seasonSkills), [seasonSkills]);
+  // VEX IQ is cooperative (no win/loss), so show teamwork stats instead of a W-L
+  // record / win rate in the summary strip.
+  const iqTeamworkSummary = useMemo(() => {
+    const avgs = seasonRankings
+      .map((r) => r.average_points)
+      .filter((n): n is number => n != null);
+    const avgTeamwork = avgs.length
+      ? Math.round((avgs.reduce((sum, v) => sum + v, 0) / avgs.length) * 10) / 10
+      : null;
+    const eventCount = new Set(seasonRankings.map((r) => r.event.id)).size;
+    return { avgTeamwork, eventCount };
+  }, [seasonRankings]);
 
   // Live event (running today) within the current season.
   const seasonEvents = useMemo(() => teamEvents.filter((e) => !seasonId || e.season.id === seasonId), [teamEvents, seasonId]);
@@ -13704,7 +13987,10 @@ function MyTeamPage() {
         isNext: false,
         awardTitle,
         rank: rk?.rank ?? null,
-        record: rk ? `${rk.wins ?? 0}–${rk.losses ?? 0}` : null,
+        // VEX IQ is cooperative — no win/loss. Show the teamwork average instead of a
+        // meaningless "0–0" record.
+        record: isIq ? null : (rk ? `${rk.wins ?? 0}–${rk.losses ?? 0}` : null),
+        avgScore: isIq ? (rk?.average_points ?? null) : null,
         skills: sk.combined ?? null,
         days: up ? Math.max(0, Math.round((start - now) / oneDay)) : null,
         nextMatch: live && nextUp ? shortMatchName(nextUp.name) : null,
@@ -13714,7 +14000,7 @@ function MyTeamPage() {
     const firstUp = rows.find((r) => r.state === "up");
     if (firstUp) firstUp.isNext = true;
     return rows;
-  }, [teamEvents, seasonId, seasonAwards, seasonRankings, seasonSkills, nextUp, now]);
+  }, [teamEvents, seasonId, seasonAwards, seasonRankings, seasonSkills, nextUp, now, isIq]);
 
   // Height-match the live timeline to the matches panel and open scrolled to "now".
   const matchesPanelRef = useRef<HTMLDivElement>(null);
@@ -13758,11 +14044,13 @@ function MyTeamPage() {
     } else if (row.state === "live") {
       if (row.rank != null) pieces.push(<>Rank <b>#{row.rank}</b></>);
       if (row.record) pieces.push(<b>{row.record}</b>);
+      else if (row.avgScore != null) pieces.push(<>Avg <b>{row.avgScore}</b></>);
       if (row.nextMatch) pieces.push(<>Next <b>{row.nextMatch}</b></>);
       if (!pieces.length) pieces.push("In progress");
     } else {
       if (row.awardTitle) pieces.push(row.awardTitle);
       if (row.record) pieces.push(<b>{row.record}</b>);
+      else if (row.avgScore != null) pieces.push(<>Avg <b>{row.avgScore}</b></>);
       if (row.skills) pieces.push(<>Skills <b>{row.skills}</b></>);
       if (!pieces.length) pieces.push("Played");
     }
@@ -13794,9 +14082,18 @@ function MyTeamPage() {
 
   const statStrip = (
     <div className="myteam-stats">
-      <div className="myteam-stat"><div className="k">Record</div><div className="v">{record.w}–{record.l}{record.t ? `–${record.t}` : ""}</div><div className="sub">{totalGames} matches played</div></div>
-      <div className="myteam-stat"><div className="k">Win rate</div><div className="v">{winPct}<small>%</small></div><div className="sub">season to date</div></div>
-      <div className="myteam-stat"><div className="k">Skills score</div><div className="v">{seasonSkillsSummary.combined ?? "–"}</div><div className="sub">{seasonSkillsSummary.programming?.score ?? 0} auto / {seasonSkillsSummary.driver?.score ?? 0} driver</div></div>
+      {isIq ? (
+        <>
+          <div className="myteam-stat"><div className="k">Avg teamwork</div><div className="v">{iqTeamworkSummary.avgTeamwork ?? "—"}</div><div className="sub">qualification avg</div></div>
+          <div className="myteam-stat"><div className="k">Events</div><div className="v">{iqTeamworkSummary.eventCount}</div><div className="sub">this season</div></div>
+        </>
+      ) : (
+        <>
+          <div className="myteam-stat"><div className="k">Record</div><div className="v">{record.w}–{record.l}{record.t ? `–${record.t}` : ""}</div><div className="sub">{totalGames} matches played</div></div>
+          <div className="myteam-stat"><div className="k">Win rate</div><div className="v">{winPct}<small>%</small></div><div className="sub">season to date</div></div>
+        </>
+      )}
+      <div className="myteam-stat"><div className="k">Skills score</div><div className="v"><ScoreBreakdown combined={seasonSkillsSummary.combined} programming={seasonSkillsSummary.programming?.score} driver={seasonSkillsSummary.driver?.score} /></div><div className="sub">{seasonSkillsSummary.programming?.score ?? 0} auto / {seasonSkillsSummary.driver?.score ?? 0} driver</div></div>
       <div className="myteam-stat"><div className="k">World skills rank</div><div className="v">{worldSkills.loading ? "…" : wsEntry ? `#${wsEntry.rank.toLocaleString()}` : "—"}</div><div className="sub">globally this season</div></div>
       <div className="myteam-stat"><div className="k">Awards</div><div className="v">{seasonAwards.length}</div><div className="sub">this season</div></div>
     </div>
