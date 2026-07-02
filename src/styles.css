@@ -50,6 +50,8 @@
   --focus-ring: rgba(8, 145, 178, 0.35);
   /* shape — the dominant component corner (Geist 8px). */
   --radius: 8px;
+  /* Mobile bottom tab-bar island height + breathing room; used to clear it. */
+  --mobile-tabbar-clear: 92px;
 
   color-scheme: light;
   color: var(--text);
@@ -454,11 +456,17 @@ main {
 /* Home events panel header: program multi-toggle + event-filter toggle + the
    "See all events" link, all on one row in place of the old title text. */
 .home-events-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 12px;
   width: 100%;
   min-width: 0;
+}
+
+/* Center the tab strip in the middle column. */
+.home-events-header .season-toolbar {
+  justify-self: center;
 }
 
 /* Let the title span fill the header so the row can spread across full width. */
@@ -480,8 +488,25 @@ main {
 
 .home-events-seeall {
   flex: 0 0 auto;
-  margin-left: auto;
+  justify-self: end;
   white-space: nowrap;
+}
+
+/* Phones: let the header stack and the tab strip wrap so no label (e.g. "Near me",
+   "Signature") is ever partially clipped by horizontal scroll. */
+@media (max-width: 560px) {
+  .home-events-header {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    row-gap: 8px;
+  }
+  .home-events-header .season-scroll-view {
+    overflow-x: visible;
+  }
+  .home-events-header .season-scroll-view .relative {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
 }
 
 /* Program multi-select toggle (V5 / IQ / …). Multiple may be active at once. */
@@ -498,8 +523,8 @@ main {
 
 .home-prog-toggle button {
   height: 26px;
-  min-width: 34px;
-  padding: 0 12px;
+  min-width: 30px;
+  padding: 0 8px;
   border: none;
   border-radius: 5px;
   background: none;
@@ -4446,6 +4471,23 @@ a.team-card-num:hover {
   );
 }
 
+/* Mirror of .season-fade for the left edge: pinned left, gradient reversed. */
+.season-fade-left {
+  right: auto;
+  left: 0;
+  justify-content: flex-start;
+  padding-right: 0;
+  padding-left: 2px;
+}
+.season-fade-left::before {
+  background: linear-gradient(
+    to left,
+    transparent,
+    var(--surface-2) 45%,
+    var(--surface-2) 100%
+  );
+}
+
 .season-more {
   position: relative;
   z-index: 1;
@@ -7994,10 +8036,12 @@ a.org-note-row:hover { background: var(--surface-2); }
 }
 
 .quick-view-stat-row .event-stat-value {
-  font-size: 16px;
+  font-size: clamp(13px, 3.6vw, 16px);
   max-width: 100%;
+  white-space: nowrap; /* never split a hyphenated record like "8-4-0" */
   overflow: hidden;
   text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums; /* steadier numeric widths */
 }
 
 .quick-view-events {
@@ -8052,6 +8096,8 @@ a.org-note-row:hover { background: var(--surface-2); }
 }
 .quick-view-panel .about-stat-value {
   font-size: 17px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 /* Drop the sub-text so each card is a tidy label + value, much shorter. */
 .quick-view-panel .about-stat-sub {
@@ -8066,8 +8112,10 @@ a.org-note-row:hover { background: var(--surface-2); }
 /* Narrow screens: drop the side drawer for a centered modal. */
 @media (max-width: 820px) {
   .quick-view-overlay {
-    background: var(--overlay);
-    backdrop-filter: blur(3px);
+    /* Opaque-ish, theme-aware scrim so page content never reads through the modal. */
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
     pointer-events: auto; /* modal mode blocks the page + enables click-outside-to-close */
   }
   .quick-view-panel,
@@ -9264,6 +9312,17 @@ a.org-note-row:hover { background: var(--surface-2); }
   border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
 }
+/* Phones: let the search field span the toolbar so even the short placeholder
+   isn't clipped, and use 16px text to stop iOS focus-zoom (matches topbar search). */
+@media (max-width: 560px) {
+  .ws-search-wrap {
+    max-width: none;
+    flex-basis: 100%;
+  }
+  .ws-search-input {
+    font-size: 16px;
+  }
+}
 .ws-search-clear {
   position: absolute;
   right: 6px;
@@ -9727,12 +9786,12 @@ a.org-note-row:hover { background: var(--surface-2); }
 
   /* Reserve space so the floating island never hides the footer / last content. */
   body {
-    padding-bottom: calc(78px + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--mobile-tabbar-clear, 92px) + env(safe-area-inset-bottom));
   }
 
   /* Float the compare tray above the nav island instead of behind it. */
   .compare-tray {
-    bottom: calc(78px + env(safe-area-inset-bottom));
+    bottom: calc(var(--mobile-tabbar-clear, 92px) + env(safe-area-inset-bottom));
   }
 
   /* Smooth momentum scrolling for horizontally-scrollable table panels. */
@@ -9845,11 +9904,42 @@ a.org-note-row:hover { background: var(--surface-2); }
   }
 }
 
+/* Compact column-header strip for the mobile World Skills card list; the real
+   <thead> is hidden ≤760px, so this explains the card columns. Desktop-hidden. */
+.ws-mobile-head {
+  display: none;
+}
+
 /* ═══ Mobile: World Skills leaderboard becomes a compact dense list ═══
    One row per team: rank · centered team# (linked) · score (accent) ·
    auto/driver stacked small. Max scores, timestamps, name, region, country
    hidden. Rows divided inside the bordered container. */
 @media (max-width: 760px) {
+  .ws-mobile-head {
+    display: grid;
+    grid-template-columns: 36px 1fr auto 34px;
+    column-gap: 12px;
+    padding: 6px 14px;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  .ws-mobile-head span:nth-child(3),
+  .ws-mobile-head span:nth-child(4) {
+    justify-self: end;
+  }
+  .ws-table {
+    margin-bottom: 8px;
+  }
+  .ws-table tbody tr:last-child {
+    scroll-margin-bottom: var(--mobile-tabbar-clear, 92px);
+  }
   .ws-table-wrap {
     overflow-x: visible;
   }
