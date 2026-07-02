@@ -1839,16 +1839,18 @@ main {
 .picker-menu-list {
   position: absolute;
   right: 0;
-  z-index: 10;
+  z-index: 60;
+  isolation: isolate;
   width: min(360px, 82vw);
   max-height: 360px;
   margin-top: 4px;
   overflow: auto;
-  padding: 8px;
+  padding: 10px;
   background: var(--surface);
+  background-color: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
 /* Filters now live on the LEFT, so flyout menus open to the RIGHT of the
@@ -1886,12 +1888,17 @@ main {
   align-items: center;
   gap: 7px;
   width: 100%;
-  min-height: 30px;
-  padding: 4px 2px;
+  min-height: 34px;
+  padding: 6px 8px;
   border: 0;
   background: transparent;
   color: var(--text-2);
   text-align: left;
+}
+
+.region-option-list label:hover {
+  background: var(--surface-2);
+  border-radius: var(--radius);
 }
 
 .picker-menu-list > button,
@@ -2865,6 +2872,20 @@ a.team-card-num:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-muted);
+}
+
+.empty-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.empty-link:hover {
+  text-decoration: none;
 }
 
 .notice.error {
