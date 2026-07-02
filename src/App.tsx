@@ -7562,11 +7562,8 @@ function TeamDetail({ param }: { param: string }) {
           eventIndex={eventIndex}
           seasonId={selectedSeasonId}
           focusTeamId={team.id}
+          focusTeamNumber={team.number}
           direction={dateDirection}
-          onViewMatches={(eventId) => {
-            const ev = eventIndex.get(eventId);
-            navigate(urlWithHash(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`, "team-matches"));
-          }}
         />
       )}
       </CrossFade>
@@ -7899,6 +7896,7 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
                     eventIndex={eventIndex}
                     seasonId={seasonId}
                     focusTeamId={team.id}
+                    focusTeamNumber={team.number}
                     direction="asc"
                     collapsible
                     defaultCollapsed={!expandExtras}
@@ -8926,6 +8924,7 @@ function TeamAwardsByEvent({
   eventIndex,
   seasonId,
   focusTeamId,
+  focusTeamNumber,
   direction,
   collapsible,
   defaultCollapsed,
@@ -8934,8 +8933,8 @@ function TeamAwardsByEvent({
   eventIndex: Map<number, Event>;
   seasonId: number | null;
   focusTeamId: number;
+  focusTeamNumber: string;
   direction: DateDirection;
-  onViewMatches?: (eventId: number) => void;
   collapsible?: boolean;
   defaultCollapsed?: boolean;
 }) {
@@ -8976,7 +8975,10 @@ function TeamAwardsByEvent({
             <div className="award-card-event">
               <Link
                 className="award-card-event-name"
-                href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}
+                href={urlWithHash(
+                  `${group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}?focusTeam=${focusTeamId}&focusTeamNum=${encodeURIComponent(focusTeamNumber)}`,
+                  "team-matches",
+                )}
                 title={group.eventRef.name}
               >
                 {group.eventRef.name}
