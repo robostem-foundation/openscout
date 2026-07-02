@@ -14,3 +14,11 @@ createRoot(document.getElementById("root")!).render(
     <Analytics />
   </StrictMode>,
 );
+
+// Register the PWA service worker (dependency-free). Guarded so a failure never
+// breaks the app, and registered on load so it doesn't compete with startup.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
