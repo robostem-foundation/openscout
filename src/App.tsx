@@ -766,9 +766,11 @@ function GlobalSearch({ className = "" }: { className?: string }) {
     </div>
   );
 
-  const dropdown = showDropdown ? (
-    <div className="global-search-dropdown">
-      {/* Teams section */}
+  // Number-like queries are almost always team lookups, so surface Teams first;
+  // otherwise lead with Events.
+  const teamNumberLike = /^\d+[a-z]?$/i.test(searchTerm);
+  const teamsSection = (
+    <>
       <div className="gs-section-label">Teams</div>
       {teamsLoading && !teams.length && (
         <div className="gs-loading">Loading...</div>
@@ -794,8 +796,10 @@ function GlobalSearch({ className = "" }: { className?: string }) {
       >
         Find more teams...
       </button>
-
-      {/* Events section */}
+    </>
+  );
+  const eventsSection = (
+    <>
       <div className="gs-section-label">Events</div>
       {eventsLoading && !events.length && (
         <div className="gs-loading">Loading...</div>
@@ -821,6 +825,11 @@ function GlobalSearch({ className = "" }: { className?: string }) {
       >
         Find more events...
       </button>
+    </>
+  );
+  const dropdown = showDropdown ? (
+    <div className="global-search-dropdown">
+      {teamNumberLike ? <>{teamsSection}{eventsSection}</> : <>{eventsSection}{teamsSection}</>}
     </div>
   ) : null;
 
@@ -951,17 +960,25 @@ async function fetchTeamsLightUnion(queries: Parameters<typeof api.teamsLight>[0
 async function searchTeamsTabTeams(
   query: string,
   regionQueries: Parameters<typeof api.teamsLight>[0][],
+  programId: string, // "" = All Programs
 ): Promise<Paginated<Team>> {
   const trimmed = query.trim();
   const isCompleteNumber = /^\d{1,5}[a-z]$/i.test(trimmed);
+  // Scope the exact-match RSE lookup to the selected program so we don't even
+  // fetch other VEX programs (defense in depth); fall back to all VEX programs
+  // when "All" is selected.
+  const rsePrograms = programId ? [programId] : vexProgramIds;
   const [rse, vex] = await Promise.all([
     fetchTeamsLightUnion(regionQueries.map((regionQuery) => ({ ...regionQuery, teamSearch: query }))),
     isCompleteNumber
-      ? api.robotEventsTeams({ number: trimmed, "program[]": vexProgramIds, per_page: 20 })
+      ? api.robotEventsTeams({ number: trimmed, "program[]": rsePrograms, per_page: 20 })
       : Promise.resolve(null),
   ]);
   const merged = uniqueTeams([...(vex?.data ?? []), ...rse.data]);
-  return { ...rse, data: rankTeamsForSearch(merged, query) };
+  // RSE program[] isn't fully trustworthy for a single-team number lookup, so
+  // hard-filter by the selected program after merge, before ranking.
+  const scoped = programId ? merged.filter((team) => String(team.program?.id) === programId) : merged;
+  return { ...rse, data: rankTeamsForSearch(scoped, query) };
 }
 
 async function loadCachedTeams(cacheKey: string, queries: Parameters<typeof api.teamsLight>[0][], force = false) {
@@ -1205,8 +1222,38 @@ function compareTeamsForSearch(query: string) {
   return (a: Team, b: Team) => teamSearchRank(a, query) - teamSearchRank(b, query) || compareTeamsNatural(a, b);
 }
 
+// Any kind of match (number, name, org, location) — teamSearchRank 0-4; 5 = nothing matched.
+function teamMatchesQuery(team: Team, query: string): boolean {
+  const needle = normalizedTeamQuery(query);
+  if (!needle) return true;
+  return teamSearchRank(team, query) < 5;
+}
+
+// Number-only match: the team's *number* must match the needle (exact, numeric
+// core, prefix, or substring). Text-field matches (name/org/location) don't count.
+function teamNumberMatches(team: Team, needle: string): boolean {
+  const teamNumber = normalizedTeamQuery(team.number);
+  const numeric = /^\d+$/.test(needle);
+  const parts = teamNumberParts(team.number);
+  return (
+    teamNumber === needle ||                          // exact
+    (numeric && String(parts.numeric) === needle) ||  // numeric core (drop suffix)
+    teamNumber.startsWith(needle) ||                  // prefix
+    teamNumber.includes(needle)                       // substring in number
+  );
+}
+
 function rankTeamsForSearch(teams: Team[], query: string) {
-  return [...teams].sort(compareTeamsForSearch(query));
+  const needle = normalizedTeamQuery(query);
+  // For number-like queries (e.g. "14141" or "14141X") only keep teams whose
+  // number matches — loosely-related rank-5 rows must be dropped, not just sorted
+  // last, or the .slice() window can still surface them. For text queries keep
+  // any match (name/org/location) and drop only true non-matches (rank 5).
+  const isNumberLike = /^\d+[a-z]?$/i.test(needle);
+  const pool = isNumberLike
+    ? teams.filter((team) => teamNumberMatches(team, needle))
+    : teams.filter((team) => teamMatchesQuery(team, query));
+  return pool.sort(compareTeamsForSearch(query));
 }
 
 function uniqueTeams(teams: Team[]) {
@@ -4391,11 +4438,24 @@ function EventTable({
 }
 
 function TeamsPage() {
+  const { profile } = useAuth();
   const params = new URLSearchParams(window.location.search);
   const [search, setSearch] = useState(params.get("search") ?? "");
   const [submittedSearch, setSubmittedSearch] = useState(params.get("search") ?? "");
   const debouncedQuickSearch = useDebouncedValue(search.trim(), 220);
-  const [program, setProgram] = useState("1");
+  // Default the program from the last explicit choice (localStorage), else the
+  // signed-in user's profile (applied via effect below since profile isn't loaded
+  // synchronously on first render), else V5RC. "" (All) is a valid stored value.
+  const [program, setProgram] = useState<string>(() => {
+    try {
+      const stored = localStorage.getItem("teamsProgram");
+      if (stored !== null) return stored;
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+    return "1";
+  });
+  const programSeeded = useRef(false);
   const [selectedRegionKeys, setSelectedRegionKeys] = useState<string[]>([]);
   const [regionMenuOpen, setRegionMenuOpen] = useState(false);
   const [regionTab, setRegionTab] = useState<RegionOptionKind>("country");
@@ -4504,7 +4564,7 @@ function TeamsPage() {
 
       try {
         const result = isSearchingTeams
-          ? await searchTeamsTabTeams(committedSearch, regionQueries)
+          ? await searchTeamsTabTeams(committedSearch, regionQueries, program)
           : await loadCachedTeams(cacheKey, regionQueries, force);
 
         if (live) {
@@ -4561,7 +4621,7 @@ function TeamsPage() {
       live = false;
       window.clearInterval(interval);
     };
-  }, [cacheKey, committedSearch, isSearchingTeams, page, regionQueries]);
+  }, [cacheKey, committedSearch, isSearchingTeams, page, program, regionQueries]);
 
   const cachedTeams = teamListCache.get(cacheKey)?.data?.data;
   const quickSourceTeams = cachedTeams ?? (!isSearchingTeams ? data?.data : []) ?? [];
@@ -4648,6 +4708,35 @@ function TeamsPage() {
     }
   }, [teamView]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem("teamsProgram", program);
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+  }, [program]);
+
+  // Seed the program from the signed-in user's profile once, only when the user
+  // hasn't already made an explicit choice (no stored value) — a returning user's
+  // last pick (localStorage) takes precedence over their profile default.
+  useEffect(() => {
+    if (programSeeded.current) return;
+    let hasStored = false;
+    try {
+      hasStored = localStorage.getItem("teamsProgram") !== null;
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+    if (hasStored) {
+      programSeeded.current = true;
+      return;
+    }
+    if (profile?.team_program) {
+      setProgram(profile.team_program);
+      programSeeded.current = true;
+    }
+  }, [profile]);
+
   // World Skills scores load in the background after the team list, keyed by the
   // current program's season + grade levels. The table shows a skeleton until the
   // map arrives. Results are session-cached (loadWorldSkills) so this is cheap.
@@ -4691,7 +4780,7 @@ function TeamsPage() {
     }
 
     setQuickLoading(true);
-    searchTeamsTabTeams(needle, regionQueries)
+    searchTeamsTabTeams(needle, regionQueries, program)
       .then((result) => {
         if (live) setQuickData(result.data);
       })
@@ -4705,7 +4794,7 @@ function TeamsPage() {
     return () => {
       live = false;
     };
-  }, [debouncedQuickSearch, regionQueries]);
+  }, [debouncedQuickSearch, program, regionQueries]);
 
   const submitSearch = () => {
     const nextSearch = search.trim();
@@ -12637,9 +12726,12 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
       ];
     }
     const actionMatches = SPOTLIGHT_ACTIONS.filter((a) => a.label.toLowerCase().includes(debounced.toLowerCase())).slice(0, 2);
+    // Mirror GlobalSearch: number-like queries lead with Teams, else Events first.
+    const teamNumberLike = /^\d+[a-z]?$/i.test(debounced);
+    const teamItems = teams.map((t): SpotlightItem => ({ kind: "team", team: t }));
+    const eventItems = events.map((ev): SpotlightItem => ({ kind: "event", event: ev }));
     return [
-      ...teams.map((t): SpotlightItem => ({ kind: "team", team: t })),
-      ...events.map((ev): SpotlightItem => ({ kind: "event", event: ev })),
+      ...(teamNumberLike ? [...teamItems, ...eventItems] : [...eventItems, ...teamItems]),
       ...actionMatches.map((a): SpotlightItem => ({ kind: "action", ...a })),
     ];
   }, [debounced, teams, events, recent, trayEntries, visibleRecentCount]);
