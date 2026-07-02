@@ -76,7 +76,6 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
-import { awardQualification, teamQualifications } from "./qualifications";
 import { useOrgMatchNote, setOrgMatchNote, useHasAnyOrgNote, useOrgNotesList } from "./org-notes";
 import type { OrgNoteListItem } from "./org-notes";
 import { useOrgFavorites, useIsOrgFavorite, toggleOrgFavorite } from "./org-favorites";
@@ -8127,37 +8126,6 @@ function DateDirectionToggle({ direction, onChange }: { direction: DateDirection
   );
 }
 
-function EventGroupTitle({
-  eventRef,
-  event,
-  count,
-  onViewMatches,
-}: {
-  eventRef: { id: number; name: string; code?: string | null };
-  event?: Event;
-  count: number;
-  onViewMatches?: (eventId: number) => void;
-}) {
-  return (
-    <>
-      <span className="event-group-head-main">
-        {onViewMatches ? (
-          <button className="event-group-name-btn" onClick={(e) => { e.preventDefault(); onViewMatches(eventRef.id); }}>
-            {eventRef.name}
-          </button>
-        ) : (
-          <Link href={event ? eventPath(event) : `/event/${eventRef.code ?? eventRef.id}`}>{eventRef.name}</Link>
-        )}
-        {(event?.sku || eventRef.code) && <small>{event?.sku ?? eventRef.code}</small>}
-      </span>
-      <span className="event-group-meta">
-        {event ? formatEventDateRange(event.start, event.end) : "Date unavailable"}
-        {count > 1 ? ` · ${count.toLocaleString()}` : ""}
-      </span>
-    </>
-  );
-}
-
 const qfSeedPairs = [
   [1, 8],
   [4, 5],
@@ -8931,13 +8899,34 @@ function TeamSkillsByEvent({
   );
 }
 
+// Concise label + tier class for a RobotEvents award `qualifications` string.
+// Authoritative data straight from the events API — no guessing. Signature events
+// are open entry, so the API never lists them as a qualification.
+function qualTier(q: string): { label: string; cls: string } | null {
+  const s = q.toLowerCase();
+  if (s.includes("world")) return { label: "Worlds", cls: "team-qual-worlds" };
+  if (s.includes("region") || s.includes("state") || s.includes("national"))
+    return { label: "Regionals", cls: "team-qual-championship" };
+  if (s.includes("signature")) return null;
+  return { label: q, cls: "team-qual-championship" };
+}
+// Highest-tier qualification an award grants (Worlds beats Regionals), or null.
+function awardTopQual(award: Award): { label: string; cls: string } | null {
+  let best: { label: string; cls: string } | null = null;
+  for (const q of award.qualifications ?? []) {
+    const t = qualTier(q);
+    if (!t) continue;
+    if (!best || (t.label === "Worlds" && best.label !== "Worlds")) best = t;
+  }
+  return best;
+}
+
 function TeamAwardsByEvent({
   awards,
   eventIndex,
   seasonId,
   focusTeamId,
   direction,
-  onViewMatches,
   collapsible,
   defaultCollapsed,
 }: {
@@ -8952,9 +8941,18 @@ function TeamAwardsByEvent({
 }) {
   const groups = groupItemsByEvent(awards, eventIndex, seasonId, direction);
   const programCode = useContext(ProgramContext);
-  // Static award-title → qualification-tier mapping (see src/qualifications.ts).
-  // Conservative: under-badges when uncertain rather than over-claiming a berth.
-  const quals = useMemo(() => teamQualifications(awards, eventIndex), [awards, eventIndex]);
+  // Qualifications are authoritative — straight from the events API
+  // (`award.qualifications`). Deduped to distinct tiers, Worlds first.
+  const quals = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const award of awards) {
+      for (const q of award.qualifications ?? []) {
+        const tier = qualTier(q);
+        if (tier && !seen.has(tier.label)) seen.set(tier.label, tier.cls);
+      }
+    }
+    return [...seen.entries()].sort((a, b) => (a[0] === "Worlds" ? -1 : b[0] === "Worlds" ? 1 : 0));
+  }, [awards]);
 
   return (
     <Panel title="Awards" icon={<Medal />} collapsible={collapsible} defaultCollapsed={defaultCollapsed}>
@@ -8963,84 +8961,73 @@ function TeamAwardsByEvent({
           <div className="team-quals-head">
             <Medal size={15} aria-hidden="true" />
             <span>Qualifications</span>
-            <small className="team-quals-note" title="Based on typical REC/RECF criteria — always verify with the official qualification rules.">
-              estimated · verify with REC
-            </small>
           </div>
           <div className="team-quals-list">
-            {quals.map((qual) => (
-              <div
-                key={qual.qualifiesTo}
-                className={`team-qual-pill team-qual-${qual.qualifiesTo.toLowerCase()}`}
-                title={qual.paths.map((p) => `${p.via} @ ${p.eventName}`).join("\n")}
-              >
-                <strong>{qual.qualifiesTo}</strong>
-              </div>
+            {quals.map(([label, cls]) => (
+              <div key={label} className={`team-qual-pill ${cls}`}><strong>{label}</strong></div>
             ))}
           </div>
         </div>
       )}
-      <div className="event-groups">
-        {groups.map((group) => {
-          // Per-event hover: which awards at this event qualify to what.
-          const groupQuals = group.items
-            .map((award) => ({ award, qual: awardQualification(award, group.event) }))
-            .filter((entry): entry is { award: Award; qual: NonNullable<ReturnType<typeof awardQualification>> } => !!entry.qual);
-          const groupQualTip = groupQuals.length
-            ? groupQuals.map((entry) => `${entry.award.title.replace(/\s*\([^)]*\)\s*$/, "").trim()} → ${entry.qual.label}`).join("\n")
-            : undefined;
-          return (
-          <details key={group.eventRef.id} className="event-group" open>
-            <summary title={groupQualTip}>
-              <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} onViewMatches={onViewMatches} />
-            </summary>
-            <div className="award-list">
+      <div className="award-cards">
+        {groups.map((group) => (
+          <article key={group.eventRef.id} className="award-card">
+            <div className="award-card-event">
+              <Link
+                className="award-card-event-name"
+                href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}
+                title={group.eventRef.name}
+              >
+                {group.eventRef.name}
+              </Link>
+              <div className="award-card-event-meta">
+                {group.event ? formatEventDateRange(group.event.start, group.event.end) : "Date unavailable"}
+              </div>
+            </div>
+            <div className="award-card-awards">
               {sortAwards(group.items).map((award) => {
                 const tier = awardPriority(award);
-                // Strip trailing program-scope parenthetical, e.g.
-                // "Design Award (VRC/VEXU/VAIRC)" → "Design Award". Anchored to
-                // the end so an early paren in a legit title is preserved.
+                // Strip trailing program-scope parenthetical, e.g. "Design Award (VRC/VEXU/VAIRC)".
                 const mainTitle = award.title.replace(/\s*\([^)]*\)\s*$/, "").trim();
                 const TierIcon = tier === 0 ? Star : tier === 1 ? Trophy : tier === 3 ? Medal : null;
-                const qual = awardQualification(award, group.event);
+                const topQual = awardTopQual(award);
+                // At a multi-division event, only show co-winners from the focus team's
+                // own division (avoids huge cross-division winner lists).
+                const winners = awardTeamWinners(award);
+                const focusDiv = winners.find((w) => w.team.id === focusTeamId)?.division?.id ?? null;
+                const shownWinners = focusDiv != null ? winners.filter((w) => w.division?.id === focusDiv) : winners;
                 return (
-                  <article className={`award-item award-tier-${tier}`} key={award.id}>
-                    <div className="award-item-title">
-                      {TierIcon && (
-                        <span className="award-item-icon" aria-hidden="true">
-                          <TierIcon size={15} />
-                        </span>
-                      )}
-                      <h3>{mainTitle}</h3>
-                      {qual && (
-                        <span
-                          className={`award-qual-badge team-qual-${qual.qualifiesTo.toLowerCase()}`}
-                          title={`${qual.label} — estimated from typical criteria; verify with REC.`}
-                        >
-                          {qual.qualifiesTo}
+                  <div className={`award-row award-tier-${tier}`} key={award.id}>
+                    <div className="award-row-head">
+                      {TierIcon && <span className="award-row-icon" aria-hidden="true"><TierIcon size={14} /></span>}
+                      <span className="award-row-name">{mainTitle}</span>
+                      {topQual && (
+                        <span className={`award-qual-badge ${topQual.cls}`} title={`Qualifies: ${topQual.label}`}>
+                          {topQual.label}
                         </span>
                       )}
                     </div>
-                    <div className="award-item-winners">
-                      {awardTeamWinners(award).map((winner) => (
-                        <TeamQuickLink
-                          key={`${award.id}-${winner.team.id}`}
-                          teamId={winner.team.id}
-                          teamNumber={winner.team.name}
-                          programCode={programCode}
-                          className={`winner-pill ${winner.team.id === focusTeamId ? "" : "other"}`}
-                        >
-                          {winner.team.name}
-                        </TeamQuickLink>
-                      ))}
-                    </div>
-                  </article>
+                    {shownWinners.length > 0 && (
+                      <div className="award-row-teams">
+                        {shownWinners.map((winner) => (
+                          <TeamQuickLink
+                            key={`${award.id}-${winner.team.id}`}
+                            teamId={winner.team.id}
+                            teamNumber={winner.team.name}
+                            programCode={programCode}
+                            className={`winner-pill ${winner.team.id === focusTeamId ? "" : "other"}`}
+                          >
+                            {winner.team.name}
+                          </TeamQuickLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
-          </details>
-          );
-        })}
+          </article>
+        ))}
         {!groups.length && <Empty>No awards returned for this season.</Empty>}
       </div>
     </Panel>
