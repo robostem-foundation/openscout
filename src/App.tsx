@@ -10948,8 +10948,8 @@ function WorldSkillsPageInner() {
                     <td className="ws-col-num ws-hide-mobile">{(page - 1) * PAGE_SIZE + i + 1}</td>
                     <td className="ws-m-rank"><strong>{r.rank}</strong></td>
                     <td className="ws-m-stat" data-label="Score"><strong>{r.scores.score}</strong></td>
-                    <td className="ws-m-stat" data-label="Auto"><strong>{r.scores.programming}</strong></td>
-                    <td className="ws-m-stat" data-label="Driver"><strong>{r.scores.driver}</strong></td>
+                    <td className="ws-m-stat" data-label="Auto"><span className="ws-m-tag" aria-hidden="true">P</span><strong>{r.scores.programming}</strong></td>
+                    <td className="ws-m-stat" data-label="Driver"><span className="ws-m-tag" aria-hidden="true">D</span><strong>{r.scores.driver}</strong></td>
                     <td className="ws-max-auto ws-hide-mobile">{r.scores.maxProgramming ?? "—"}</td>
                     <td className="ws-max-driver ws-hide-mobile">{r.scores.maxDriver ?? "—"}</td>
                     <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={formatSkillsDate(r.scores.progScoredAt, useUtc)}><span className="ws-cell-inner">{renderSkillsDate(r.scores.progScoredAt, useUtc)}</span></td>

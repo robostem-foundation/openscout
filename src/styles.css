@@ -9970,6 +9970,13 @@ a.org-note-row:hover { background: var(--surface-2); }
   display: none;
 }
 
+/* Per-value "P"/"D" tags on the auto/driver skills scores — only meaningful on
+   mobile, where the two numbers stack with no column header beside them. Hidden
+   on desktop (the table has AUTO SKILLS / DRIVER SKILLS headers). */
+.ws-m-tag {
+  display: none;
+}
+
 /* ═══ Mobile: World Skills leaderboard becomes a compact dense list ═══
    One row per team: rank · centered team# (linked) · score (accent) ·
    auto/driver stacked small. Max scores, timestamps, name, region, country
@@ -10089,6 +10096,15 @@ a.org-note-row:hover { background: var(--surface-2); }
   }
   .ws-m-stat[data-label="Auto"] strong,
   .ws-m-stat[data-label="Driver"] strong {
+    font-weight: 500;
+  }
+  /* Grey "P" / "D" label before each stacked score (same font size as the
+     number, just fainter) so it's clear which is programming vs driver. */
+  .ws-m-stat[data-label="Auto"] .ws-m-tag,
+  .ws-m-stat[data-label="Driver"] .ws-m-tag {
+    display: inline;
+    margin-right: 3px;
+    color: var(--text-faint);
     font-weight: 500;
   }
 }
