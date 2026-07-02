@@ -2484,7 +2484,7 @@ tbody tr:hover {
 .division-tag {
   margin-left: 8px;
   padding: 1px 6px;
-  border-radius: 10px;
+  border-radius: 6px;
   background: var(--surface-2);
   color: var(--text-muted);
   font-size: 11px;
@@ -5366,7 +5366,7 @@ a.team-card-num:hover {
   color: var(--text);
   font-size: 14px;
 }
-.team-quals-head svg { color: var(--accent); }
+.team-quals-head svg { color: var(--text-muted); }
 .team-quals-note {
   margin-left: auto;
   font-weight: 500;
@@ -5386,15 +5386,14 @@ a.team-card-num:hover {
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
-  padding: 5px 11px;
-  border-radius: 999px;
+  padding: 4px 9px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--surface);
   font-size: 13px;
   cursor: help;
 }
 .team-qual-pill strong { color: var(--text); font-weight: 700; }
-.team-qual-via { color: var(--text-muted); font-size: 12px; }
 /* Tier tints — quiet, so the estimate never reads as an official badge. */
 .team-qual-worlds { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .team-qual-worlds strong { color: var(--accent); }
@@ -5405,8 +5404,8 @@ a.team-card-num:hover {
 /* Inline per-award qualification badge */
 .award-qual-badge {
   flex-shrink: 0;
-  padding: 1px 8px;
-  border-radius: 999px;
+  padding: 1px 7px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--surface-2);
   font-size: 11px;
@@ -5417,14 +5416,6 @@ a.team-card-num:hover {
 .award-qual-badge.team-qual-worlds { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .award-qual-badge.team-qual-signature { color: #c89a00; border-color: color-mix(in srgb, #c89a00 40%, var(--border)); }
 .award-qual-badge.team-qual-championship { color: var(--link); }
-
-/* Small medal flag on an event group summary that grants any qualification */
-.event-group-qual-flag {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 6px;
-  color: var(--accent);
-}
 
 /* Line 2: winning team(s), promoted from tiny pills to readable text */
 .award-item-winners {

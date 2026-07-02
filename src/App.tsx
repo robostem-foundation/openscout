@@ -8934,7 +8934,6 @@ function TeamAwardsByEvent({
                 title={qual.paths.map((p) => `${p.via} @ ${p.eventName}`).join("\n")}
               >
                 <strong>{qual.qualifiesTo}</strong>
-                <span className="team-qual-via">via {qual.paths.map((p) => p.via).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</span>
               </div>
             ))}
           </div>
@@ -8953,7 +8952,6 @@ function TeamAwardsByEvent({
           <details key={group.eventRef.id} className="event-group" open>
             <summary title={groupQualTip}>
               <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} onViewMatches={onViewMatches} />
-              {groupQuals.length > 0 && <span className="event-group-qual-flag" aria-hidden="true"><Medal size={12} /></span>}
             </summary>
             <div className="award-list">
               {sortAwards(group.items).map((award) => {
