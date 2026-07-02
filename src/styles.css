@@ -1619,6 +1619,10 @@ main {
   position: sticky;
   top: 16px;
   align-self: start;
+  /* Establish a stacking context above the event-list column so the region
+     popover (z-index:60 inside this sticky context) is not painted over by
+     list rows. Kept below the topbar (z-index:400). */
+  z-index: 40;
 }
 
 .event-filter-sidebar,
