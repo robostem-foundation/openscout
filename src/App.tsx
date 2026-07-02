@@ -954,6 +954,28 @@ async function fetchTeamsLightUnion(queries: Parameters<typeof api.teamsLight>[0
   };
 }
 
+// Fast first page: one small server-paginated page per region query (teams_light is
+// alphabetical server-side), unioned and sorted so the table can paint the first
+// couple of pages instantly while `fetchTeamsLightUnion` streams in the full set.
+async function fetchTeamsLightFirstPage(
+  queries: Parameters<typeof api.teamsLight>[0][],
+  perPage = 100,
+): Promise<Paginated<Team>> {
+  const results = await Promise.all(queries.map((query) => api.teamsLightPage({ ...query, per_page: perPage, page: 1 })));
+  const data = uniqueTeams(results.flatMap((result) => result.data)).sort(compareTeamsNatural);
+  const meta = results[0]?.meta ?? {
+    current_page: 1,
+    last_page: 1,
+    next_page_url: null,
+    prev_page_url: null,
+    per_page: data.length,
+    total: data.length,
+    from: data.length ? 1 : null,
+    to: data.length || null,
+  };
+  return { meta: { ...meta, per_page: data.length }, data };
+}
+
 // Teams tab search: query teams_light (region-filtered) and, when the query is a
 // complete team number ({1-5 digits}{one letter}, e.g. 32K), also hit the official
 // RobotEvents API in parallel — that team may exist there before RoboSTEM ingests
@@ -4594,8 +4616,9 @@ function TeamsPage() {
   );
   const countryOptions = useMemo(() => dedupeCountryGroups(countries.data ?? []), [countries.data]);
   const countryById = useMemo(() => new Map(countryOptions.map((country) => [country.value, country])), [countryOptions]);
-  // teams_light has no per-team location, so region options come solely from the
-  // canonical RobotEvents countries/regions lists (no team-derived "vex-region").
+  // Region options come from the canonical RobotEvents countries/regions lists so
+  // every region is selectable — not just those present in the currently loaded
+  // teams. (Filtering itself still happens server-side via teams_light country[]/region[].)
   const regionOptions = useMemo<RegionOption[]>(() => {
     const countryItems = countryOptions.map((country) => ({
       key: optionKey("country", country.value),
@@ -4649,6 +4672,9 @@ function TeamsPage() {
 
   useEffect(() => {
     let live = true;
+    // Set once the full set has been served, so the fast first-page paint below
+    // never clobbers complete data if it happens to resolve later.
+    let fullArrived = false;
 
     const loadTeams = async ({ background = false, force = false } = {}) => {
       setError(null);
@@ -4660,6 +4686,7 @@ function TeamsPage() {
           ? await searchTeamsTabTeams(committedSearch, regionQueries, program)
           : await loadCachedTeams(cacheKey, regionQueries, force);
 
+        fullArrived = true;
         if (live) {
           setData(result);
           if (!isSearchingTeams) setLastUpdated(teamListCache.get(cacheKey)?.updatedAt ?? Date.now());
@@ -4708,6 +4735,20 @@ function TeamsPage() {
 
       const cacheAge = cached?.updatedAt ? Date.now() - cached.updatedAt : Number.POSITIVE_INFINITY;
       if (!cached?.data || cacheAge >= teamCacheRefreshMs) {
+        // Cold load (nothing cached to show): paint a fast first page while the full
+        // set fetches. `fullArrived` guards against a late first-page overwriting it.
+        if (!cached?.data) {
+          void fetchTeamsLightFirstPage(regionQueries)
+            .then((first) => {
+              if (live && !fullArrived) {
+                setData(first);
+                setLoading(false);
+              }
+            })
+            .catch(() => {
+              /* full fetch below is the source of truth; ignore first-page failure */
+            });
+        }
         void loadTeams({ background: !!cached?.data });
       } else if (live) {
         // Fresh cache, no fetch scheduled — make sure loading is cleared even on
