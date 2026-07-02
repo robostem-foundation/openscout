@@ -5213,7 +5213,16 @@ a.team-card-num:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: 5px 8px;
-  padding-left: 29px;   /* align under the title text, past the icon + gap */
+  padding-left: 0;
+}
+
+/* Indent winners to align under the title text only when a tier icon is present
+   (tiers 0/1/3). Icon-less awards (Finalists, Design, Judges, etc.) stay flush
+   so the team pill doesn't float indented under empty space. */
+.award-tier-0 .award-item-winners,
+.award-tier-1 .award-item-winners,
+.award-tier-3 .award-item-winners {
+  padding-left: 29px;
 }
 
 .winner-pill {
