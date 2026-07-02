@@ -3138,6 +3138,23 @@ a.team-card-num:hover {
   white-space: nowrap;
 }
 
+/* Brief pulse when a row is deep-linked from a scouting note. */
+.results-match-table tr.match-row-flash td {
+  animation: match-row-flash 2s ease-out;
+}
+
+@keyframes match-row-flash {
+  0% { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+  100% { background: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .results-match-table tr.match-row-flash td {
+    animation: none;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+}
+
 .results-match-table th,
 .alliance-selection-table th {
   background: var(--surface);
@@ -10074,6 +10091,64 @@ a.org-note-row:hover { background: var(--surface-2); }
 .myteam-stat .v { font-weight: 600; font-size: 20px; letter-spacing: -0.01em; margin-top: 5px; font-variant-numeric: tabular-nums; }
 .myteam-stat .v small { font-size: 12px; color: var(--text-faint); font-weight: 500; }
 .myteam-stat .sub { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+
+/* Tap/hover reveal of a skills score's auto vs driver split. */
+.score-breakdown {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.score-breakdown-value {
+  border-bottom: 1px dashed var(--text-faint);
+}
+.score-breakdown:hover .score-breakdown-value,
+.score-breakdown.open .score-breakdown-value,
+.score-breakdown:focus-visible .score-breakdown-value {
+  border-bottom-color: var(--accent);
+}
+.score-breakdown-pop {
+  display: none;
+  position: absolute;
+  z-index: 200;
+  top: calc(100% + 5px);
+  left: 0;
+  min-width: 150px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-align: left;
+  cursor: default;
+}
+.score-breakdown:hover .score-breakdown-pop,
+.score-breakdown.open .score-breakdown-pop,
+.score-breakdown:focus-visible .score-breakdown-pop {
+  display: block;
+}
+.score-breakdown-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 0;
+}
+.score-breakdown-line .k { color: var(--text-muted); }
+.score-breakdown-line .v { font-variant-numeric: tabular-nums; }
+.score-breakdown-line.total {
+  margin-top: 3px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+}
 
 /* up-next panel */
 .myteam-upnext { display: grid; grid-template-columns: auto 1fr auto; gap: 22px; align-items: center; padding: 16px 18px; }
