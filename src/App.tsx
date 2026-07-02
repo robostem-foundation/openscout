@@ -31,6 +31,7 @@ import {
   LogOut,
   MapPin,
   Medal,
+  Menu,
   Palette,
   PanelRight,
   Pause,
@@ -75,6 +76,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
+import { awardQualification, teamQualifications } from "./qualifications";
 import { useOrgMatchNote, setOrgMatchNote, useHasAnyOrgNote, useOrgNotesList } from "./org-notes";
 import type { OrgNoteListItem } from "./org-notes";
 import { useOrgFavorites, useIsOrgFavorite, toggleOrgFavorite } from "./org-favorites";
@@ -2696,6 +2698,145 @@ function MobileTabBar({ path }: { path: string }) {
   );
 }
 
+// Slide-in navigation drawer, mobile-only (see .mobile-nav-drawer in CSS).
+// The bottom tab bar handles the 4–5 primary sections; this drawer surfaces the
+// long tail that otherwise only lives behind the desktop account dropdown /
+// footer: full nav (with labels), Settings, your orgs, theme switch, and the
+// legal links + sign-out. Closes on outside-click, Escape, and route change
+// (the effect in Layout resets `open` when `path` changes).
+function MobileNavDrawer({ path, open, onClose }: { path: string; open: boolean; onClose: () => void }) {
+  const { user, profile, signOut, updateProfile } = useAuth();
+  const theme = useTheme();
+  const orgs = useOrgs();
+  const hasMyTeam = !!(profile?.team_number && profile?.team_program);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Lock body scroll and wire an Escape handler while open.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    // Move focus into the panel for keyboard users.
+    panelRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, onClose]);
+
+  const go = (href: string) => { onClose(); navigate(href); };
+  const chooseTheme = (value: "light" | "dark" | "system") => {
+    applyTheme(value);
+    void updateProfile({ theme: value });
+  };
+
+  const primaryNav: Array<{ href: string; label: string; Icon: typeof House; active: boolean }> = [
+    { href: "/", label: "Home", Icon: House, active: path === "/" },
+    { href: "/events", label: "Events", Icon: CalendarDays, active: path === "/events" || path.startsWith("/event") },
+    { href: "/teams", label: "Teams", Icon: Users, active: path === "/teams" || path.startsWith("/team") },
+    { href: "/skills", label: "Skills", Icon: Trophy, active: path === "/skills" },
+    ...(hasMyTeam ? [{ href: "/my-team", label: "My Team", Icon: Star, active: path === "/my-team" }] : []),
+  ];
+  const name = profile?.display_name || suggestedName(user) || "Account";
+  const team = profile?.team_number ? `${programLabel(profile.team_program)} ${profile.team_number}`.trim() : null;
+
+  return (
+    <div className={`mobile-nav-root ${open ? "open" : ""}`} aria-hidden={!open}>
+      <div className="mobile-nav-scrim" onClick={onClose} />
+      <div
+        className="mobile-nav-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation"
+        ref={panelRef}
+        tabIndex={-1}
+      >
+        <div className="mobile-nav-head">
+          <span className="mobile-nav-title">Menu</span>
+          <button type="button" className="mobile-nav-close" onClick={onClose} aria-label="Close menu">
+            <X size={20} />
+          </button>
+        </div>
+
+        {user && (
+          <div className="mobile-nav-id">
+            <div className="mobile-nav-name">{name}</div>
+            {team && <div className="mobile-nav-sub">{team}</div>}
+          </div>
+        )}
+
+        <nav className="mobile-nav-links" aria-label="Sections">
+          {primaryNav.map(({ href, label, Icon, active }) => (
+            <button
+              key={href}
+              type="button"
+              className={`mobile-nav-link ${active ? "active" : ""}`}
+              aria-current={active ? "page" : undefined}
+              onClick={() => go(href)}
+            >
+              <Icon size={18} />
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="mobile-nav-section">
+          <div className="mobile-nav-seg" role="group" aria-label="Theme">
+            {(["light", "dark", "system"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`mobile-nav-seg-btn ${theme === value ? "active" : ""}`}
+                onClick={() => chooseTheme(value)}
+                aria-pressed={theme === value}
+              >
+                {value.charAt(0).toUpperCase() + value.slice(1)}
+              </button>
+            ))}
+          </div>
+          {orgs.length > 0 && (
+            <>
+              <div className="mobile-nav-section-label">Your {orgs.length === 1 ? "org" : "orgs"}</div>
+              {orgs.map((org) => (
+                <button key={org.orgId} type="button" className="mobile-nav-link" onClick={() => go(`/org/${org.orgId}`)}>
+                  <span className="mobile-nav-org-badge">{(org.name || "?").charAt(0).toUpperCase()}</span>
+                  {org.name}
+                </button>
+              ))}
+            </>
+          )}
+          {user && (
+            <button type="button" className="mobile-nav-link" onClick={() => go("/settings")}>
+              <Settings size={18} />
+              Settings
+            </button>
+          )}
+        </div>
+
+        <div className="mobile-nav-footer">
+          <div className="mobile-nav-legal">
+            <button type="button" onClick={() => go("/terms")}>Terms</button>
+            <button type="button" onClick={() => go("/privacy")}>Privacy</button>
+          </div>
+          {user && (
+            <button
+              type="button"
+              className="mobile-nav-link mobile-nav-signout"
+              onClick={() => { onClose(); void signOut(); }}
+            >
+              <LogOut size={18} />
+              Sign out
+            </button>
+          )}
+          <div className="mobile-nav-copy">© 2026 RoboSTEM Foundation</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Compact light/dark switch for the header island. Reads the live theme pref and
 // flips to the opposite of whatever is currently showing (resolving "system").
 // Cross-fade content whenever `trigger` changes (season / filter / setting
@@ -2749,6 +2890,10 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
   const { profile } = useAuth();
   const hasMyTeam = !!(profile?.team_number && profile?.team_program);
   const routeKey = `${path.split("?")[0].split("#")[0]}:${settingsEpoch}`;
+  const [navOpen, setNavOpen] = useState(false);
+  // Close the mobile drawer whenever the route changes (covers link taps and the
+  // browser back gesture — both flow through the pathname).
+  useEffect(() => { setNavOpen(false); }, [path]);
   const nav = [
     ["/", "OpenScout"],
     ["/events", "Events"],
@@ -2761,6 +2906,15 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
     <>
       <header className="topbar">
         <div className="topbar-inner">
+          <button
+            type="button"
+            className="mobile-nav-trigger"
+            onClick={() => setNavOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={navOpen}
+          >
+            <Menu size={22} />
+          </button>
           <Link href="/" className="brand">
             <img className="brand-logo" src="/openscout-mark-tight.png" alt="" />
             <span className="brand-word">OpenScout</span>
@@ -2796,6 +2950,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
         </div>
       </footer>
       <MobileTabBar path={path} />
+      <MobileNavDrawer path={path} open={navOpen} onClose={() => setNavOpen(false)} />
     </>
   );
 }
@@ -3176,7 +3331,7 @@ async function geocodeCandidates(query: string): Promise<GeoCandidate[]> {
     });
 }
 
-function NearMeLocationBar({ location }: { location: HomeLocationApi }) {
+function NearMeLocationBar({ location, radius, onRadiusChange }: { location: HomeLocationApi; radius: number; onRadiusChange: (radius: number) => void }) {
   const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<GeoCandidate[] | null>(null);
@@ -3232,6 +3387,19 @@ function NearMeLocationBar({ location }: { location: HomeLocationApi }) {
         {location.status === "idle" && <span>Sort events by distance from you.</span>}
       </div>
       <div className="near-me-actions">
+        <label className="near-me-radius">
+          Within
+          <select
+            className="near-me-radius-select"
+            value={radius}
+            onChange={(event) => onRadiusChange(Number(event.target.value))}
+            aria-label="Search radius"
+          >
+            {NEAR_ME_RADIUS_OPTIONS.map((option) => (
+              <option key={option} value={option}>{option} mi</option>
+            ))}
+          </select>
+        </label>
         {editing ? (
           <div className="near-me-search">
             <form
@@ -3290,8 +3458,21 @@ function NearMeLocationBar({ location }: { location: HomeLocationApi }) {
 }
 
 const HOME_EVENTS_PAGE_SIZE = 7;
-// Near me hides anything beyond this radius once a location resolves.
+// Near me hides anything beyond this radius once a location resolves. Used as the
+// default and as the stable heuristic for isAreaBBox (area-vs-point classification).
 const NEAR_ME_RADIUS_MILES = 75;
+const NEAR_ME_RADIUS_OPTIONS = [25, 50, 75, 150, 250];
+const NEAR_ME_RADIUS_DEFAULT = 75;
+const NEAR_ME_RADIUS_KEY = "vex-nearme-radius";
+function loadNearMeRadius(): number {
+  try {
+    const raw = Number(localStorage.getItem(NEAR_ME_RADIUS_KEY));
+    return NEAR_ME_RADIUS_OPTIONS.includes(raw) ? raw : NEAR_ME_RADIUS_DEFAULT;
+  } catch { return NEAR_ME_RADIUS_DEFAULT; }
+}
+function saveNearMeRadius(radius: number) {
+  try { localStorage.setItem(NEAR_ME_RADIUS_KEY, String(radius)); } catch {}
+}
 
 function EventsPager({
   page,
@@ -3463,6 +3644,8 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
 
 function Home() {
   const [homeEventTab, setHomeEventTab] = useState<HomeEventTab>("upcoming");
+  const [nearMeRadius, setNearMeRadius] = useState<number>(() => loadNearMeRadius());
+  useEffect(() => { saveNearMeRadius(nearMeRadius); }, [nearMeRadius]);
   const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>(() => programOptions.filter((option) => option.value).map((option) => option.value));
   const programKey = selectedProgramIds.join(",");
   const { data: events, loading: eventsLoading, error: eventsError } = useAsync(
@@ -3528,7 +3711,7 @@ function Home() {
         .map((event) => ({ event, coords: eventCoords(event) }))
         .filter((entry): entry is { event: Event; coords: LatLon } => entry.coords != null)
         .map((entry) => ({ event: entry.event, distance: haversineMiles(userCoords, entry.coords), coords: entry.coords }))
-        .filter((entry) => entry.distance <= NEAR_ME_RADIUS_MILES || (userBbox != null && coordsInBBox(entry.coords, userBbox)))
+        .filter((entry) => entry.distance <= nearMeRadius || (userBbox != null && coordsInBBox(entry.coords, userBbox)))
         .sort((a, b) => a.distance - b.distance || compareEventsChronological(a.event, b.event))
         .map((entry) => entry.event);
     }
@@ -3536,7 +3719,7 @@ function Home() {
     return baseHomeEvents
       .filter((event) => new Date(event.start ?? 0).getTime() >= today.getTime())
       .sort(compareEventsChronological);
-  }, [baseHomeEvents, homeEventTab, userCoords, userBbox, distanceFor]);
+  }, [baseHomeEvents, homeEventTab, userCoords, userBbox, distanceFor, nearMeRadius]);
 
   return (
     <section className="page home-page">
@@ -3617,7 +3800,7 @@ function Home() {
           icon={<CalendarDays />}
         >
           <Status loading={eventsLoading} error={eventsError} />
-          {homeEventTab === "nearMe" && <NearMeLocationBar location={location} />}
+          {homeEventTab === "nearMe" && <NearMeLocationBar location={location} radius={nearMeRadius} onRadiusChange={setNearMeRadius} />}
           {homeEventTab === "upcoming" ? (
             <UpcomingGroupedEvents events={homeEvents} loading={eventsLoading} />
           ) : homeEventTab === "nearMe" && userCoords && !eventsLoading && homeEvents.length === 0 ? (
@@ -3625,7 +3808,7 @@ function Home() {
               {userBbox ? (
                 <>No events in {location.label ?? "that area"}. </>
               ) : (
-                <>No events within {NEAR_ME_RADIUS_MILES} mi. </>
+                <>No events within {nearMeRadius} mi. </>
               )}
               Try <strong>Near Today</strong> or open the full events list.
             </div>
@@ -5085,14 +5268,16 @@ function TeamsPage() {
   );
 }
 
-function TeamTable({ teams, loading, localPageSize, eventId, divisionMap, splitName = false, skills }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number; divisionMap?: Map<number, string> | null; splitName?: boolean; skills?: { scoreByTeam: Map<number, number>; loading: boolean } }) {
+function TeamTable({ teams, loading, localPageSize, eventId, orgId, divisionMap, splitName = false, skills }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number; orgId?: string; divisionMap?: Map<number, string> | null; splitName?: boolean; skills?: { scoreByTeam: Map<number, number>; loading: boolean } }) {
   const [page, setPage] = useState(1);
   const [expandedTeamId, setExpandedTeamId] = useState<number | null>(null);
   const compareMode = useComparePickMode();
   const quickViewFirst = useQuickViewFirst();
   const totalPages = localPageSize ? Math.max(1, Math.ceil(teams.length / localPageSize)) : 1;
   const visibleTeams = localPageSize ? teams.slice((page - 1) * localPageSize, page * localPageSize) : teams;
-  const colCount = 8 + (splitName ? 1 : 0) + (skills ? 1 : 0);
+  // Picklist action only in the event + org context; hidden in the global /teams directory.
+  const showPicklist = Boolean(orgId && eventId);
+  const colCount = 8 + (splitName ? 1 : 0) + (skills ? 1 : 0) + (showPicklist ? 1 : 0);
 
   useEffect(() => {
     setPage(1);
@@ -5120,6 +5305,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap, splitN
             </th>
             <th className="quick-look-col"></th>
             <th className="compare-col">Compare</th>
+            {showPicklist && <th className="picklist-col">Picklist</th>}
           </tr>
         </thead>
         {loading ? (
@@ -5189,6 +5375,17 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap, splitN
                         teamName={team.team_name ?? undefined}
                       />
                     </td>
+                    {showPicklist && (
+                      <td className="picklist-col" onClick={(e) => e.stopPropagation()}>
+                        <PicklistRowBtn
+                          orgId={orgId!}
+                          eventId={String(eventId)}
+                          teamId={String(team.id)}
+                          teamNumber={team.number}
+                          teamName={team.team_name ?? undefined}
+                        />
+                      </td>
+                    )}
                   </tr>
                   {expanded && (
                     <tr key={`${team.id}-details`} className="team-detail-row">
@@ -5348,6 +5545,18 @@ function TeamRowMatchesPreview({ teamId, eventId }: { teamId: number; eventId?: 
     [teamId, eventId],
   );
   const matches = data?.data ?? [];
+  // No parent Event object here (matches are fetched directly), so infer multi-
+  // division per event from the team's own matches: if the team's matches at an
+  // event span more than one division, tag them so cross-division play is clear.
+  const multiDivisionEventIds = useMemo(() => {
+    const byEvent = new Map<number, Set<number>>();
+    for (const match of matches) {
+      const divs = byEvent.get(match.event.id) ?? new Set<number>();
+      if (match.division?.id != null) divs.add(match.division.id);
+      byEvent.set(match.event.id, divs);
+    }
+    return new Set([...byEvent].filter(([, divs]) => divs.size > 1).map(([id]) => id));
+  }, [matches]);
 
   if (loading) return <div className="muted">Loading matches...</div>;
   if (error) return <div className="muted">Could not load matches.</div>;
@@ -5365,6 +5574,7 @@ function TeamRowMatchesPreview({ teamId, eventId }: { teamId: number; eventId?: 
                 <td>
                   <Link href={`/event/${match.event.code ?? match.event.id}`}>{match.event.name}</Link>
                   <span className="muted inline-muted">{match.name}</span>
+                  <DivisionTag match={match} multiDivision={multiDivisionEventIds.has(match.event.id)} />
                 </td>
                 <td>
                   <AllianceTeamLinks teams={red?.teams} focusTeamId={teamId} />
@@ -5933,7 +6143,9 @@ function EventDetail({ param }: { param: string }) {
       <Status loading={activeStatus.loading} error={activeStatus.error} />
       {tab === "team-matches" && focusTeam && (
         <Panel title={`${focusTeam.number}'s Matches at this Event`} icon={<Gamepad2 />}>
-          <TeamMatchTable matches={focusTeamEventMatches.data?.data ?? []} focusTeamId={focusTeam.id} isIq={isIqProgram(event)} scoreTier={iqScoreTier} />
+          <div className="results-table-scroll">
+            <TeamMatchTable matches={focusTeamEventMatches.data?.data ?? []} focusTeamId={focusTeam.id} isIq={isIqProgram(event)} scoreTier={iqScoreTier} multiDivision={(event.divisions?.length ?? 0) > 1} />
+          </div>
         </Panel>
       )}
       {tab === "info" && (
@@ -5973,7 +6185,7 @@ function EventDetail({ param }: { param: string }) {
           {teams.data.data.length.toLocaleString()} teams{teamsDivFilter ? ` in ${divisions.find((d) => d.id === teamsDivFilter)?.name ?? "division"}` : ""}.
         </div>
       )}
-      {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} eventId={event.id} divisionMap={teamDivisionNameMap} />}
+      {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} eventId={event.id} orgId={primaryOrg?.orgId} divisionMap={teamDivisionNameMap} />}
       {tab === "picklist" && (
         primaryOrg
           ? <PicklistTab event={event} orgId={primaryOrg.orgId} rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} />
@@ -8212,15 +8424,20 @@ function TeamEventCards({
               isIq={isIq}
               loading={detailsLoading}
               hideMatchPreview
+              multiDivision={(event.divisions?.length ?? 0) > 1}
               onViewMatches={() => onViewMatches(event.id)}
             />
-            {/* All matches — identical to the old Matches tab */}
+            {/* All matches — identical to the old Matches tab. Already inside the
+                event-card <details>, so no extra collapse; just an overflow guard. */}
             {!detailsLoading && eventMatches.length > 0 && (
-              <TeamMatchTable
-                matches={eventMatches}
-                focusTeamId={focusTeamId}
-                isIq={isIq}
-              />
+              <div className="results-table-scroll">
+                <TeamMatchTable
+                  matches={eventMatches}
+                  focusTeamId={focusTeamId}
+                  isIq={isIq}
+                  multiDivision={(event.divisions?.length ?? 0) > 1}
+                />
+              </div>
             )}
             {/* Footer: open full event page */}
             <div className="event-card-footer">
@@ -8245,6 +8462,7 @@ function TeamEventDetail({
   isIq = false,
   loading,
   hideMatchPreview = false,
+  multiDivision = false,
   onViewMatches,
 }: {
   matches: Match[];
@@ -8255,6 +8473,7 @@ function TeamEventDetail({
   isIq?: boolean;
   loading: boolean;
   hideMatchPreview?: boolean;
+  multiDivision?: boolean;
   onViewMatches: () => void;
 }) {
   const ranking = rankings[0];
@@ -8333,7 +8552,7 @@ function TeamEventDetail({
         </div>
       </div>
       {!hideMatchPreview && (elimMatches.length ? (
-        <TeamEventMatchPreview matches={elimMatches.slice(0, 3)} focusTeamId={focusTeamId} onViewMatches={onViewMatches} isIq={isIq} />
+        <TeamEventMatchPreview matches={elimMatches.slice(0, 3)} focusTeamId={focusTeamId} onViewMatches={onViewMatches} isIq={isIq} multiDivision={multiDivision} />
       ) : (
         <div className="team-event-no-elims">
           <span className="muted">{isIq ? "No finals matches for this team at this event." : "No elimination matches for this team at this event."}</span>
@@ -8348,7 +8567,7 @@ function TeamEventDetail({
   );
 }
 
-function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = false, scoreTier }: { matches: Match[]; focusTeamId: number; onViewMatches: () => void; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier }) {
+function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = false, scoreTier, multiDivision = false }: { matches: Match[]; focusTeamId: number; onViewMatches: () => void; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; multiDivision?: boolean }) {
   const divisionWins = divisionFinalWins(matches, focusTeamId);
   const lastFinalIds = lastFinalIdsByDivision(matches);
   const elimAllianceNotice = isIq ? null : firstElimAllianceNotice(matches, focusTeamId);
@@ -8376,6 +8595,7 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
                   <span className="team-match-name">
                     {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
                     <span className="team-match-label">{displayName}</span>
+                    <DivisionTag match={match} multiDivision={multiDivision} />
                   </span>
                 </td>
                 <td className={`red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
@@ -8416,7 +8636,15 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
 }
 
 
-function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDivision = false }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; hideDivision?: boolean }) {
+// Small inline division label shown next to a team's match name. Only rendered
+// for multi-division events (Worlds, multi-division championships) so single-
+// division events stay uncluttered.
+function DivisionTag({ match, multiDivision }: { match: Match; multiDivision: boolean }) {
+  if (!multiDivision || !match.division?.name) return null;
+  return <span className="division-tag">{match.division.name}</span>;
+}
+
+function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDivision = false, multiDivision = true }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; hideDivision?: boolean; multiDivision?: boolean }) {
   const sortedMatches = [...matches].sort((a, b) => compareMatchesDisplay(a, b, preferredTeamDivisionId(matches, focusTeamId)));
   const divisionWins = divisionFinalWins(sortedMatches, focusTeamId);
   const lastFinalIds = lastFinalIdsByDivision(sortedMatches);
@@ -8454,7 +8682,7 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDiv
                   <span className="team-match-name">
                     {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
                     <span className="team-match-label">{displayName}</span>
-                    {!hideDivision && match.division?.name && <span className="muted inline-muted">{match.division.name}</span>}
+                    {!hideDivision && <DivisionTag match={match} multiDivision={multiDivision} />}
                   </span>
                 </td>
                 <td className={`red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
@@ -8724,13 +8952,46 @@ function TeamAwardsByEvent({
 }) {
   const groups = groupItemsByEvent(awards, eventIndex, seasonId, direction);
   const programCode = useContext(ProgramContext);
+  // Static award-title → qualification-tier mapping (see src/qualifications.ts).
+  // Conservative: under-badges when uncertain rather than over-claiming a berth.
+  const quals = useMemo(() => teamQualifications(awards, eventIndex), [awards, eventIndex]);
 
   return (
     <Panel title="Awards" icon={<Medal />} collapsible={collapsible} defaultCollapsed={defaultCollapsed}>
+      {quals.length > 0 && (
+        <div className="team-quals" role="group" aria-label="Qualifications">
+          <div className="team-quals-head">
+            <Medal size={15} aria-hidden="true" />
+            <span>Qualifications</span>
+            <small className="team-quals-note" title="Based on typical REC/RECF criteria — always verify with the official qualification rules.">
+              estimated · verify with REC
+            </small>
+          </div>
+          <div className="team-quals-list">
+            {quals.map((qual) => (
+              <div
+                key={qual.qualifiesTo}
+                className={`team-qual-pill team-qual-${qual.qualifiesTo.toLowerCase()}`}
+                title={qual.paths.map((p) => `${p.via} @ ${p.eventName}`).join("\n")}
+              >
+                <strong>{qual.qualifiesTo}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="event-groups">
-        {groups.map((group) => (
+        {groups.map((group) => {
+          // Per-event hover: which awards at this event qualify to what.
+          const groupQuals = group.items
+            .map((award) => ({ award, qual: awardQualification(award, group.event) }))
+            .filter((entry): entry is { award: Award; qual: NonNullable<ReturnType<typeof awardQualification>> } => !!entry.qual);
+          const groupQualTip = groupQuals.length
+            ? groupQuals.map((entry) => `${entry.award.title.replace(/\s*\([^)]*\)\s*$/, "").trim()} → ${entry.qual.label}`).join("\n")
+            : undefined;
+          return (
           <details key={group.eventRef.id} className="event-group" open>
-            <summary>
+            <summary title={groupQualTip}>
               <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} onViewMatches={onViewMatches} />
             </summary>
             <div className="award-list">
@@ -8741,6 +9002,7 @@ function TeamAwardsByEvent({
                 // the end so an early paren in a legit title is preserved.
                 const mainTitle = award.title.replace(/\s*\([^)]*\)\s*$/, "").trim();
                 const TierIcon = tier === 0 ? Star : tier === 1 ? Trophy : tier === 3 ? Medal : null;
+                const qual = awardQualification(award, group.event);
                 return (
                   <article className={`award-item award-tier-${tier}`} key={award.id}>
                     <div className="award-item-title">
@@ -8750,8 +9012,14 @@ function TeamAwardsByEvent({
                         </span>
                       )}
                       <h3>{mainTitle}</h3>
-                      {/* Qualification badge (ERC/Worlds/Signature) would slot in here,
-                          driven by a static award-name → qual-type mapping table. */}
+                      {qual && (
+                        <span
+                          className={`award-qual-badge team-qual-${qual.qualifiesTo.toLowerCase()}`}
+                          title={`${qual.label} — estimated from typical criteria; verify with REC.`}
+                        >
+                          {qual.qualifiesTo}
+                        </span>
+                      )}
                     </div>
                     <div className="award-item-winners">
                       {awardTeamWinners(award).map((winner) => (
@@ -8771,7 +9039,8 @@ function TeamAwardsByEvent({
               })}
             </div>
           </details>
-        ))}
+          );
+        })}
         {!groups.length && <Empty>No awards returned for this season.</Empty>}
       </div>
     </Panel>
@@ -8883,6 +9152,66 @@ function Tabs({
   );
 }
 
+// True on phone-width viewports (matches the ≤560px CSS mobile breakpoint).
+// Used to make match-schedule sections collapsible + collapsed-by-default only
+// on phones; desktop keeps everything expanded and uncollapsible.
+function useIsPhone() {
+  const [isPhone, setIsPhone] = useState(
+    () => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(max-width: 560px)").matches,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 560px)");
+    const onChange = () => setIsPhone(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return isPhone;
+}
+
+// Disclosure wrapper for a match-schedule section. On phones it renders a native
+// <details>/<summary> (title + count + rotating chevron) so long lists can be
+// collapsed to cut clutter; long sections (e.g. qualifications) default closed.
+// On desktop it renders the title + children inline with NO collapse, so the
+// existing desktop layout is unchanged. Native <details> gives us accessible
+// disclosure semantics for free.
+function ScheduleCollapse({
+  title,
+  count,
+  defaultOpenOnPhone = true,
+  headingLevel = "h2",
+  children,
+}: {
+  title: ReactNode;
+  count?: number;
+  defaultOpenOnPhone?: boolean;
+  headingLevel?: "h2" | "h3";
+  children: ReactNode;
+}) {
+  const isPhone = useIsPhone();
+  const Heading = headingLevel;
+  if (!isPhone) {
+    return (
+      <>
+        <Heading>{title}</Heading>
+        {children}
+      </>
+    );
+  }
+  return (
+    <details className="schedule-collapse" open={defaultOpenOnPhone}>
+      <summary>
+        <ChevronRight size={16} className="schedule-collapse-chevron" />
+        <span>{title}</span>
+        {typeof count === "number" && count > 0 && (
+          <span className="schedule-collapse-count">{count.toLocaleString()}</span>
+        )}
+      </summary>
+      {children}
+    </details>
+  );
+}
+
 function MatchesTable({
   matches,
   timestampMap,
@@ -8939,25 +9268,32 @@ function MatchesTable({
   const renderElimGroups = (showNoteRail = false) =>
     playoffOrder
       .filter((key) => playoffGroups.has(key))
-      .map((key) => (
-        <section className="playoff-round" key={key}>
-          <h3>{playoffRoundLabel(key)}</h3>
-          <ResultsMatchTable
-            matches={(playoffGroups.get(key) ?? []).sort(compareMatchesDisplay)}
-            emptyText="No playoff matches returned."
-            timestampMap={timestampMap}
-            presetSupported={presetSupported}
-            presetLoading={presetLoading}
-            presetUrl={presetUrl}
-            onOpenMatch={onOpenMatch}
-            dayNumbers={dayNumbers}
-            showNoteRail={showNoteRail}
-            eventId={eventId}
-            eventTeams={eventTeams}
-            focusMatchId={focusMatchId}
-          />
-        </section>
-      ));
+      .map((key) => {
+        const roundMatches = (playoffGroups.get(key) ?? []).sort(compareMatchesDisplay);
+        return (
+          // Playoff rounds are short — keep them open by default even on phones.
+          <section className="playoff-round" key={key}>
+            <ScheduleCollapse title={playoffRoundLabel(key)} count={roundMatches.length} headingLevel="h3">
+              <div className="results-table-scroll">
+                <ResultsMatchTable
+                  matches={roundMatches}
+                  emptyText="No playoff matches returned."
+                  timestampMap={timestampMap}
+                  presetSupported={presetSupported}
+                  presetLoading={presetLoading}
+                  presetUrl={presetUrl}
+                  onOpenMatch={onOpenMatch}
+                  dayNumbers={dayNumbers}
+                  showNoteRail={showNoteRail}
+                  eventId={eventId}
+                  eventTeams={eventTeams}
+                  focusMatchId={focusMatchId}
+                />
+              </div>
+            </ScheduleCollapse>
+          </section>
+        );
+      });
 
   const dayKeys = [...new Set(matches.map(matchDayKey).filter((key): key is string => !!key))].sort();
   const dayNumbers = dayKeys.length > 1 ? new Map(dayKeys.map((key, index) => [key, index + 1] as const)) : undefined;
@@ -8973,34 +9309,48 @@ function MatchesTable({
   return (
     <div className="results-layout">
       <section className="results-column">
-        <h2>{noQuals ? "Elimination Results" : "Qualification Results"}</h2>
-        {isIq && !noQuals && (
-          <div className="iq-score-legend">
-            <span><i className="dot-gold" /> Top 10% score</span>
-            <span><i className="dot-bronze" /> Top 20% score</span>
-          </div>
-        )}
         {noQuals ? (
-          renderElimGroups(true)
+          // Finals-only events: elimination promoted into the left column. Each
+          // round is its own (short) collapsible; keep the section heading plain.
+          <>
+            <h2>Elimination Results</h2>
+            {renderElimGroups(true)}
+          </>
         ) : (
-          <ResultsMatchTable
-            matches={qualificationMatches}
-            emptyText="No qualification matches returned."
-            matchDirection={qualificationDirection}
-            onToggleMatchDirection={() => setQualificationDirection((direction) => (direction === "asc" ? "desc" : "asc"))}
-            timestampMap={timestampMap}
-            presetSupported={presetSupported}
-            presetLoading={presetLoading}
-            presetUrl={presetUrl}
-            onOpenMatch={onOpenMatch}
-            dayNumbers={dayNumbers}
-            isIq={isIq}
-            scoreTier={scoreTier}
-            showNoteRail
-            eventId={eventId}
-            eventTeams={eventTeams}
-            focusMatchId={focusMatchId}
-          />
+          // Qualification lists are long — collapse by default on phones to cut
+          // clutter (the headline ask), expanded on desktop.
+          <ScheduleCollapse
+            title="Qualification Results"
+            count={qualificationMatches.length}
+            defaultOpenOnPhone={false}
+          >
+            {isIq && (
+              <div className="iq-score-legend">
+                <span><i className="dot-gold" /> Top 10% score</span>
+                <span><i className="dot-bronze" /> Top 20% score</span>
+              </div>
+            )}
+            <div className="results-table-scroll">
+              <ResultsMatchTable
+                matches={qualificationMatches}
+                emptyText="No qualification matches returned."
+                matchDirection={qualificationDirection}
+                onToggleMatchDirection={() => setQualificationDirection((direction) => (direction === "asc" ? "desc" : "asc"))}
+                timestampMap={timestampMap}
+                presetSupported={presetSupported}
+                presetLoading={presetLoading}
+                presetUrl={presetUrl}
+                onOpenMatch={onOpenMatch}
+                dayNumbers={dayNumbers}
+                isIq={isIq}
+                scoreTier={scoreTier}
+                showNoteRail
+                eventId={eventId}
+                eventTeams={eventTeams}
+                focusMatchId={focusMatchId}
+              />
+            </div>
+          </ScheduleCollapse>
         )}
       </section>
       <section className="results-column">
@@ -9014,26 +9364,28 @@ function MatchesTable({
         </div>
         <AllianceSelectionTable alliances={isIq ? iqAllianceRows : allianceRows} iq={isIq} />
         {isIq ? (
-          <>
-            <h2>Finals matches</h2>
+          // Finals are short — keep open by default on phones too.
+          <ScheduleCollapse title="Finals matches" count={iqFinals.length}>
             <div className="iq-score-legend">
               <span><i className="dot-win" /> Winning score</span>
             </div>
-            <ResultsMatchTable
-              matches={iqFinals}
-              emptyText="No finals matches returned."
-              timestampMap={timestampMap}
-              presetSupported={presetSupported}
-              presetLoading={presetLoading}
-              presetUrl={presetUrl}
-              onOpenMatch={onOpenMatch}
-              dayNumbers={dayNumbers}
-              isIq
-              markWinningIqScore
-              labelFor={(match) => iqFinalsLabelMap?.get(match.id)}
-              focusMatchId={focusMatchId}
-            />
-          </>
+            <div className="results-table-scroll">
+              <ResultsMatchTable
+                matches={iqFinals}
+                emptyText="No finals matches returned."
+                timestampMap={timestampMap}
+                presetSupported={presetSupported}
+                presetLoading={presetLoading}
+                presetUrl={presetUrl}
+                onOpenMatch={onOpenMatch}
+                dayNumbers={dayNumbers}
+                isIq
+                markWinningIqScore
+                labelFor={(match) => iqFinalsLabelMap?.get(match.id)}
+                focusMatchId={focusMatchId}
+              />
+            </div>
+          </ScheduleCollapse>
         ) : (
           !noQuals && (
             <>
@@ -10545,6 +10897,13 @@ function WorldSkillsPageInner() {
   const [wpAuto, setWpAuto] = useState("");
   const [wpDriver, setWpDriver] = useState("");
 
+  // Client-side sort — mirrors the Rankings tab's SortableTh/SortState pattern.
+  // Default is official combined-rank ascending (the current order). Numeric
+  // columns default to descending (best first); text/rank default to ascending.
+  const [sort, setSort] = useState<SortState>({ key: "rank", dir: "asc" });
+  const onSort = (key: string) =>
+    setSort((p) => (p.key === key ? { key, dir: p.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "rank" || key === "team" || key === "teamName" || key === "organization" || key === "region" || key === "country" ? "asc" : "desc" }));
+
   // ── Seasons ───────────────────────────────────────────────────────────────
   const seasonsAsync = useAsync(() => api.robotEventsSeasons({ per_page: 250 }), []);
   const programId = program === "v5rc" ? 1 : 41;
@@ -10652,11 +11011,45 @@ function WorldSkillsPageInner() {
     return { filtered: rows, filterMs: Math.round(performance.now() - t0) };
   }, [wsData, debouncedSearch, filterCountries, filterRegions]);
 
-  const PAGE_SIZE = 80;
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const visibleRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Apply the chosen sort to the filtered set before paginating. `filtered`
+  // stays in official combined-rank order for CSV export and "Where Would I
+  // Place?" (which relies on score-descending order); `sorted` drives display.
+  const sorted = useMemo(() => {
+    const sortValue = (row: WorldSkillsEntry): number | string => {
+      switch (sort.key) {
+        case "score": return row.scores.score;
+        case "auto": return row.scores.programming;
+        case "driver": return row.scores.driver;
+        case "maxAuto": return row.scores.maxProgramming ?? -Infinity;
+        case "maxDriver": return row.scores.maxDriver ?? -Infinity;
+        case "autoStop": return row.scores.progStopTime ?? -Infinity;
+        case "driverStop": return row.scores.driverStopTime ?? -Infinity;
+        case "autoTs": return row.scores.progScoredAt ?? "";
+        case "driverTs": return row.scores.driverScoredAt ?? "";
+        case "team": return row.team.team;
+        case "teamName": return row.team.teamName ?? "";
+        case "organization": return row.team.organization ?? "";
+        case "region": return row.team.eventRegion ?? "";
+        case "country": return row.team.country ?? "";
+        default: return row.rank;
+      }
+    };
+    const dir = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const va = sortValue(a), vb = sortValue(b);
+      const cmp = typeof va === "string" || typeof vb === "string"
+        ? String(va).localeCompare(String(vb), undefined, { numeric: true })
+        : (va as number) - (vb as number);
+      // Stable tiebreak on official rank so equal values keep a sensible order.
+      return cmp !== 0 ? dir * cmp : a.rank - b.rank;
+    });
+  }, [filtered, sort]);
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, filterCountries, filterRegions, resolvedSeasonId, grade]);
+  const PAGE_SIZE = 80;
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const visibleRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => { setPage(1); }, [debouncedSearch, filterCountries, filterRegions, resolvedSeasonId, grade, sort]);
 
   const wpPlacement = useMemo(() => {
     if (!wpAuto && !wpDriver) return null;
@@ -10932,7 +11325,7 @@ function WorldSkillsPageInner() {
       {/* Table */}
       <Status loading={wsLoading} error={wsError} />
       {!wsLoading && !wsError && (
-        <CrossFade trigger={`${program}|${grade}|${resolvedSeasonId}|${debouncedSearch}|${filterCountries.join(",")}|${filterRegions.join(",")}|${page}`}>
+        <CrossFade trigger={`${program}|${grade}|${resolvedSeasonId}|${debouncedSearch}|${filterCountries.join(",")}|${filterRegions.join(",")}|${page}|${sort.key}|${sort.dir}`}>
         <div className="ws-mobile-head" aria-hidden="true">
           <span>Rank</span><span>Team</span><span>Score</span><span>Auto / Driver</span>
         </div>
@@ -10959,21 +11352,21 @@ function WorldSkillsPageInner() {
             <thead>
               <tr>
                 <th className="ws-col-num">#</th>
-                <th>Rank</th>
-                <th>Score</th>
-                <th>Auto Skills</th>
-                <th>Driver Skills</th>
-                <th>Max Auto</th>
-                <th>Max Driver</th>
-                <th>Auto Timestamp</th>
-                <th>Driver Timestamp</th>
-                <th>Auto Stop</th>
-                <th>Driver Stop</th>
-                <th>Team</th>
-                <th>Team Name</th>
-                <th>Organization</th>
-                <th>Region</th>
-                <th>Country</th>
+                <SortableTh col="rank" label="Rank" sort={sort} onSort={onSort} title="Official combined-skills rank" />
+                <SortableTh col="score" label="Score" sort={sort} onSort={onSort} />
+                <SortableTh col="auto" label="Auto Skills" sort={sort} onSort={onSort} />
+                <SortableTh col="driver" label="Driver Skills" sort={sort} onSort={onSort} />
+                <SortableTh col="maxAuto" label="Max Auto" sort={sort} onSort={onSort} />
+                <SortableTh col="maxDriver" label="Max Driver" sort={sort} onSort={onSort} />
+                <SortableTh col="autoTs" label="Auto Timestamp" sort={sort} onSort={onSort} />
+                <SortableTh col="driverTs" label="Driver Timestamp" sort={sort} onSort={onSort} />
+                <SortableTh col="autoStop" label="Auto Stop" sort={sort} onSort={onSort} />
+                <SortableTh col="driverStop" label="Driver Stop" sort={sort} onSort={onSort} />
+                <SortableTh col="team" label="Team" sort={sort} onSort={onSort} />
+                <SortableTh col="teamName" label="Team Name" sort={sort} onSort={onSort} />
+                <SortableTh col="organization" label="Organization" sort={sort} onSort={onSort} />
+                <SortableTh col="region" label="Region" sort={sort} onSort={onSort} />
+                <SortableTh col="country" label="Country" sort={sort} onSort={onSort} />
               </tr>
             </thead>
             <tbody>
