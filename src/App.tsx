@@ -1285,6 +1285,14 @@ function shortSeasonName(name?: string | null) {
   return name.split(":").pop()?.trim() || name;
 }
 
+// Earliest season RobotEvents has usable data for (VIQRC Crossover / V5RC Starstruck,
+// 2016-2017). Older seasons return empty matches/skills/rankings, so we hide them from
+// every season picker. Season ids increase monotonically with time, so a numeric floor
+// keeps this correct as new seasons are added.
+const MIN_SEASON_ID = 114;
+
+const seasonHasData = (season: Pick<Season, "id">) => season.id >= MIN_SEASON_ID;
+
 // Compact two-year season label, e.g. "2025-2026: Push Back" -> "25-26".
 function seasonYearLabel(name?: string | null) {
   if (!name) return "";
@@ -3695,6 +3703,7 @@ function EventsPageInner() {
   const seasonOptions = useMemo(() => {
     const selectedPrograms = new Set(selectedProgramIds.map(Number));
     return (seasons.data?.data ?? [])
+      .filter(seasonHasData)
       .filter((season) => !season.program || (vexProgramIds.includes(season.program.id) && (!selectedPrograms.size || selectedPrograms.has(season.program.id))))
       .map((season) => ({ id: season.id, label: shortSeasonName(season.name), program: season.program?.code ?? "" }))
       .sort((a, b) => b.id - a.id);
@@ -4422,6 +4431,7 @@ function TeamsPage() {
     if (!pid) return null;
     return (
       (seasonsAsync.data?.data ?? [])
+        .filter(seasonHasData)
         .filter((season) => season.program?.id === pid)
         .sort((a, b) => b.id - a.id)[0]?.id ?? null
     );
@@ -10246,6 +10256,7 @@ function WorldSkillsPageInner() {
   const seasonOptions = useMemo(
     () =>
       (seasonsAsync.data?.data ?? [])
+        .filter(seasonHasData)
         .filter((s) => s.program?.id === programId)
         .sort((a, b) => b.id - a.id)
         .slice(0, 8)
@@ -13547,6 +13558,7 @@ type MyTeamTimelineRow = {
   awardTitle: string | null;
   rank: number | null;
   record: string | null;
+  avgScore: number | null;
   skills: number | null;
   days: number | null;
   nextMatch: string | null;
@@ -13703,7 +13715,10 @@ function MyTeamPage() {
         isNext: false,
         awardTitle,
         rank: rk?.rank ?? null,
-        record: rk ? `${rk.wins ?? 0}–${rk.losses ?? 0}` : null,
+        // VEX IQ is cooperative — no win/loss. Show the teamwork average instead of a
+        // meaningless "0–0" record.
+        record: isIq ? null : (rk ? `${rk.wins ?? 0}–${rk.losses ?? 0}` : null),
+        avgScore: isIq ? (rk?.average_points ?? null) : null,
         skills: sk.combined ?? null,
         days: up ? Math.max(0, Math.round((start - now) / oneDay)) : null,
         nextMatch: live && nextUp ? shortMatchName(nextUp.name) : null,
@@ -13713,7 +13728,7 @@ function MyTeamPage() {
     const firstUp = rows.find((r) => r.state === "up");
     if (firstUp) firstUp.isNext = true;
     return rows;
-  }, [teamEvents, seasonId, seasonAwards, seasonRankings, seasonSkills, nextUp, now]);
+  }, [teamEvents, seasonId, seasonAwards, seasonRankings, seasonSkills, nextUp, now, isIq]);
 
   // Height-match the live timeline to the matches panel and open scrolled to "now".
   const matchesPanelRef = useRef<HTMLDivElement>(null);
@@ -13757,11 +13772,13 @@ function MyTeamPage() {
     } else if (row.state === "live") {
       if (row.rank != null) pieces.push(<>Rank <b>#{row.rank}</b></>);
       if (row.record) pieces.push(<b>{row.record}</b>);
+      else if (row.avgScore != null) pieces.push(<>Avg <b>{row.avgScore}</b></>);
       if (row.nextMatch) pieces.push(<>Next <b>{row.nextMatch}</b></>);
       if (!pieces.length) pieces.push("In progress");
     } else {
       if (row.awardTitle) pieces.push(row.awardTitle);
       if (row.record) pieces.push(<b>{row.record}</b>);
+      else if (row.avgScore != null) pieces.push(<>Avg <b>{row.avgScore}</b></>);
       if (row.skills) pieces.push(<>Skills <b>{row.skills}</b></>);
       if (!pieces.length) pieces.push("Played");
     }
