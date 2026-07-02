@@ -10504,6 +10504,13 @@ function WorldSkillsPageInner() {
   const [wpAuto, setWpAuto] = useState("");
   const [wpDriver, setWpDriver] = useState("");
 
+  // Client-side sort — mirrors the Rankings tab's SortableTh/SortState pattern.
+  // Default is official combined-rank ascending (the current order). Numeric
+  // columns default to descending (best first); text/rank default to ascending.
+  const [sort, setSort] = useState<SortState>({ key: "rank", dir: "asc" });
+  const onSort = (key: string) =>
+    setSort((p) => (p.key === key ? { key, dir: p.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "rank" || key === "team" || key === "teamName" || key === "organization" || key === "region" || key === "country" ? "asc" : "desc" }));
+
   // ── Seasons ───────────────────────────────────────────────────────────────
   const seasonsAsync = useAsync(() => api.robotEventsSeasons({ per_page: 250 }), []);
   const programId = program === "v5rc" ? 1 : 41;
@@ -10611,11 +10618,45 @@ function WorldSkillsPageInner() {
     return { filtered: rows, filterMs: Math.round(performance.now() - t0) };
   }, [wsData, debouncedSearch, filterCountries, filterRegions]);
 
-  const PAGE_SIZE = 80;
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const visibleRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Apply the chosen sort to the filtered set before paginating. `filtered`
+  // stays in official combined-rank order for CSV export and "Where Would I
+  // Place?" (which relies on score-descending order); `sorted` drives display.
+  const sorted = useMemo(() => {
+    const sortValue = (row: WorldSkillsEntry): number | string => {
+      switch (sort.key) {
+        case "score": return row.scores.score;
+        case "auto": return row.scores.programming;
+        case "driver": return row.scores.driver;
+        case "maxAuto": return row.scores.maxProgramming ?? -Infinity;
+        case "maxDriver": return row.scores.maxDriver ?? -Infinity;
+        case "autoStop": return row.scores.progStopTime ?? -Infinity;
+        case "driverStop": return row.scores.driverStopTime ?? -Infinity;
+        case "autoTs": return row.scores.progScoredAt ?? "";
+        case "driverTs": return row.scores.driverScoredAt ?? "";
+        case "team": return row.team.team;
+        case "teamName": return row.team.teamName ?? "";
+        case "organization": return row.team.organization ?? "";
+        case "region": return row.team.eventRegion ?? "";
+        case "country": return row.team.country ?? "";
+        default: return row.rank;
+      }
+    };
+    const dir = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const va = sortValue(a), vb = sortValue(b);
+      const cmp = typeof va === "string" || typeof vb === "string"
+        ? String(va).localeCompare(String(vb), undefined, { numeric: true })
+        : (va as number) - (vb as number);
+      // Stable tiebreak on official rank so equal values keep a sensible order.
+      return cmp !== 0 ? dir * cmp : a.rank - b.rank;
+    });
+  }, [filtered, sort]);
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, filterCountries, filterRegions, resolvedSeasonId, grade]);
+  const PAGE_SIZE = 80;
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const visibleRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => { setPage(1); }, [debouncedSearch, filterCountries, filterRegions, resolvedSeasonId, grade, sort]);
 
   const wpPlacement = useMemo(() => {
     if (!wpAuto && !wpDriver) return null;
@@ -10891,7 +10932,7 @@ function WorldSkillsPageInner() {
       {/* Table */}
       <Status loading={wsLoading} error={wsError} />
       {!wsLoading && !wsError && (
-        <CrossFade trigger={`${program}|${grade}|${resolvedSeasonId}|${debouncedSearch}|${filterCountries.join(",")}|${filterRegions.join(",")}|${page}`}>
+        <CrossFade trigger={`${program}|${grade}|${resolvedSeasonId}|${debouncedSearch}|${filterCountries.join(",")}|${filterRegions.join(",")}|${page}|${sort.key}|${sort.dir}`}>
         <div className="ws-mobile-head" aria-hidden="true">
           <span>Rank</span><span>Team</span><span>Score</span><span>Auto / Driver</span>
         </div>
@@ -10918,21 +10959,21 @@ function WorldSkillsPageInner() {
             <thead>
               <tr>
                 <th className="ws-col-num">#</th>
-                <th>Rank</th>
-                <th>Score</th>
-                <th>Auto Skills</th>
-                <th>Driver Skills</th>
-                <th>Max Auto</th>
-                <th>Max Driver</th>
-                <th>Auto Timestamp</th>
-                <th>Driver Timestamp</th>
-                <th>Auto Stop</th>
-                <th>Driver Stop</th>
-                <th>Team</th>
-                <th>Team Name</th>
-                <th>Organization</th>
-                <th>Region</th>
-                <th>Country</th>
+                <SortableTh col="rank" label="Rank" sort={sort} onSort={onSort} title="Official combined-skills rank" />
+                <SortableTh col="score" label="Score" sort={sort} onSort={onSort} />
+                <SortableTh col="auto" label="Auto Skills" sort={sort} onSort={onSort} />
+                <SortableTh col="driver" label="Driver Skills" sort={sort} onSort={onSort} />
+                <SortableTh col="maxAuto" label="Max Auto" sort={sort} onSort={onSort} />
+                <SortableTh col="maxDriver" label="Max Driver" sort={sort} onSort={onSort} />
+                <SortableTh col="autoTs" label="Auto Timestamp" sort={sort} onSort={onSort} />
+                <SortableTh col="driverTs" label="Driver Timestamp" sort={sort} onSort={onSort} />
+                <SortableTh col="autoStop" label="Auto Stop" sort={sort} onSort={onSort} />
+                <SortableTh col="driverStop" label="Driver Stop" sort={sort} onSort={onSort} />
+                <SortableTh col="team" label="Team" sort={sort} onSort={onSort} />
+                <SortableTh col="teamName" label="Team Name" sort={sort} onSort={onSort} />
+                <SortableTh col="organization" label="Organization" sort={sort} onSort={onSort} />
+                <SortableTh col="region" label="Region" sort={sort} onSort={onSort} />
+                <SortableTh col="country" label="Country" sort={sort} onSort={onSort} />
               </tr>
             </thead>
             <tbody>
