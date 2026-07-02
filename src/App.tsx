@@ -4411,8 +4411,9 @@ function TeamsPage() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [teamView, setTeamView] = useState<"grid" | "list">(() => {
-    if (typeof localStorage === "undefined") return "grid";
-    return localStorage.getItem("teamsView") === "list" ? "list" : "grid";
+    if (typeof localStorage === "undefined") return "list";
+    // Default to list; only honor an explicit prior "grid" choice.
+    return localStorage.getItem("teamsView") === "grid" ? "grid" : "list";
   });
   const [skillsByTeam, setSkillsByTeam] = useState<Map<number, number>>(new Map());
   const [skillsLoading, setSkillsLoading] = useState(false);
