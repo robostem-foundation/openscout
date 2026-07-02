@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  ChevronsLeft,
   ChevronsRight,
   CornerDownLeft,
   ExternalLink,
@@ -2774,15 +2775,16 @@ const homeEventTabs: Array<{ label: string; value: HomeEventTab }> = [
   { label: "Today", value: "today" },
   { label: "Near Today", value: "nearToday" },
   { label: "Near me", value: "nearMe" },
-  { label: "Sigs", value: "sigs" },
+  { label: "Signature", value: "sigs" },
 ];
 
-// Home events program filter — a compact multi-select toggle. "…" groups every
-// non-V5/IQ program (VEX U + VEX AI) under one button.
+// Home events program filter — a compact multi-select toggle. VEX U and VEX AI
+// get their own explicit "U"/"AI" chips (clearer than the old "…" group).
 const HOME_PROGRAM_GROUPS: Array<{ key: string; label: string; title: string; ids: string[] }> = [
   { key: "v5", label: "V5", title: "VEX V5 Robotics Competition", ids: ["1"] },
   { key: "iq", label: "IQ", title: "VEX IQ Robotics Competition", ids: ["41"] },
-  { key: "other", label: "…", title: "Other events (VEX U, VEX AI)", ids: ["4", "57"] },
+  { key: "u", label: "U", title: "VEX U", ids: ["4"] },
+  { key: "ai", label: "AI", title: "VEX AI", ids: ["57"] },
 ];
 
 function HomeProgramToggle({ selected, onChange }: { selected: string[]; onChange: (ids: string[]) => void }) {
@@ -7618,8 +7620,9 @@ function SeasonSelector({
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoRef = useRef<number | null>(null);
   const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
-  // Whether the strip overflows past the right edge (drives the fade + chevron).
+  // Whether the strip overflows past each edge (drives the fade + chevron chips).
   const [moreRight, setMoreRight] = useState(false);
+  const [moreLeft, setMoreLeft] = useState(false);
 
   useLayoutEffect(() => {
     const measure = () => {
@@ -7633,10 +7636,11 @@ function SeasonSelector({
     return () => window.removeEventListener("resize", measure);
   }, [selectedSeasonId, seasons]);
 
-  // Track right-edge overflow as the strip scrolls / resizes.
+  // Track both-edge overflow as the strip scrolls / resizes.
   const updateEdges = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    setMoreLeft(el.scrollLeft > 1);
     setMoreRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
   }, []);
   useEffect(() => {
@@ -7710,6 +7714,17 @@ function SeasonSelector({
     };
     autoRef.current = requestAnimationFrame(step);
   }, [stopAuto]);
+  const startAutoLeft = useCallback(() => {
+    stopAuto();
+    const step = () => {
+      const el = scrollRef.current;
+      if (!el) { autoRef.current = null; return; }
+      if (el.scrollLeft <= 0.5) { autoRef.current = null; return; }
+      el.scrollLeft = Math.max(0, el.scrollLeft - 7);
+      autoRef.current = requestAnimationFrame(step);
+    };
+    autoRef.current = requestAnimationFrame(step);
+  }, [stopAuto]);
   useEffect(() => stopAuto, [stopAuto]);
 
   if (loading || !seasons.length) return null;
@@ -7718,6 +7733,20 @@ function SeasonSelector({
     <div className={`season-toolbar${hideLabel ? " season-toolbar-nolabel" : ""}`}>
       {!hideLabel && <span>Season</span>}
       <div className="season-scroll">
+        {moreLeft && (
+          <div className="season-fade season-fade-left" aria-hidden="true">
+            <button
+              type="button"
+              className="season-more"
+              aria-label="Scroll to earlier seasons"
+              onMouseEnter={startAutoLeft}
+              onMouseLeave={stopAuto}
+              onClick={() => scrollRef.current?.scrollBy({ left: -scrollRef.current.clientWidth * 0.8, behavior: "smooth" })}
+            >
+              <ChevronsLeft size={16} />
+            </button>
+          </div>
+        )}
         <div ref={scrollRef} className="season-scroll-view no-scrollbar">
           <div ref={trackRef} className="relative w-max rounded-lg bg-muted p-1">
             {pill && (
@@ -10368,6 +10397,17 @@ function WorldSkillsPageInner() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
   const debouncedSearch = useDebouncedValue(search);
+  // Phones get a shorter placeholder so it isn't clipped in the narrow field.
+  const [isNarrow, setIsNarrow] = useState(
+    () => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(max-width: 560px)").matches,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 560px)");
+    const onChange = () => setIsNarrow(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
   const [filterCountries, setFilterCountries] = useState<string[]>(() => new URLSearchParams(window.location.search).getAll("country"));
   const [filterRegions, setFilterRegions] = useState<string[]>(() => new URLSearchParams(window.location.search).getAll("region"));
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -10585,7 +10625,7 @@ function WorldSkillsPageInner() {
           <Search size={14} className="ws-search-icon" />
           <input
             className="ws-search-input"
-            placeholder="Search team #, name, org, region, country…"
+            placeholder={isNarrow ? "Search teams…" : "Search team #, name, org, region, country…"}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -10763,6 +10803,9 @@ function WorldSkillsPageInner() {
       <Status loading={wsLoading} error={wsError} />
       {!wsLoading && !wsError && (
         <CrossFade trigger={`${program}|${grade}|${resolvedSeasonId}|${debouncedSearch}|${filterCountries.join(",")}|${filterRegions.join(",")}|${page}`}>
+        <div className="ws-mobile-head" aria-hidden="true">
+          <span>Rank</span><span>Team</span><span>Score</span><span>Auto / Driver</span>
+        </div>
         <div className="ws-table-wrap">
           <table className="ws-table">
             <colgroup>
