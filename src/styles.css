@@ -678,6 +678,25 @@ main {
   gap: 4px;
 }
 
+.near-me-radius {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.near-me-radius-select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 2px 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .near-me-link {
   border: none;
   background: none;
@@ -2459,6 +2478,18 @@ tbody tr:hover {
 
 .inline-muted {
   margin-left: 8px;
+}
+
+/* Compact division label next to a team's match name at multi-division events. */
+.division-tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .team-cell {

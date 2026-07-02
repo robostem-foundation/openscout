@@ -3154,7 +3154,7 @@ async function geocodeCandidates(query: string): Promise<GeoCandidate[]> {
     });
 }
 
-function NearMeLocationBar({ location }: { location: HomeLocationApi }) {
+function NearMeLocationBar({ location, radius, onRadiusChange }: { location: HomeLocationApi; radius: number; onRadiusChange: (radius: number) => void }) {
   const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<GeoCandidate[] | null>(null);
@@ -3210,6 +3210,19 @@ function NearMeLocationBar({ location }: { location: HomeLocationApi }) {
         {location.status === "idle" && <span>Sort events by distance from you.</span>}
       </div>
       <div className="near-me-actions">
+        <label className="near-me-radius">
+          Within
+          <select
+            className="near-me-radius-select"
+            value={radius}
+            onChange={(event) => onRadiusChange(Number(event.target.value))}
+            aria-label="Search radius"
+          >
+            {NEAR_ME_RADIUS_OPTIONS.map((option) => (
+              <option key={option} value={option}>{option} mi</option>
+            ))}
+          </select>
+        </label>
         {editing ? (
           <div className="near-me-search">
             <form
@@ -3268,8 +3281,21 @@ function NearMeLocationBar({ location }: { location: HomeLocationApi }) {
 }
 
 const HOME_EVENTS_PAGE_SIZE = 7;
-// Near me hides anything beyond this radius once a location resolves.
+// Near me hides anything beyond this radius once a location resolves. Used as the
+// default and as the stable heuristic for isAreaBBox (area-vs-point classification).
 const NEAR_ME_RADIUS_MILES = 75;
+const NEAR_ME_RADIUS_OPTIONS = [25, 50, 75, 150, 250];
+const NEAR_ME_RADIUS_DEFAULT = 75;
+const NEAR_ME_RADIUS_KEY = "vex-nearme-radius";
+function loadNearMeRadius(): number {
+  try {
+    const raw = Number(localStorage.getItem(NEAR_ME_RADIUS_KEY));
+    return NEAR_ME_RADIUS_OPTIONS.includes(raw) ? raw : NEAR_ME_RADIUS_DEFAULT;
+  } catch { return NEAR_ME_RADIUS_DEFAULT; }
+}
+function saveNearMeRadius(radius: number) {
+  try { localStorage.setItem(NEAR_ME_RADIUS_KEY, String(radius)); } catch {}
+}
 
 function EventsPager({
   page,
@@ -3441,6 +3467,8 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
 
 function Home() {
   const [homeEventTab, setHomeEventTab] = useState<HomeEventTab>("upcoming");
+  const [nearMeRadius, setNearMeRadius] = useState<number>(() => loadNearMeRadius());
+  useEffect(() => { saveNearMeRadius(nearMeRadius); }, [nearMeRadius]);
   const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>(() => programOptions.filter((option) => option.value).map((option) => option.value));
   const programKey = selectedProgramIds.join(",");
   const { data: events, loading: eventsLoading, error: eventsError } = useAsync(
@@ -3506,7 +3534,7 @@ function Home() {
         .map((event) => ({ event, coords: eventCoords(event) }))
         .filter((entry): entry is { event: Event; coords: LatLon } => entry.coords != null)
         .map((entry) => ({ event: entry.event, distance: haversineMiles(userCoords, entry.coords), coords: entry.coords }))
-        .filter((entry) => entry.distance <= NEAR_ME_RADIUS_MILES || (userBbox != null && coordsInBBox(entry.coords, userBbox)))
+        .filter((entry) => entry.distance <= nearMeRadius || (userBbox != null && coordsInBBox(entry.coords, userBbox)))
         .sort((a, b) => a.distance - b.distance || compareEventsChronological(a.event, b.event))
         .map((entry) => entry.event);
     }
@@ -3514,7 +3542,7 @@ function Home() {
     return baseHomeEvents
       .filter((event) => new Date(event.start ?? 0).getTime() >= today.getTime())
       .sort(compareEventsChronological);
-  }, [baseHomeEvents, homeEventTab, userCoords, userBbox, distanceFor]);
+  }, [baseHomeEvents, homeEventTab, userCoords, userBbox, distanceFor, nearMeRadius]);
 
   return (
     <section className="page home-page">
@@ -3595,7 +3623,7 @@ function Home() {
           icon={<CalendarDays />}
         >
           <Status loading={eventsLoading} error={eventsError} />
-          {homeEventTab === "nearMe" && <NearMeLocationBar location={location} />}
+          {homeEventTab === "nearMe" && <NearMeLocationBar location={location} radius={nearMeRadius} onRadiusChange={setNearMeRadius} />}
           {homeEventTab === "upcoming" ? (
             <UpcomingGroupedEvents events={homeEvents} loading={eventsLoading} />
           ) : homeEventTab === "nearMe" && userCoords && !eventsLoading && homeEvents.length === 0 ? (
@@ -3603,7 +3631,7 @@ function Home() {
               {userBbox ? (
                 <>No events in {location.label ?? "that area"}. </>
               ) : (
-                <>No events within {NEAR_ME_RADIUS_MILES} mi. </>
+                <>No events within {nearMeRadius} mi. </>
               )}
               Try <strong>Near Today</strong> or open the full events list.
             </div>
@@ -5044,14 +5072,16 @@ function TeamsPage() {
   );
 }
 
-function TeamTable({ teams, loading, localPageSize, eventId, divisionMap, splitName = false, skills }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number; divisionMap?: Map<number, string> | null; splitName?: boolean; skills?: { scoreByTeam: Map<number, number>; loading: boolean } }) {
+function TeamTable({ teams, loading, localPageSize, eventId, orgId, divisionMap, splitName = false, skills }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number; orgId?: string; divisionMap?: Map<number, string> | null; splitName?: boolean; skills?: { scoreByTeam: Map<number, number>; loading: boolean } }) {
   const [page, setPage] = useState(1);
   const [expandedTeamId, setExpandedTeamId] = useState<number | null>(null);
   const compareMode = useComparePickMode();
   const quickViewFirst = useQuickViewFirst();
   const totalPages = localPageSize ? Math.max(1, Math.ceil(teams.length / localPageSize)) : 1;
   const visibleTeams = localPageSize ? teams.slice((page - 1) * localPageSize, page * localPageSize) : teams;
-  const colCount = 8 + (splitName ? 1 : 0) + (skills ? 1 : 0);
+  // Picklist action only in the event + org context; hidden in the global /teams directory.
+  const showPicklist = Boolean(orgId && eventId);
+  const colCount = 8 + (splitName ? 1 : 0) + (skills ? 1 : 0) + (showPicklist ? 1 : 0);
 
   useEffect(() => {
     setPage(1);
@@ -5079,6 +5109,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap, splitN
             </th>
             <th className="quick-look-col"></th>
             <th className="compare-col">Compare</th>
+            {showPicklist && <th className="picklist-col">Picklist</th>}
           </tr>
         </thead>
         {loading ? (
@@ -5148,6 +5179,17 @@ function TeamTable({ teams, loading, localPageSize, eventId, divisionMap, splitN
                         teamName={team.team_name ?? undefined}
                       />
                     </td>
+                    {showPicklist && (
+                      <td className="picklist-col" onClick={(e) => e.stopPropagation()}>
+                        <PicklistRowBtn
+                          orgId={orgId!}
+                          eventId={String(eventId)}
+                          teamId={String(team.id)}
+                          teamNumber={team.number}
+                          teamName={team.team_name ?? undefined}
+                        />
+                      </td>
+                    )}
                   </tr>
                   {expanded && (
                     <tr key={`${team.id}-details`} className="team-detail-row">
@@ -5307,6 +5349,18 @@ function TeamRowMatchesPreview({ teamId, eventId }: { teamId: number; eventId?: 
     [teamId, eventId],
   );
   const matches = data?.data ?? [];
+  // No parent Event object here (matches are fetched directly), so infer multi-
+  // division per event from the team's own matches: if the team's matches at an
+  // event span more than one division, tag them so cross-division play is clear.
+  const multiDivisionEventIds = useMemo(() => {
+    const byEvent = new Map<number, Set<number>>();
+    for (const match of matches) {
+      const divs = byEvent.get(match.event.id) ?? new Set<number>();
+      if (match.division?.id != null) divs.add(match.division.id);
+      byEvent.set(match.event.id, divs);
+    }
+    return new Set([...byEvent].filter(([, divs]) => divs.size > 1).map(([id]) => id));
+  }, [matches]);
 
   if (loading) return <div className="muted">Loading matches...</div>;
   if (error) return <div className="muted">Could not load matches.</div>;
@@ -5324,6 +5378,7 @@ function TeamRowMatchesPreview({ teamId, eventId }: { teamId: number; eventId?: 
                 <td>
                   <Link href={`/event/${match.event.code ?? match.event.id}`}>{match.event.name}</Link>
                   <span className="muted inline-muted">{match.name}</span>
+                  <DivisionTag match={match} multiDivision={multiDivisionEventIds.has(match.event.id)} />
                 </td>
                 <td>
                   <AllianceTeamLinks teams={red?.teams} focusTeamId={teamId} />
@@ -5892,7 +5947,7 @@ function EventDetail({ param }: { param: string }) {
       <Status loading={activeStatus.loading} error={activeStatus.error} />
       {tab === "team-matches" && focusTeam && (
         <Panel title={`${focusTeam.number}'s Matches at this Event`} icon={<Gamepad2 />}>
-          <TeamMatchTable matches={focusTeamEventMatches.data?.data ?? []} focusTeamId={focusTeam.id} isIq={isIqProgram(event)} scoreTier={iqScoreTier} />
+          <TeamMatchTable matches={focusTeamEventMatches.data?.data ?? []} focusTeamId={focusTeam.id} isIq={isIqProgram(event)} scoreTier={iqScoreTier} multiDivision={(event.divisions?.length ?? 0) > 1} />
         </Panel>
       )}
       {tab === "info" && (
@@ -5932,7 +5987,7 @@ function EventDetail({ param }: { param: string }) {
           {teams.data.data.length.toLocaleString()} teams{teamsDivFilter ? ` in ${divisions.find((d) => d.id === teamsDivFilter)?.name ?? "division"}` : ""}.
         </div>
       )}
-      {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} eventId={event.id} divisionMap={teamDivisionNameMap} />}
+      {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} eventId={event.id} orgId={primaryOrg?.orgId} divisionMap={teamDivisionNameMap} />}
       {tab === "picklist" && (
         primaryOrg
           ? <PicklistTab event={event} orgId={primaryOrg.orgId} rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} />
@@ -8171,6 +8226,7 @@ function TeamEventCards({
               isIq={isIq}
               loading={detailsLoading}
               hideMatchPreview
+              multiDivision={(event.divisions?.length ?? 0) > 1}
               onViewMatches={() => onViewMatches(event.id)}
             />
             {/* All matches — identical to the old Matches tab */}
@@ -8179,6 +8235,7 @@ function TeamEventCards({
                 matches={eventMatches}
                 focusTeamId={focusTeamId}
                 isIq={isIq}
+                multiDivision={(event.divisions?.length ?? 0) > 1}
               />
             )}
             {/* Footer: open full event page */}
@@ -8204,6 +8261,7 @@ function TeamEventDetail({
   isIq = false,
   loading,
   hideMatchPreview = false,
+  multiDivision = false,
   onViewMatches,
 }: {
   matches: Match[];
@@ -8214,6 +8272,7 @@ function TeamEventDetail({
   isIq?: boolean;
   loading: boolean;
   hideMatchPreview?: boolean;
+  multiDivision?: boolean;
   onViewMatches: () => void;
 }) {
   const ranking = rankings[0];
@@ -8292,7 +8351,7 @@ function TeamEventDetail({
         </div>
       </div>
       {!hideMatchPreview && (elimMatches.length ? (
-        <TeamEventMatchPreview matches={elimMatches.slice(0, 3)} focusTeamId={focusTeamId} onViewMatches={onViewMatches} isIq={isIq} />
+        <TeamEventMatchPreview matches={elimMatches.slice(0, 3)} focusTeamId={focusTeamId} onViewMatches={onViewMatches} isIq={isIq} multiDivision={multiDivision} />
       ) : (
         <div className="team-event-no-elims">
           <span className="muted">{isIq ? "No finals matches for this team at this event." : "No elimination matches for this team at this event."}</span>
@@ -8307,7 +8366,7 @@ function TeamEventDetail({
   );
 }
 
-function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = false, scoreTier }: { matches: Match[]; focusTeamId: number; onViewMatches: () => void; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier }) {
+function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = false, scoreTier, multiDivision = false }: { matches: Match[]; focusTeamId: number; onViewMatches: () => void; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; multiDivision?: boolean }) {
   const divisionWins = divisionFinalWins(matches, focusTeamId);
   const lastFinalIds = lastFinalIdsByDivision(matches);
   const elimAllianceNotice = isIq ? null : firstElimAllianceNotice(matches, focusTeamId);
@@ -8335,6 +8394,7 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
                   <span className="team-match-name">
                     {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
                     <span className="team-match-label">{displayName}</span>
+                    <DivisionTag match={match} multiDivision={multiDivision} />
                   </span>
                 </td>
                 <td className={`red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
@@ -8375,7 +8435,15 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
 }
 
 
-function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDivision = false }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; hideDivision?: boolean }) {
+// Small inline division label shown next to a team's match name. Only rendered
+// for multi-division events (Worlds, multi-division championships) so single-
+// division events stay uncluttered.
+function DivisionTag({ match, multiDivision }: { match: Match; multiDivision: boolean }) {
+  if (!multiDivision || !match.division?.name) return null;
+  return <span className="division-tag">{match.division.name}</span>;
+}
+
+function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDivision = false, multiDivision = true }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; hideDivision?: boolean; multiDivision?: boolean }) {
   const sortedMatches = [...matches].sort((a, b) => compareMatchesDisplay(a, b, preferredTeamDivisionId(matches, focusTeamId)));
   const divisionWins = divisionFinalWins(sortedMatches, focusTeamId);
   const lastFinalIds = lastFinalIdsByDivision(sortedMatches);
@@ -8413,7 +8481,7 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDiv
                   <span className="team-match-name">
                     {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
                     <span className="team-match-label">{displayName}</span>
-                    {!hideDivision && match.division?.name && <span className="muted inline-muted">{match.division.name}</span>}
+                    {!hideDivision && <DivisionTag match={match} multiDivision={multiDivision} />}
                   </span>
                 </td>
                 <td className={`red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
