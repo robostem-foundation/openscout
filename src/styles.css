@@ -4075,6 +4075,96 @@ a.team-card-num:hover {
   }
 }
 
+/* ═══ Mobile: single-column match schedule + density pass ═══
+   The 2-col results grid (fixed-width tables) overflows horizontally on phones.
+   Stack it to one column (reusing the .view-tabs-vertical collapse), let the
+   tables flow to the width, tighten padding, and drop the low-value time/field
+   columns. Each table is wrapped in .results-table-scroll as an overflow safety
+   net. Desktop layout is untouched (this only applies ≤560px). */
+@media (max-width: 560px) {
+  .results-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+  }
+  .results-column:first-child {
+    max-width: 100%;
+  }
+  .results-column h2 {
+    font-size: 22px;
+    margin-bottom: 10px;
+  }
+  .playoff-round h3 {
+    font-size: 17px;
+  }
+
+  /* Horizontal-scroll safety net so a wide table never clips the page. */
+  .results-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Tables flow to available width instead of their fixed desktop widths. */
+  .results-match-table {
+    width: 100%;
+    table-layout: auto;
+    font-size: 13px;
+  }
+  .results-match-table td,
+  .results-match-table th {
+    padding: 5px 7px;
+  }
+  .results-match-col {
+    width: auto;
+  }
+  .results-alliance-col {
+    width: auto;
+  }
+  .results-score-col {
+    width: 78px;
+  }
+  /* Time + field are low-value on a phone; hide in the primary column too
+     (the secondary column already hides them on desktop). */
+  .results-column .result-match-time,
+  .results-column .result-field-name {
+    display: none;
+  }
+
+  /* Collapsible schedule section headers (native <details>/<summary>). */
+  .schedule-collapse > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    list-style: none;
+    padding: 10px 2px;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .schedule-collapse > summary::-webkit-details-marker { display: none; }
+  .schedule-collapse > summary .schedule-collapse-chevron {
+    transition: transform 0.18s ease;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .schedule-collapse[open] > summary .schedule-collapse-chevron {
+    transform: rotate(90deg);
+  }
+  .schedule-collapse > summary .schedule-collapse-count {
+    margin-left: auto;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .schedule-collapse > summary .schedule-collapse-chevron { transition: none; }
+  }
+}
+
+/* Collapse wrapper is a no-op container on desktop (headers/chevron only styled
+   on mobile above); its <details> stays open so desktop layout is unchanged. */
+.schedule-collapse > summary { cursor: default; }
+
 .alliance-selection-table {
   margin-bottom: 28px;
 }
@@ -4882,6 +4972,26 @@ a.team-card-num:hover {
   white-space: nowrap;
 }
 
+/* Overflow guard around match tables. A plain block on desktop (no visual
+   change); on phones the ≤560px rule below turns on horizontal scrolling so a
+   wide table can never clip the page / shift the fixed mobile nav. */
+.results-table-scroll { min-width: 0; }
+
+/* ═══ Mobile: denser team match table ═══ */
+@media (max-width: 560px) {
+  .results-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .team-match-table {
+    font-size: 13px;
+  }
+  .team-match-table th,
+  .team-match-table td {
+    padding: 5px 7px;
+  }
+}
+
 .team-result-badge {
   display: inline-flex;
   align-items: center;
@@ -5205,6 +5315,84 @@ a.team-card-num:hover {
   font-size: 15px;
   font-weight: 650;
   line-height: 1.3;
+}
+
+/* ── Team qualifications (Awards tab) ──
+   Static award-title → qualification-tier mapping (see src/qualifications.ts).
+   Deliberately framed as an estimate ("verify with REC") — never authoritative. */
+.team-quals {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.team-quals-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 650;
+  color: var(--text);
+  font-size: 14px;
+}
+.team-quals-head svg { color: var(--accent); }
+.team-quals-note {
+  margin-left: auto;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: help;
+}
+.team-quals-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.team-qual-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
+  cursor: help;
+}
+.team-qual-pill strong { color: var(--text); font-weight: 700; }
+.team-qual-via { color: var(--text-muted); font-size: 12px; }
+/* Tier tints — quiet, so the estimate never reads as an official badge. */
+.team-qual-worlds { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.team-qual-worlds strong { color: var(--accent); }
+.team-qual-signature { border-color: color-mix(in srgb, #c89a00 45%, var(--border)); }
+.team-qual-signature strong { color: #c89a00; }
+.team-qual-championship strong { color: var(--link); }
+
+/* Inline per-award qualification badge */
+.award-qual-badge {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: help;
+}
+.award-qual-badge.team-qual-worlds { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.award-qual-badge.team-qual-signature { color: #c89a00; border-color: color-mix(in srgb, #c89a00 40%, var(--border)); }
+.award-qual-badge.team-qual-championship { color: var(--link); }
+
+/* Small medal flag on an event group summary that grants any qualification */
+.event-group-qual-flag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--accent);
 }
 
 /* Line 2: winning team(s), promoted from tiny pills to readable text */
@@ -9745,6 +9933,15 @@ a.org-note-row:hover { background: var(--surface-2); }
   display: none;
 }
 
+/* Mobile nav drawer + its hamburger trigger are mobile-only; hidden on desktop.
+   Both are gated back on at ≤560px (where the desktop <nav> hides). */
+.mobile-nav-trigger {
+  display: none;
+}
+.mobile-nav-root {
+  display: none;
+}
+
 @media (max-width: 560px) {
   /* True phones only: nav moves to the bottom tab bar; keep it in the header
      above this width (it fits fine alongside the collapsed search icon). */
@@ -9842,6 +10039,215 @@ a.org-note-row:hover { background: var(--surface-2); }
   .mobile-tab.active {
     color: var(--accent);
     background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
+  /* ── Slide-in nav drawer ──
+     The hamburger sits left of the brand; the drawer holds the long-tail nav
+     (Settings, orgs, theme, legal, sign-out) the bottom bar doesn't cover. */
+  .mobile-nav-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+    border: none;
+    background: transparent;
+    color: var(--text-2);
+    border-radius: 10px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-nav-trigger:active { transform: scale(0.92); }
+
+  /* Root is always displayed on mobile so open/close can transition; the scrim
+     and panel are hidden via opacity/transform until .open. */
+  .mobile-nav-root {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    pointer-events: none;
+  }
+  .mobile-nav-root.open { pointer-events: auto; }
+
+  .mobile-nav-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 0.22s ease;
+  }
+  .mobile-nav-root.open .mobile-nav-scrim { opacity: 1; }
+
+  .mobile-nav-drawer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(86vw, 320px);
+    display: flex;
+    flex-direction: column;
+    padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+    padding-left: calc(14px + env(safe-area-inset-left));
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    box-shadow: 8px 0 30px rgba(0, 0, 0, 0.18);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    transform: translateX(-100%);
+    transition: transform 0.24s ease;
+    outline: none;
+  }
+  .mobile-nav-root.open .mobile-nav-drawer { transform: translateX(0); }
+
+  .mobile-nav-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .mobile-nav-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+  .mobile-nav-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    color: var(--text-2);
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .mobile-nav-id {
+    padding: 8px 4px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    margin-bottom: 10px;
+  }
+  .mobile-nav-name { font-weight: 650; color: var(--text); }
+  .mobile-nav-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+  .mobile-nav-links {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .mobile-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    padding: 11px 10px;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 15px;
+    text-align: left;
+    border-radius: 10px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-nav-link:active { background: var(--surface-2); }
+  .mobile-nav-link.active {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    font-weight: 600;
+  }
+  .mobile-nav-link svg { flex-shrink: 0; }
+
+  .mobile-nav-org-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .mobile-nav-section {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-soft);
+  }
+  .mobile-nav-section-label {
+    padding: 8px 10px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  .mobile-nav-seg {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 8px;
+  }
+  .mobile-nav-seg-btn {
+    flex: 1 1 0;
+    padding: 7px 0;
+    border: none;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 13px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .mobile-nav-seg-btn.active {
+    background: var(--surface);
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+
+  .mobile-nav-footer {
+    margin-top: auto;
+    padding-top: 12px;
+  }
+  .mobile-nav-legal {
+    display: flex;
+    gap: 16px;
+    padding: 6px 10px;
+  }
+  .mobile-nav-legal button {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 4px 0;
+  }
+  .mobile-nav-signout { color: var(--danger, #d14343); }
+  .mobile-nav-copy {
+    padding: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* Respect reduced motion: fade instead of slide. */
+  @media (prefers-reduced-motion: reduce) {
+    .mobile-nav-drawer {
+      transition: opacity 0.15s ease;
+      transform: none;
+      opacity: 0;
+    }
+    .mobile-nav-root.open .mobile-nav-drawer { opacity: 1; }
   }
 
   /* Reserve space so the floating island never hides the footer / last content. */

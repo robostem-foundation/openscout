@@ -31,6 +31,7 @@ import {
   LogOut,
   MapPin,
   Medal,
+  Menu,
   Palette,
   PanelRight,
   Pause,
@@ -75,6 +76,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
+import { awardQualification, teamQualifications } from "./qualifications";
 import { useOrgMatchNote, setOrgMatchNote, useHasAnyOrgNote, useOrgNotesList } from "./org-notes";
 import type { OrgNoteListItem } from "./org-notes";
 import { useOrgFavorites, useIsOrgFavorite, toggleOrgFavorite } from "./org-favorites";
@@ -2674,6 +2676,145 @@ function MobileTabBar({ path }: { path: string }) {
   );
 }
 
+// Slide-in navigation drawer, mobile-only (see .mobile-nav-drawer in CSS).
+// The bottom tab bar handles the 4–5 primary sections; this drawer surfaces the
+// long tail that otherwise only lives behind the desktop account dropdown /
+// footer: full nav (with labels), Settings, your orgs, theme switch, and the
+// legal links + sign-out. Closes on outside-click, Escape, and route change
+// (the effect in Layout resets `open` when `path` changes).
+function MobileNavDrawer({ path, open, onClose }: { path: string; open: boolean; onClose: () => void }) {
+  const { user, profile, signOut, updateProfile } = useAuth();
+  const theme = useTheme();
+  const orgs = useOrgs();
+  const hasMyTeam = !!(profile?.team_number && profile?.team_program);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Lock body scroll and wire an Escape handler while open.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    // Move focus into the panel for keyboard users.
+    panelRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, onClose]);
+
+  const go = (href: string) => { onClose(); navigate(href); };
+  const chooseTheme = (value: "light" | "dark" | "system") => {
+    applyTheme(value);
+    void updateProfile({ theme: value });
+  };
+
+  const primaryNav: Array<{ href: string; label: string; Icon: typeof House; active: boolean }> = [
+    { href: "/", label: "Home", Icon: House, active: path === "/" },
+    { href: "/events", label: "Events", Icon: CalendarDays, active: path === "/events" || path.startsWith("/event") },
+    { href: "/teams", label: "Teams", Icon: Users, active: path === "/teams" || path.startsWith("/team") },
+    { href: "/skills", label: "Skills", Icon: Trophy, active: path === "/skills" },
+    ...(hasMyTeam ? [{ href: "/my-team", label: "My Team", Icon: Star, active: path === "/my-team" }] : []),
+  ];
+  const name = profile?.display_name || suggestedName(user) || "Account";
+  const team = profile?.team_number ? `${programLabel(profile.team_program)} ${profile.team_number}`.trim() : null;
+
+  return (
+    <div className={`mobile-nav-root ${open ? "open" : ""}`} aria-hidden={!open}>
+      <div className="mobile-nav-scrim" onClick={onClose} />
+      <div
+        className="mobile-nav-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation"
+        ref={panelRef}
+        tabIndex={-1}
+      >
+        <div className="mobile-nav-head">
+          <span className="mobile-nav-title">Menu</span>
+          <button type="button" className="mobile-nav-close" onClick={onClose} aria-label="Close menu">
+            <X size={20} />
+          </button>
+        </div>
+
+        {user && (
+          <div className="mobile-nav-id">
+            <div className="mobile-nav-name">{name}</div>
+            {team && <div className="mobile-nav-sub">{team}</div>}
+          </div>
+        )}
+
+        <nav className="mobile-nav-links" aria-label="Sections">
+          {primaryNav.map(({ href, label, Icon, active }) => (
+            <button
+              key={href}
+              type="button"
+              className={`mobile-nav-link ${active ? "active" : ""}`}
+              aria-current={active ? "page" : undefined}
+              onClick={() => go(href)}
+            >
+              <Icon size={18} />
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="mobile-nav-section">
+          <div className="mobile-nav-seg" role="group" aria-label="Theme">
+            {(["light", "dark", "system"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`mobile-nav-seg-btn ${theme === value ? "active" : ""}`}
+                onClick={() => chooseTheme(value)}
+                aria-pressed={theme === value}
+              >
+                {value.charAt(0).toUpperCase() + value.slice(1)}
+              </button>
+            ))}
+          </div>
+          {orgs.length > 0 && (
+            <>
+              <div className="mobile-nav-section-label">Your {orgs.length === 1 ? "org" : "orgs"}</div>
+              {orgs.map((org) => (
+                <button key={org.orgId} type="button" className="mobile-nav-link" onClick={() => go(`/org/${org.orgId}`)}>
+                  <span className="mobile-nav-org-badge">{(org.name || "?").charAt(0).toUpperCase()}</span>
+                  {org.name}
+                </button>
+              ))}
+            </>
+          )}
+          {user && (
+            <button type="button" className="mobile-nav-link" onClick={() => go("/settings")}>
+              <Settings size={18} />
+              Settings
+            </button>
+          )}
+        </div>
+
+        <div className="mobile-nav-footer">
+          <div className="mobile-nav-legal">
+            <button type="button" onClick={() => go("/terms")}>Terms</button>
+            <button type="button" onClick={() => go("/privacy")}>Privacy</button>
+          </div>
+          {user && (
+            <button
+              type="button"
+              className="mobile-nav-link mobile-nav-signout"
+              onClick={() => { onClose(); void signOut(); }}
+            >
+              <LogOut size={18} />
+              Sign out
+            </button>
+          )}
+          <div className="mobile-nav-copy">© 2026 RoboSTEM Foundation</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Compact light/dark switch for the header island. Reads the live theme pref and
 // flips to the opposite of whatever is currently showing (resolving "system").
 // Cross-fade content whenever `trigger` changes (season / filter / setting
@@ -2727,6 +2868,10 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
   const { profile } = useAuth();
   const hasMyTeam = !!(profile?.team_number && profile?.team_program);
   const routeKey = `${path.split("?")[0].split("#")[0]}:${settingsEpoch}`;
+  const [navOpen, setNavOpen] = useState(false);
+  // Close the mobile drawer whenever the route changes (covers link taps and the
+  // browser back gesture — both flow through the pathname).
+  useEffect(() => { setNavOpen(false); }, [path]);
   const nav = [
     ["/", "OpenScout"],
     ["/events", "Events"],
@@ -2739,6 +2884,15 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
     <>
       <header className="topbar">
         <div className="topbar-inner">
+          <button
+            type="button"
+            className="mobile-nav-trigger"
+            onClick={() => setNavOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={navOpen}
+          >
+            <Menu size={22} />
+          </button>
           <Link href="/" className="brand">
             <img className="brand-logo" src="/openscout-mark-tight.png" alt="" />
             <span className="brand-word">OpenScout</span>
@@ -2774,6 +2928,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
         </div>
       </footer>
       <MobileTabBar path={path} />
+      <MobileNavDrawer path={path} open={navOpen} onClose={() => setNavOpen(false)} />
     </>
   );
 }
@@ -5892,7 +6047,9 @@ function EventDetail({ param }: { param: string }) {
       <Status loading={activeStatus.loading} error={activeStatus.error} />
       {tab === "team-matches" && focusTeam && (
         <Panel title={`${focusTeam.number}'s Matches at this Event`} icon={<Gamepad2 />}>
-          <TeamMatchTable matches={focusTeamEventMatches.data?.data ?? []} focusTeamId={focusTeam.id} isIq={isIqProgram(event)} scoreTier={iqScoreTier} />
+          <div className="results-table-scroll">
+            <TeamMatchTable matches={focusTeamEventMatches.data?.data ?? []} focusTeamId={focusTeam.id} isIq={isIqProgram(event)} scoreTier={iqScoreTier} />
+          </div>
         </Panel>
       )}
       {tab === "info" && (
@@ -8173,13 +8330,16 @@ function TeamEventCards({
               hideMatchPreview
               onViewMatches={() => onViewMatches(event.id)}
             />
-            {/* All matches — identical to the old Matches tab */}
+            {/* All matches — identical to the old Matches tab. Already inside the
+                event-card <details>, so no extra collapse; just an overflow guard. */}
             {!detailsLoading && eventMatches.length > 0 && (
-              <TeamMatchTable
-                matches={eventMatches}
-                focusTeamId={focusTeamId}
-                isIq={isIq}
-              />
+              <div className="results-table-scroll">
+                <TeamMatchTable
+                  matches={eventMatches}
+                  focusTeamId={focusTeamId}
+                  isIq={isIq}
+                />
+              </div>
             )}
             {/* Footer: open full event page */}
             <div className="event-card-footer">
@@ -8683,14 +8843,49 @@ function TeamAwardsByEvent({
 }) {
   const groups = groupItemsByEvent(awards, eventIndex, seasonId, direction);
   const programCode = useContext(ProgramContext);
+  // Static award-title → qualification-tier mapping (see src/qualifications.ts).
+  // Conservative: under-badges when uncertain rather than over-claiming a berth.
+  const quals = useMemo(() => teamQualifications(awards, eventIndex), [awards, eventIndex]);
 
   return (
     <Panel title="Awards" icon={<Medal />} collapsible={collapsible} defaultCollapsed={defaultCollapsed}>
+      {quals.length > 0 && (
+        <div className="team-quals" role="group" aria-label="Qualifications">
+          <div className="team-quals-head">
+            <Medal size={15} aria-hidden="true" />
+            <span>Qualifications</span>
+            <small className="team-quals-note" title="Based on typical REC/RECF criteria — always verify with the official qualification rules.">
+              estimated · verify with REC
+            </small>
+          </div>
+          <div className="team-quals-list">
+            {quals.map((qual) => (
+              <div
+                key={qual.qualifiesTo}
+                className={`team-qual-pill team-qual-${qual.qualifiesTo.toLowerCase()}`}
+                title={qual.paths.map((p) => `${p.via} @ ${p.eventName}`).join("\n")}
+              >
+                <strong>{qual.qualifiesTo}</strong>
+                <span className="team-qual-via">via {qual.paths.map((p) => p.via).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="event-groups">
-        {groups.map((group) => (
+        {groups.map((group) => {
+          // Per-event hover: which awards at this event qualify to what.
+          const groupQuals = group.items
+            .map((award) => ({ award, qual: awardQualification(award, group.event) }))
+            .filter((entry): entry is { award: Award; qual: NonNullable<ReturnType<typeof awardQualification>> } => !!entry.qual);
+          const groupQualTip = groupQuals.length
+            ? groupQuals.map((entry) => `${entry.award.title.replace(/\s*\([^)]*\)\s*$/, "").trim()} → ${entry.qual.label}`).join("\n")
+            : undefined;
+          return (
           <details key={group.eventRef.id} className="event-group" open>
-            <summary>
+            <summary title={groupQualTip}>
               <EventGroupTitle eventRef={group.eventRef} event={group.event} count={group.items.length} onViewMatches={onViewMatches} />
+              {groupQuals.length > 0 && <span className="event-group-qual-flag" aria-hidden="true"><Medal size={12} /></span>}
             </summary>
             <div className="award-list">
               {sortAwards(group.items).map((award) => {
@@ -8700,6 +8895,7 @@ function TeamAwardsByEvent({
                 // the end so an early paren in a legit title is preserved.
                 const mainTitle = award.title.replace(/\s*\([^)]*\)\s*$/, "").trim();
                 const TierIcon = tier === 0 ? Star : tier === 1 ? Trophy : tier === 3 ? Medal : null;
+                const qual = awardQualification(award, group.event);
                 return (
                   <article className={`award-item award-tier-${tier}`} key={award.id}>
                     <div className="award-item-title">
@@ -8709,8 +8905,14 @@ function TeamAwardsByEvent({
                         </span>
                       )}
                       <h3>{mainTitle}</h3>
-                      {/* Qualification badge (ERC/Worlds/Signature) would slot in here,
-                          driven by a static award-name → qual-type mapping table. */}
+                      {qual && (
+                        <span
+                          className={`award-qual-badge team-qual-${qual.qualifiesTo.toLowerCase()}`}
+                          title={`${qual.label} — estimated from typical criteria; verify with REC.`}
+                        >
+                          {qual.qualifiesTo}
+                        </span>
+                      )}
                     </div>
                     <div className="award-item-winners">
                       {awardTeamWinners(award).map((winner) => (
@@ -8730,7 +8932,8 @@ function TeamAwardsByEvent({
               })}
             </div>
           </details>
-        ))}
+          );
+        })}
         {!groups.length && <Empty>No awards returned for this season.</Empty>}
       </div>
     </Panel>
@@ -8842,6 +9045,66 @@ function Tabs({
   );
 }
 
+// True on phone-width viewports (matches the ≤560px CSS mobile breakpoint).
+// Used to make match-schedule sections collapsible + collapsed-by-default only
+// on phones; desktop keeps everything expanded and uncollapsible.
+function useIsPhone() {
+  const [isPhone, setIsPhone] = useState(
+    () => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(max-width: 560px)").matches,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 560px)");
+    const onChange = () => setIsPhone(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return isPhone;
+}
+
+// Disclosure wrapper for a match-schedule section. On phones it renders a native
+// <details>/<summary> (title + count + rotating chevron) so long lists can be
+// collapsed to cut clutter; long sections (e.g. qualifications) default closed.
+// On desktop it renders the title + children inline with NO collapse, so the
+// existing desktop layout is unchanged. Native <details> gives us accessible
+// disclosure semantics for free.
+function ScheduleCollapse({
+  title,
+  count,
+  defaultOpenOnPhone = true,
+  headingLevel = "h2",
+  children,
+}: {
+  title: ReactNode;
+  count?: number;
+  defaultOpenOnPhone?: boolean;
+  headingLevel?: "h2" | "h3";
+  children: ReactNode;
+}) {
+  const isPhone = useIsPhone();
+  const Heading = headingLevel;
+  if (!isPhone) {
+    return (
+      <>
+        <Heading>{title}</Heading>
+        {children}
+      </>
+    );
+  }
+  return (
+    <details className="schedule-collapse" open={defaultOpenOnPhone}>
+      <summary>
+        <ChevronRight size={16} className="schedule-collapse-chevron" />
+        <span>{title}</span>
+        {typeof count === "number" && count > 0 && (
+          <span className="schedule-collapse-count">{count.toLocaleString()}</span>
+        )}
+      </summary>
+      {children}
+    </details>
+  );
+}
+
 function MatchesTable({
   matches,
   timestampMap,
@@ -8898,25 +9161,32 @@ function MatchesTable({
   const renderElimGroups = (showNoteRail = false) =>
     playoffOrder
       .filter((key) => playoffGroups.has(key))
-      .map((key) => (
-        <section className="playoff-round" key={key}>
-          <h3>{playoffRoundLabel(key)}</h3>
-          <ResultsMatchTable
-            matches={(playoffGroups.get(key) ?? []).sort(compareMatchesDisplay)}
-            emptyText="No playoff matches returned."
-            timestampMap={timestampMap}
-            presetSupported={presetSupported}
-            presetLoading={presetLoading}
-            presetUrl={presetUrl}
-            onOpenMatch={onOpenMatch}
-            dayNumbers={dayNumbers}
-            showNoteRail={showNoteRail}
-            eventId={eventId}
-            eventTeams={eventTeams}
-            focusMatchId={focusMatchId}
-          />
-        </section>
-      ));
+      .map((key) => {
+        const roundMatches = (playoffGroups.get(key) ?? []).sort(compareMatchesDisplay);
+        return (
+          // Playoff rounds are short — keep them open by default even on phones.
+          <section className="playoff-round" key={key}>
+            <ScheduleCollapse title={playoffRoundLabel(key)} count={roundMatches.length} headingLevel="h3">
+              <div className="results-table-scroll">
+                <ResultsMatchTable
+                  matches={roundMatches}
+                  emptyText="No playoff matches returned."
+                  timestampMap={timestampMap}
+                  presetSupported={presetSupported}
+                  presetLoading={presetLoading}
+                  presetUrl={presetUrl}
+                  onOpenMatch={onOpenMatch}
+                  dayNumbers={dayNumbers}
+                  showNoteRail={showNoteRail}
+                  eventId={eventId}
+                  eventTeams={eventTeams}
+                  focusMatchId={focusMatchId}
+                />
+              </div>
+            </ScheduleCollapse>
+          </section>
+        );
+      });
 
   const dayKeys = [...new Set(matches.map(matchDayKey).filter((key): key is string => !!key))].sort();
   const dayNumbers = dayKeys.length > 1 ? new Map(dayKeys.map((key, index) => [key, index + 1] as const)) : undefined;
@@ -8932,34 +9202,48 @@ function MatchesTable({
   return (
     <div className="results-layout">
       <section className="results-column">
-        <h2>{noQuals ? "Elimination Results" : "Qualification Results"}</h2>
-        {isIq && !noQuals && (
-          <div className="iq-score-legend">
-            <span><i className="dot-gold" /> Top 10% score</span>
-            <span><i className="dot-bronze" /> Top 20% score</span>
-          </div>
-        )}
         {noQuals ? (
-          renderElimGroups(true)
+          // Finals-only events: elimination promoted into the left column. Each
+          // round is its own (short) collapsible; keep the section heading plain.
+          <>
+            <h2>Elimination Results</h2>
+            {renderElimGroups(true)}
+          </>
         ) : (
-          <ResultsMatchTable
-            matches={qualificationMatches}
-            emptyText="No qualification matches returned."
-            matchDirection={qualificationDirection}
-            onToggleMatchDirection={() => setQualificationDirection((direction) => (direction === "asc" ? "desc" : "asc"))}
-            timestampMap={timestampMap}
-            presetSupported={presetSupported}
-            presetLoading={presetLoading}
-            presetUrl={presetUrl}
-            onOpenMatch={onOpenMatch}
-            dayNumbers={dayNumbers}
-            isIq={isIq}
-            scoreTier={scoreTier}
-            showNoteRail
-            eventId={eventId}
-            eventTeams={eventTeams}
-            focusMatchId={focusMatchId}
-          />
+          // Qualification lists are long — collapse by default on phones to cut
+          // clutter (the headline ask), expanded on desktop.
+          <ScheduleCollapse
+            title="Qualification Results"
+            count={qualificationMatches.length}
+            defaultOpenOnPhone={false}
+          >
+            {isIq && (
+              <div className="iq-score-legend">
+                <span><i className="dot-gold" /> Top 10% score</span>
+                <span><i className="dot-bronze" /> Top 20% score</span>
+              </div>
+            )}
+            <div className="results-table-scroll">
+              <ResultsMatchTable
+                matches={qualificationMatches}
+                emptyText="No qualification matches returned."
+                matchDirection={qualificationDirection}
+                onToggleMatchDirection={() => setQualificationDirection((direction) => (direction === "asc" ? "desc" : "asc"))}
+                timestampMap={timestampMap}
+                presetSupported={presetSupported}
+                presetLoading={presetLoading}
+                presetUrl={presetUrl}
+                onOpenMatch={onOpenMatch}
+                dayNumbers={dayNumbers}
+                isIq={isIq}
+                scoreTier={scoreTier}
+                showNoteRail
+                eventId={eventId}
+                eventTeams={eventTeams}
+                focusMatchId={focusMatchId}
+              />
+            </div>
+          </ScheduleCollapse>
         )}
       </section>
       <section className="results-column">
@@ -8973,26 +9257,28 @@ function MatchesTable({
         </div>
         <AllianceSelectionTable alliances={isIq ? iqAllianceRows : allianceRows} iq={isIq} />
         {isIq ? (
-          <>
-            <h2>Finals matches</h2>
+          // Finals are short — keep open by default on phones too.
+          <ScheduleCollapse title="Finals matches" count={iqFinals.length}>
             <div className="iq-score-legend">
               <span><i className="dot-win" /> Winning score</span>
             </div>
-            <ResultsMatchTable
-              matches={iqFinals}
-              emptyText="No finals matches returned."
-              timestampMap={timestampMap}
-              presetSupported={presetSupported}
-              presetLoading={presetLoading}
-              presetUrl={presetUrl}
-              onOpenMatch={onOpenMatch}
-              dayNumbers={dayNumbers}
-              isIq
-              markWinningIqScore
-              labelFor={(match) => iqFinalsLabelMap?.get(match.id)}
-              focusMatchId={focusMatchId}
-            />
-          </>
+            <div className="results-table-scroll">
+              <ResultsMatchTable
+                matches={iqFinals}
+                emptyText="No finals matches returned."
+                timestampMap={timestampMap}
+                presetSupported={presetSupported}
+                presetLoading={presetLoading}
+                presetUrl={presetUrl}
+                onOpenMatch={onOpenMatch}
+                dayNumbers={dayNumbers}
+                isIq
+                markWinningIqScore
+                labelFor={(match) => iqFinalsLabelMap?.get(match.id)}
+                focusMatchId={focusMatchId}
+              />
+            </div>
+          </ScheduleCollapse>
         ) : (
           !noQuals && (
             <>
