@@ -5448,9 +5448,10 @@ a.team-card-num:hover {
 .award-card-awards {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px 18px;
+  align-content: start;
 }
 .award-row {
   display: flex;
