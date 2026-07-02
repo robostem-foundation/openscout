@@ -5429,6 +5429,8 @@ a.team-card-num:hover {
 .award-card-event {
   flex: 0 0 30%;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   padding-right: 18px;
   border-right: 1px solid var(--border);
 }
@@ -5445,6 +5447,13 @@ a.team-card-num:hover {
   font-size: 12px;
   color: var(--text-muted);
 }
+.award-card-event-sku {
+  margin-top: auto;
+  padding-top: 8px;
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-faint);
+}
 .award-card-awards {
   flex: 1;
   min-width: 0;
@@ -5456,12 +5465,13 @@ a.team-card-num:hover {
 .award-row {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 7px;
 }
 .award-row-head {
   display: flex;
   align-items: center;
-  gap: 7px;
+  column-gap: 7px;
+  row-gap: 3px;
   flex-wrap: wrap;
 }
 .award-row-icon {

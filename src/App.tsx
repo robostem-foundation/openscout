@@ -8984,6 +8984,9 @@ function TeamAwardsByEvent({
               <div className="award-card-event-meta">
                 {group.event ? formatEventDateRange(group.event.start, group.event.end) : "Date unavailable"}
               </div>
+              {(group.event?.sku || group.eventRef.code) && (
+                <div className="award-card-event-sku">{group.event?.sku ?? group.eventRef.code}</div>
+              )}
             </div>
             <div className="award-card-awards">
               {sortAwards(group.items).map((award) => {
