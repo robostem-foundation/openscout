@@ -5367,15 +5367,6 @@ a.team-card-num:hover {
   font-size: 14px;
 }
 .team-quals-head svg { color: var(--text-muted); }
-.team-quals-note {
-  margin-left: auto;
-  font-weight: 500;
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  cursor: help;
-}
 .team-quals-list {
   display: flex;
   flex-wrap: wrap;
@@ -5394,7 +5385,7 @@ a.team-card-num:hover {
   cursor: help;
 }
 .team-qual-pill strong { color: var(--text); font-weight: 700; }
-/* Tier tints — quiet, so the estimate never reads as an official badge. */
+/* Tier tints — quiet accents. */
 .team-qual-worlds { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .team-qual-worlds strong { color: var(--accent); }
 .team-qual-signature { border-color: color-mix(in srgb, #c89a00 45%, var(--border)); }
@@ -5416,6 +5407,94 @@ a.team-card-num:hover {
 .award-qual-badge.team-qual-worlds { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .award-qual-badge.team-qual-signature { color: #c89a00; border-color: color-mix(in srgb, #c89a00 40%, var(--border)); }
 .award-qual-badge.team-qual-championship { color: var(--link); }
+
+/* Team-page awards: one card per event — event on the left, a divider, then the
+   full list of awards won on the right (no truncation). */
+.award-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.award-card {
+  display: flex;
+  gap: 18px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.award-card-event {
+  flex: 0 0 30%;
+  min-width: 0;
+  padding-right: 18px;
+  border-right: 1px solid var(--border);
+}
+.award-card-event-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--link);
+}
+.award-card-event-meta {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.award-card-awards {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.award-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.award-row-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.award-row-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.award-tier-0 .award-row-icon { color: var(--accent); }
+.award-tier-1 .award-row-icon { color: #c89a00; }
+.award-row-name {
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.award-row-teams {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+@media (max-width: 560px) {
+  .award-card {
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+  .award-card-event {
+    flex: none;
+    padding-right: 0;
+    padding-bottom: 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .award-card-event-name {
+    white-space: normal;
+  }
+}
 
 /* Line 2: winning team(s), promoted from tiny pills to readable text */
 .award-item-winners {
