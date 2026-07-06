@@ -16,8 +16,7 @@ const EVENTS_PROGRAMS_KEY = "vex-events-programs";
 const EVENTS_FILTERS_KEY = "vex-events-filters";
 const TAB_LAYOUT_KEY = "vex-tab-layout";
 const QUICK_VIEW_FIRST_KEY = "vex-quick-view-first";
-const QUICK_VIEW_EXPAND_KEY = "vex-quick-view-expand-extras";
-const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY, QUICK_VIEW_FIRST_KEY, QUICK_VIEW_EXPAND_KEY] as const;
+const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY, QUICK_VIEW_FIRST_KEY] as const;
 export type SyncedSettingKey = (typeof SYNCED_KEYS)[number];
 
 // Tab orientation for the event/team detail views. "horizontal" matches the
@@ -258,21 +257,3 @@ export function setQuickViewFirst(value: boolean) {
   emitQuickViewFirst();
 }
 
-// Whether the quick-view's Events & Awards sections start expanded (default
-// false → collapsed). Reuses the quick-view listener set.
-function getQuickViewExpandExtras(): boolean {
-  return currentValues[QUICK_VIEW_EXPAND_KEY] === true;
-}
-
-export function useQuickViewExpandExtras(): boolean {
-  return useSyncExternalStore(subscribeQuickViewFirst, getQuickViewExpandExtras, getQuickViewExpandExtras);
-}
-
-export function setQuickViewExpandExtras(value: boolean) {
-  writeLS(QUICK_VIEW_EXPAND_KEY, value);
-  const next: Values = { ...currentValues, [QUICK_VIEW_EXPAND_KEY]: value };
-  if (sameValues(next, currentValues)) return;
-  currentValues = next;
-  if (signedIn && supabase && userId) void upsertCloud(supabase, userId, next);
-  emitQuickViewFirst();
-}
