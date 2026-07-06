@@ -7722,32 +7722,35 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
       ? currentEventOprMap().get(teamId)?.opr ?? null
       : null;
   const fmtNum = (v: number | null | undefined) => (v == null ? "—" : Number.isInteger(v) ? String(v) : v.toFixed(1));
-  const rankRow: Array<{ label: string; value: ReactNode }> = isIq
-    ? [
-        { label: "Rank", value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—" },
-        { label: "Avg", value: fmtNum(iqEvt?.avg ?? eventRanking?.average_points ?? null) },
-        { label: "High", value: fmtNum(iqEvt?.high ?? eventRanking?.high_score ?? null) },
-        { label: "Low", value: fmtNum(iqEvt?.low ?? null) },
-      ]
-    : [
-        { label: "Rank", value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—" },
-        { label: "Record", value: eventRanking ? `${eventRanking.wins ?? 0}-${eventRanking.losses ?? 0}-${eventRanking.ties ?? 0}` : "—" },
-        { label: "WP", value: fmtNum(eventRanking?.wp ?? null) },
-        { label: "AP", value: fmtNum(eventRanking?.ap ?? null) },
-      ];
-  // Skills row: rank + driver/prog (attempts shown in the label) + combined.
   const driverSkill = eventSkills.find((s) => (s.type ?? "").toLowerCase().includes("driver"));
   const progSkill = eventSkills.find((s) => !(s.type ?? "").toLowerCase().includes("driver"));
-  const skillRanks = eventSkills.map((s) => s.rank).filter((r): r is number => r != null && r > 0);
-  const skillsRank = skillRanks.length ? Math.min(...skillRanks) : null;
-  const skillLabel = (base: string, s?: Skill) => (s?.attempts != null ? `${base} (${s.attempts})` : base);
   const combinedSkill = driverSkill || progSkill ? (driverSkill?.score ?? 0) + (progSkill?.score ?? 0) : null;
-  const skillsRow: Array<{ label: string; value: ReactNode }> = [
-    { label: "Skills", value: skillsRank != null ? `#${skillsRank}` : "—" },
-    { label: skillLabel("Driver", driverSkill), value: driverSkill?.score ?? "—" },
-    { label: skillLabel("Prog", progSkill), value: progSkill?.score ?? "—" },
-    { label: "Total", value: combinedSkill ?? "—" },
-  ];
+  // Six full-team-view-style cards: rank+record combined, skills combined into a
+  // single Total card with driver/prog runs in the sub line.
+  const skillsSub =
+    driverSkill || progSkill
+      ? `D ${driverSkill?.score ?? 0} (${driverSkill?.attempts ?? 0}) · P ${progSkill?.score ?? 0} (${progSkill?.attempts ?? 0})`
+      : "No skills runs";
+  const statCards: Array<{ label: string; value: ReactNode; sub?: string; loading: boolean }> = isIq
+    ? [
+        { label: "Rank", value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—", loading: eventLoading },
+        { label: "Avg", value: fmtNum(iqEvt?.avg ?? eventRanking?.average_points ?? null), loading: eventLoading },
+        { label: "High", value: fmtNum(iqEvt?.high ?? eventRanking?.high_score ?? null), loading: eventLoading },
+        { label: "Low", value: fmtNum(iqEvt?.low ?? null), loading: eventLoading },
+      ]
+    : [
+        {
+          label: "Rank",
+          value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—",
+          sub: eventRanking ? `${eventRanking.wins ?? 0}-${eventRanking.losses ?? 0}-${eventRanking.ties ?? 0} record` : undefined,
+          loading: eventLoading,
+        },
+        { label: "WP", value: fmtNum(eventRanking?.wp ?? null), loading: eventLoading },
+        { label: "AP", value: fmtNum(eventRanking?.ap ?? null), loading: eventLoading },
+        { label: "Auto WP", value: eventRanking ? rankingAwp(eventRanking) : "—", loading: eventLoading },
+      ];
+  statCards.push({ label: "Skills", value: combinedSkill ?? "—", sub: skillsSub, loading: skillsQ.loading });
+  statCards.push({ label: "OPR", value: evtOpr != null ? evtOpr.toFixed(1) : "—", loading: false });
 
   const goFull = () => {
     onClose();
@@ -7772,6 +7775,7 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
             {team && (
               <div className="quick-view-meta">
                 <ProgramBadge program={team.program} />
+                {teamDivision && <Badge variant="secondary">{teamDivision}</Badge>}
                 <span>{locationLine(team)}</span>
                 <span>{team.grade ?? "Grade unknown"}</span>
               </div>
@@ -7818,25 +7822,10 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
                 <section className="quick-view-event quick-view-cols">
                   <div className="quick-view-stats-col">
                     {contextEvent && <div className="quick-view-event-title">{contextEvent.name}</div>}
-                    <div className="quick-view-stats">
-                      {rankRow.map((c) => (
-                        <div key={c.label} className="quick-view-stat">
-                          <span className="quick-view-stat-label">{c.label}</span>
-                          <span className="quick-view-stat-value">{eventLoading ? "…" : c.value}</span>
-                        </div>
+                    <div className="quick-view-stats about-stats">
+                      {statCards.map((c) => (
+                        <StatCard key={c.label} label={c.label} value={c.loading ? "…" : c.value} sub={c.loading ? undefined : c.sub} />
                       ))}
-                      {skillsRow.map((c) => (
-                        <div key={c.label} className="quick-view-stat">
-                          <span className="quick-view-stat-label">{c.label}</span>
-                          <span className="quick-view-stat-value">{skillsQ.loading ? "…" : c.value}</span>
-                        </div>
-                      ))}
-                      {evtOpr != null && (
-                        <div className="quick-view-stat">
-                          <span className="quick-view-stat-label">OPR</span>
-                          <span className="quick-view-stat-value">{evtOpr.toFixed(1)}</span>
-                        </div>
-                      )}
                     </div>
                     {!matchesQ.loading && qualScores.length > 1 && (
                       <div className="quick-view-trend">
@@ -7846,10 +7835,6 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
                     )}
                   </div>
                   <div className="quick-view-matches-col">
-                    <div className="quick-view-section-title">
-                      Matches
-                      {teamDivision && <span className="quick-view-division">{teamDivision}</span>}
-                    </div>
                     {matchesQ.loading ? (
                       <div className="empty">Loading matches…</div>
                     ) : eventMatches.length ? (
