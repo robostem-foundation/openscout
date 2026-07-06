@@ -8338,15 +8338,6 @@ a.org-note-row:hover { background: var(--surface-2); }
   font-size: 13px;
 }
 
-/* The event name heading — normal case so long names read like the rest of the site. */
-.quick-view-event-title {
-  margin: 0 0 10px;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--text);
-}
-
 /* Two columns: fixed stats rail on the left, matches filling the rest. The rail
    sticks while the match list scrolls under it. */
 .quick-view-cols {

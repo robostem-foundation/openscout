@@ -6563,12 +6563,12 @@ function starPoints(cx: number, cy: number, outer: number, inner: number) {
 
 // Compact recharts sparkline of a team's qual scores in match order — no axes,
 // grid, or tooltip. Visually consistent with TrendChart; used in quick view.
-function ScoreSparkline({ values, height = 44 }: { values: number[]; height?: number }) {
+function ScoreSparkline({ values, labels, height = 44 }: { values: number[]; labels?: string[]; height?: number }) {
   // Unique per-instance gradient id so multiple sparklines don't collide.
   const gradId = `score-spark-fill-${useId().replace(/:/g, "")}`;
   const config: ChartConfig = { score: { label: "Qual score", color: "#5cb85c" } };
   if (values.length < 2) return null;
-  const data = values.map((v, i) => ({ i, score: v }));
+  const data = values.map((v, i) => ({ i, score: v, _label: labels?.[i] }));
   return (
     <ChartContainer config={config} className="w-full" style={{ height, aspectRatio: "auto" }}>
       <AreaChart accessibilityLayer data={data} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
@@ -6578,6 +6578,22 @@ function ScoreSparkline({ values, height = 44 }: { values: number[]; height?: nu
             <stop offset="100%" stopColor="var(--color-score)" stopOpacity={0} />
           </linearGradient>
         </defs>
+        <ChartTooltip
+          cursor={{ strokeDasharray: "3 3" }}
+          content={(props) => {
+            const { active, payload } = props as unknown as {
+              active?: boolean;
+              payload?: ReadonlyArray<{ value?: number | null; payload?: { _label?: string } }>;
+            };
+            if (!active || !payload?.length) return null;
+            return (
+              <div className="rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+                {payload[0]?.payload?._label && <span className="text-muted-foreground">{payload[0].payload._label} · </span>}
+                <span className="font-mono font-medium tabular-nums">{payload[0]?.value}</span>
+              </div>
+            );
+          }}
+        />
         <Area dataKey="score" type="monotone" stroke="var(--color-score)" strokeWidth={1.5} fill={`url(#${gradId})`} isAnimationActive={false} dot={false} />
       </AreaChart>
     </ChartContainer>
@@ -7621,7 +7637,6 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
     [teamId],
   );
   const teamEvents = eventsQ.data?.data ?? [];
-  const eventIndex = useMemo(() => makeEventIndex(teamEvents), [teamEvents]);
 
   const latestSeason = useMemo(() => {
     const bySeason = new Map<number, { id: number; label: string; latest: number }>();
@@ -7701,20 +7716,19 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   const isIq = team ? isIqProgramInfo(team.program) : false;
   const programCode = team ? programSlug(team.program) : (state.programCode ?? "");
   const eventLoading = rankingsQ.loading || (isIq && matchesQ.loading);
-  const contextEvent = contextEventId != null ? eventIndex.get(contextEventId) : undefined;
 
   // Event stat tiles for the panel's lead section.
   const iqEvt = isIq && teamId != null ? iqTeamQualStats(eventMatches, teamId, eventRanking) : null;
   const teamDivision = eventRanking?.division?.name ?? eventMatches.find((m) => m.division?.name)?.division?.name ?? null;
   // Within-event qual-score trend + OPR (only when opened from the current event,
   // where we hold all its matches for the OPR solve).
-  const qualScores = useMemo(
+  const qualTrend = useMemo(
     () =>
       eventMatches
         .filter((m) => m.round === 2)
         .sort((a, b) => a.matchnum - b.matchnum)
-        .map((m) => m.alliances.find((al) => isTeamInAlliance(al, teamId ?? -1))?.score)
-        .filter((s): s is number => typeof s === "number"),
+        .map((m) => ({ label: shortMatchName(m.name), score: m.alliances.find((al) => isTeamInAlliance(al, teamId ?? -1))?.score }))
+        .filter((e): e is { label: string; score: number } => typeof e.score === "number"),
     [eventMatches, teamId],
   );
   const evtOpr =
@@ -7725,32 +7739,42 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   const driverSkill = eventSkills.find((s) => (s.type ?? "").toLowerCase().includes("driver"));
   const progSkill = eventSkills.find((s) => !(s.type ?? "").toLowerCase().includes("driver"));
   const combinedSkill = driverSkill || progSkill ? (driverSkill?.score ?? 0) + (progSkill?.score ?? 0) : null;
-  // Six full-team-view-style cards: rank+record combined, skills combined into a
-  // single Total card with driver/prog runs in the sub line.
-  const skillsSub =
-    driverSkill || progSkill
-      ? `D ${driverSkill?.score ?? 0} (${driverSkill?.attempts ?? 0}) · P ${progSkill?.score ?? 0} (${progSkill?.attempts ?? 0})`
-      : "No skills runs";
+  const skillRanks = eventSkills.map((s) => s.rank).filter((r): r is number => r != null && r > 0);
+  const skillsRank = skillRanks.length ? Math.min(...skillRanks) : null;
+  const attemptsSub = (s?: Skill) => (s?.attempts != null ? `${s.attempts} attempt${s.attempts === 1 ? "" : "s"}` : undefined);
+  // Full-team-view-style cards, three per row:
+  //   V5: Rank·Record·OPR / WP·AP·AWP / Skills(score+rank)·Driver·Prog
+  //   IQ (no record/WP): Rank·Avg·OPR / High·Low·Skills(combined)
   const statCards: Array<{ label: string; value: ReactNode; sub?: string; loading: boolean }> = isIq
     ? [
         { label: "Rank", value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—", loading: eventLoading },
         { label: "Avg", value: fmtNum(iqEvt?.avg ?? eventRanking?.average_points ?? null), loading: eventLoading },
+        { label: "OPR", value: evtOpr != null ? evtOpr.toFixed(1) : "—", loading: false },
         { label: "High", value: fmtNum(iqEvt?.high ?? eventRanking?.high_score ?? null), loading: eventLoading },
         { label: "Low", value: fmtNum(iqEvt?.low ?? null), loading: eventLoading },
+        {
+          label: "Skills",
+          value: combinedSkill ?? "—",
+          sub: driverSkill || progSkill ? `D ${driverSkill?.score ?? 0} (${driverSkill?.attempts ?? 0}) · P ${progSkill?.score ?? 0} (${progSkill?.attempts ?? 0})` : "No skills runs",
+          loading: skillsQ.loading,
+        },
       ]
     : [
-        {
-          label: "Rank",
-          value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—",
-          sub: eventRanking ? `${eventRanking.wins ?? 0}-${eventRanking.losses ?? 0}-${eventRanking.ties ?? 0} record` : undefined,
-          loading: eventLoading,
-        },
+        { label: "Rank", value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—", loading: eventLoading },
+        { label: "Record", value: eventRanking ? `${eventRanking.wins ?? 0}-${eventRanking.losses ?? 0}-${eventRanking.ties ?? 0}` : "—", loading: eventLoading },
+        { label: "OPR", value: evtOpr != null ? evtOpr.toFixed(1) : "—", loading: false },
         { label: "WP", value: fmtNum(eventRanking?.wp ?? null), loading: eventLoading },
         { label: "AP", value: fmtNum(eventRanking?.ap ?? null), loading: eventLoading },
-        { label: "Auto WP", value: eventRanking ? rankingAwp(eventRanking) : "—", loading: eventLoading },
+        { label: "AWP", value: eventRanking ? rankingAwp(eventRanking) : "—", loading: eventLoading },
+        {
+          label: "Skills",
+          value: combinedSkill ?? "—",
+          sub: skillsRank != null ? `#${skillsRank} rank` : "No skills runs",
+          loading: skillsQ.loading,
+        },
+        { label: "Driver", value: driverSkill?.score ?? "—", sub: attemptsSub(driverSkill), loading: skillsQ.loading },
+        { label: "Prog", value: progSkill?.score ?? "—", sub: attemptsSub(progSkill), loading: skillsQ.loading },
       ];
-  statCards.push({ label: "Skills", value: combinedSkill ?? "—", sub: skillsSub, loading: skillsQ.loading });
-  statCards.push({ label: "OPR", value: evtOpr != null ? evtOpr.toFixed(1) : "—", loading: false });
 
   const goFull = () => {
     onClose();
@@ -7821,16 +7845,15 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
               ) : contextEventId != null ? (
                 <section className="quick-view-event quick-view-cols">
                   <div className="quick-view-stats-col">
-                    {contextEvent && <div className="quick-view-event-title">{contextEvent.name}</div>}
                     <div className="quick-view-stats about-stats">
                       {statCards.map((c) => (
                         <StatCard key={c.label} label={c.label} value={c.loading ? "…" : c.value} sub={c.loading ? undefined : c.sub} />
                       ))}
                     </div>
-                    {!matchesQ.loading && qualScores.length > 1 && (
+                    {!matchesQ.loading && qualTrend.length > 1 && (
                       <div className="quick-view-trend">
                         <span className="quick-view-trend-label">Qual score trend</span>
-                        <ScoreSparkline values={qualScores} />
+                        <ScoreSparkline values={qualTrend.map((e) => e.score)} labels={qualTrend.map((e) => e.label)} />
                       </div>
                     )}
                   </div>
