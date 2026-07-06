@@ -7596,7 +7596,6 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const orgs = useOrgs();
   const primaryOrg = orgs[0] ?? null;
-  const expandExtras = useQuickViewExpandExtras();
   // Capture the event context once — quick view is opened from an event, and the
   // panel closes on navigation, so these stay valid for its lifetime.
   const contextEventId = useRef(_currentEventId).current;
@@ -7636,10 +7635,6 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   }, [teamEvents]);
   // Prefer the season of the event we were opened from, so its data is loaded.
   const seasonId = contextSeasonId ?? latestSeason?.id ?? null;
-  const seasonLabel = useMemo(() => {
-    const ev = teamEvents.find((e) => e.season.id === seasonId);
-    return ev ? shortSeasonName(ev.season.name) : latestSeason?.label;
-  }, [teamEvents, seasonId, latestSeason]);
 
   const rankingsQ = useAsync(
     async () => (teamId != null && seasonId ? (await collectAllPages<Ranking>((page) => api.teamRankings(teamId, { "season[]": [seasonId], per_page: 250, page }))).data : []),
@@ -7652,15 +7647,6 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   const matchesQ = useAsync(
     async () => (teamId != null && seasonId ? (await collectAllPages<Match>((page) => api.teamMatches(teamId, { "season[]": [seasonId], per_page: 250, page }))).data : []),
     [teamId, seasonId],
-  );
-  const awardsQ = useAsync(
-    async () => (teamId != null && seasonId ? (await collectAllPages<Award>((page) => api.teamAwards(teamId, { "season[]": [seasonId], per_page: 250, page }))).data : []),
-    [teamId, seasonId],
-  );
-
-  const seasonEvents = useMemo(
-    () => teamEvents.filter((ev) => !seasonId || ev.season.id === seasonId).sort(compareEventsByDirection("asc")),
-    [teamEvents, seasonId],
   );
 
   // ── The event we were opened from: ranking, this team's matches, skills ──
@@ -7707,7 +7693,6 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
 
   const isIq = team ? isIqProgramInfo(team.program) : false;
   const programCode = team ? programSlug(team.program) : (state.programCode ?? "");
-  const aboutLoading = eventsQ.loading || rankingsQ.loading || skillsQ.loading || matchesQ.loading;
   const eventLoading = rankingsQ.loading || (isIq && matchesQ.loading);
   const contextEvent = contextEventId != null ? eventIndex.get(contextEventId) : undefined;
 
@@ -7772,9 +7757,18 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
         onClick={(e) => e.stopPropagation()}
       >
         <div className="quick-view-header">
-          <div className="quick-view-title">
-            <strong>{state.teamNumber}</strong>
-            {(team?.team_name ?? state.teamName) && <span> · {team?.team_name ?? state.teamName}</span>}
+          <div className="quick-view-heading">
+            <div className="quick-view-title">
+              <strong>{state.teamNumber}</strong>
+              {(team?.team_name ?? state.teamName) && <span> · {team?.team_name ?? state.teamName}</span>}
+            </div>
+            {team && (
+              <div className="quick-view-meta">
+                <ProgramBadge program={team.program} />
+                <span>{locationLine(team)}</span>
+                <span>{team.grade ?? "Grade unknown"}</span>
+              </div>
+            )}
           </div>
           <span className="close-btn-wrap">
             <kbd className="esc-hint">Esc</kbd>
@@ -7812,90 +7806,42 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
             <div className="empty">Team not found.</div>
           ) : (
             <ProgramContext.Provider value={programCode}>
-              <div className="quick-view-meta">
-                <ProgramBadge program={team.program} />
-                <span>{locationLine(team)}</span>
-                <span>{team.grade ?? "Grade unknown"}</span>
-              </div>
               {seasonId == null ? (
                 <div className="empty">No season data for this team yet.</div>
-              ) : (
-                <>
-                  {/* Lead with stats for the event we were opened from. */}
-                  {contextEventId != null && (
-                    <section className="quick-view-event">
-                      {contextEvent && <div className="quick-view-event-title">{contextEvent.name}</div>}
-                      <div className="quick-view-stat-row">
-                        {rankRow.map((c) => <EventStatCard key={c.label} label={c.label} value={eventLoading ? "…" : c.value} />)}
-                      </div>
-                      {!matchesQ.loading && (qualScores.length > 1 || evtOpr != null) && (
-                        <div className="quick-view-spark">
-                          {qualScores.length > 1 && (
-                            <div className="quick-view-spark-chart"><ScoreSparkline values={qualScores} /></div>
-                          )}
-                          <span className="quick-view-spark-label">
-                            Qual scores
-                            {evtOpr != null && <> · <strong>OPR {evtOpr.toFixed(1)}</strong></>}
-                          </span>
-                        </div>
+              ) : contextEventId != null ? (
+                <section className="quick-view-event">
+                  {contextEvent && <div className="quick-view-event-title">{contextEvent.name}</div>}
+                  <div className="quick-view-stat-row">
+                    {rankRow.map((c) => <EventStatCard key={c.label} label={c.label} value={eventLoading ? "…" : c.value} />)}
+                  </div>
+                  {!matchesQ.loading && (qualScores.length > 1 || evtOpr != null) && (
+                    <div className="quick-view-spark">
+                      {qualScores.length > 1 && (
+                        <div className="quick-view-spark-chart"><ScoreSparkline values={qualScores} /></div>
                       )}
-                      <div className="quick-view-stat-row">
-                        {skillsRow.map((c) => <EventStatCard key={c.label} label={c.label} value={skillsQ.loading ? "…" : c.value} />)}
-                      </div>
-                      <div className="quick-view-section-title">
-                        Matches
-                        {teamDivision && <span className="quick-view-division">{teamDivision}</span>}
-                      </div>
-                      {matchesQ.loading ? (
-                        <div className="empty">Loading matches…</div>
-                      ) : eventMatches.length ? (
-                        <TeamMatchTable matches={eventMatches} focusTeamId={team.id} isIq={isIq} hideDivision />
-                      ) : (
-                        <div className="empty">No matches for this team at this event.</div>
-                      )}
-                    </section>
+                      <span className="quick-view-spark-label">
+                        Qual scores
+                        {evtOpr != null && <> · <strong>OPR {evtOpr.toFixed(1)}</strong></>}
+                      </span>
+                    </div>
                   )}
-
-                  {/* Season stats below the fold. */}
-                  <div className="quick-view-section-title">Season stats{seasonLabel ? ` · ${seasonLabel}` : ""}</div>
-                  <TeamAboutTab
-                    team={team}
-                    isIq={isIq}
-                    seasonId={seasonId}
-                    seasonLabel={seasonLabel}
-                    rankings={rankingsQ.data ?? []}
-                    skills={skillsQ.data ?? []}
-                    matches={matchesQ.data ?? []}
-                    allEvents={teamEvents}
-                    eventIndex={eventIndex}
-                    loading={aboutLoading}
-                    compact
-                  />
-                  <Panel title={`Events ${seasonEvents.length || ""}`} icon={<CalendarDays />} collapsible defaultCollapsed={!expandExtras}>
-                    {seasonEvents.length ? (
-                      <ul className="quick-view-events">
-                        {seasonEvents.map((ev) => (
-                          <li key={ev.id}>
-                            <Link href={eventPath(ev)} className="quick-view-event-name">{ev.name}</Link>
-                            <span className="quick-view-event-sub">{formatEventDateRange(ev.start, ev.end)} · {locationLine(ev)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="empty">No events this season.</div>
-                    )}
-                  </Panel>
-                  <TeamAwardsByEvent
-                    awards={awardsQ.data ?? []}
-                    eventIndex={eventIndex}
-                    seasonId={seasonId}
-                    focusTeamId={team.id}
-                    focusTeamNumber={team.number}
-                    direction="asc"
-                    collapsible
-                    defaultCollapsed={!expandExtras}
-                  />
-                </>
+                  <div className="quick-view-stat-row">
+                    {skillsRow.map((c) => <EventStatCard key={c.label} label={c.label} value={skillsQ.loading ? "…" : c.value} />)}
+                  </div>
+                  <div className="quick-view-section-title">
+                    Matches
+                    {teamDivision && <span className="quick-view-division">{teamDivision}</span>}
+                  </div>
+                  {matchesQ.loading ? (
+                    <div className="empty">Loading matches…</div>
+                  ) : eventMatches.length ? (
+                    <TeamMatchTable matches={eventMatches} focusTeamId={team.id} isIq={isIq} hideDivision />
+                  ) : (
+                    <div className="empty">No matches for this team at this event.</div>
+                  )}
+                </section>
+              ) : (
+                <div className="empty">Open this from an event to see event stats.</div>
               )}
             </ProgramContext.Provider>
           )}

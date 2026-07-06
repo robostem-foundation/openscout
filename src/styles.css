@@ -8246,6 +8246,13 @@ a.org-note-row:hover { background: var(--surface-2); }
   flex: 0 0 auto;
 }
 
+.quick-view-heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .esc-hint {
   font-size: 10px;
   line-height: 1;
@@ -8311,10 +8318,6 @@ a.org-note-row:hover { background: var(--surface-2); }
 }
 
 /* Space the collapsible Events/Awards panels from the season charts above. */
-.quick-view-body > .panel {
-  margin-top: 14px;
-}
-
 /* Stop scroll from chaining to the page when a modal's scroll area hits its
    edge. The page still scrolls when the cursor is over it (not locked). */
 .quick-view-body,
@@ -8330,7 +8333,6 @@ a.org-note-row:hover { background: var(--surface-2); }
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
   color: var(--text-muted);
   font-size: 13px;
 }
@@ -8397,71 +8399,6 @@ a.org-note-row:hover { background: var(--surface-2); }
   overflow: hidden;
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums; /* steadier numeric widths */
-}
-
-.quick-view-events {
-  list-style: none;
-  margin: 0;
-  padding: 4px 14px 8px;
-}
-
-.quick-view-events li {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--border-soft);
-}
-
-.quick-view-events li:last-child {
-  border-bottom: none;
-}
-
-.quick-view-event-name {
-  font-weight: 500;
-}
-
-.quick-view-event-sub {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-/* Compact the reused team-About cards/charts inside the narrow quick-view panel. */
-.quick-view-panel .about-wrap {
-  gap: 12px;
-}
-/* Header already shows program/location/grade/status — hide the duplicate profile. */
-.quick-view-panel .about-profile {
-  display: none;
-}
-.quick-view-panel .about-stats {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.quick-view-panel .about-stat {
-  padding: 10px 12px;
-}
-.quick-view-panel .about-stat-label {
-  font-size: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.quick-view-panel .about-stat-figure {
-  margin-top: 4px;
-}
-.quick-view-panel .about-stat-value {
-  font-size: 17px;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-/* Drop the sub-text so each card is a tidy label + value, much shorter. */
-.quick-view-panel .about-stat-sub {
-  display: none;
-}
-/* One chart per row — two columns would be too cramped in the drawer. */
-.quick-view-panel .about-charts {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
 }
 
 /* Narrow screens: drop the side drawer for a centered modal. */
