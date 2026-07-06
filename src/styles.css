@@ -8374,6 +8374,7 @@ a.org-note-row:hover { background: var(--surface-2); }
 }
 
 .quick-view-stat-grid .event-stat-card {
+  display: flex;
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
