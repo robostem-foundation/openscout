@@ -7680,6 +7680,13 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
     // Only lock page scroll in the narrow-screen modal mode; the desktop drawer is
     // non-blocking so the page behind it stays scrollable/usable.
     const isModal = window.matchMedia("(max-width: 820px)").matches;
+    // If the sheet would cover the clicked team, nudge the page so the trigger
+    // ends up just above it. 360px/72vh mirrors .quick-view-panel's max-height.
+    if (!isModal && trigger && trigger !== document.body) {
+      const sheetTop = window.innerHeight - Math.min(360, window.innerHeight * 0.72);
+      const overlap = trigger.getBoundingClientRect().bottom - (sheetTop - 12);
+      if (overlap > 0) window.scrollBy({ top: overlap, behavior: "smooth" });
+    }
     const prevOverflow = document.body.style.overflow;
     if (isModal) document.body.style.overflow = "hidden";
     return () => {
