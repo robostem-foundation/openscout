@@ -8196,32 +8196,24 @@ a.org-note-row:hover { background: var(--surface-2); }
 
 .quick-view-panel {
   position: fixed;
-  top: 50px; /* below the sticky topbar (min-height 50px) */
   bottom: 0;
-  width: min(420px, 92vw);
+  left: 50%;
+  width: min(720px, calc(100vw - 32px));
+  max-height: 44vh;
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
   overflow: hidden;
+  transform: translateX(-50%) translateY(100%);
   transition: transform 0.22s ease;
   pointer-events: auto; /* the panel itself stays interactive */
 }
 
-.quick-view-panel.side-right {
-  right: 0;
-  border-left: 1px solid var(--border);
-  transform: translateX(100%);
-}
-
-.quick-view-panel.side-left {
-  left: 0;
-  border-right: 1px solid var(--border);
-  transform: translateX(-100%);
-}
-
 .quick-view-panel.open {
-  transform: translateX(0);
+  transform: translateX(-50%) translateY(0);
 }
 
 .quick-view-header {
@@ -8481,9 +8473,7 @@ a.org-note-row:hover { background: var(--surface-2); }
     backdrop-filter: blur(8px);
     pointer-events: auto; /* modal mode blocks the page + enables click-outside-to-close */
   }
-  .quick-view-panel,
-  .quick-view-panel.side-left,
-  .quick-view-panel.side-right {
+  .quick-view-panel {
     top: 50%;
     left: 50%;
     right: auto;

@@ -256,7 +256,6 @@ type QuickViewState = {
   teamNumber: string;
   programCode?: string;
   teamName?: string | null;
-  side: "left" | "right";
 } | null;
 let _quickView: QuickViewState = null;
 const _quickViewListeners = new Set<() => void>();
@@ -266,11 +265,6 @@ function closeQuickView() { _quickView = null; _emitQuickView(); }
 function subscribeQuickView(l: () => void) { _quickViewListeners.add(l); return () => _quickViewListeners.delete(l); }
 function getQuickView() { return _quickView; }
 function useQuickView() { return useSyncExternalStore(subscribeQuickView, getQuickView, getQuickView); }
-// Choose the drawer side from the click position so the panel doesn't cover what
-// you just clicked (left half → left drawer, right half → right drawer).
-function quickViewSideFromEvent(e: { clientX: number }): "left" | "right" {
-  return e.clientX < window.innerWidth / 2 ? "left" : "right";
-}
 
 // ── Compare pick mode ───────────────────────────────────────────────────────
 let _comparePickMode = false;
@@ -2045,7 +2039,7 @@ function CompareTeamLink({
           if (!quickViewFirst || _currentEventId == null) return;
           e.preventDefault();
           e.stopPropagation();
-          openQuickView({ teamId, teamNumber, programCode, teamName, side: quickViewSideFromEvent(e) });
+          openQuickView({ teamId, teamNumber, programCode, teamName });
         }}
       >
         {content}
@@ -2096,7 +2090,7 @@ function TeamQuickLink({ teamId, teamNumber, programCode, teamName, className, t
         if (!quickViewFirst || _currentEventId == null) return;
         e.preventDefault();
         e.stopPropagation();
-        openQuickView({ teamId, teamNumber, programCode, teamName, side: quickViewSideFromEvent(e) });
+        openQuickView({ teamId, teamNumber, programCode, teamName });
       }}
     >
       {content}
@@ -5315,11 +5309,11 @@ function TeamTable({ teams, loading, localPageSize, eventId, orgId, divisionMap,
               const expanded = expandedTeamId === team.id;
               return (
                 <Fragment key={team.id}>
-                  <tr key={team.id} className={`team-row${compareMode ? " compare-pick-row" : ""}`} onClick={(e) => {
+                  <tr key={team.id} className={`team-row${compareMode ? " compare-pick-row" : ""}`} onClick={() => {
                     if (compareMode) return;
                     // Quick view only inside an event (Teams tab); the /teams list navigates.
                     if (quickViewFirst && _currentEventId != null) {
-                      openQuickView({ teamId: team.id, teamNumber: team.number, programCode: programSlug(team.program), teamName: team.team_name, side: quickViewSideFromEvent(e) });
+                      openQuickView({ teamId: team.id, teamNumber: team.number, programCode: programSlug(team.program), teamName: team.team_name });
                     } else {
                       navigate(teamPath(team));
                     }
@@ -7771,7 +7765,7 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   return (
     <div className="quick-view-overlay" onClick={onClose}>
       <aside
-        className={`quick-view-panel side-${state.side}${mounted ? " open" : ""}`}
+        className={`quick-view-panel${mounted ? " open" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={`Quick view for team ${state.teamNumber}`}
