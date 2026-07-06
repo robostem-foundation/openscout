@@ -8338,16 +8338,6 @@ a.org-note-row:hover { background: var(--surface-2); }
   font-size: 13px;
 }
 
-/* Lead "At this event" section: stat tiles, section titles, matches table. */
-.quick-view-section-title {
-  margin: 16px 0 8px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
 /* The event name heading — normal case so long names read like the rest of the site. */
 .quick-view-event-title {
   margin: 0 0 10px;
@@ -8355,15 +8345,6 @@ a.org-note-row:hover { background: var(--surface-2); }
   font-weight: 600;
   line-height: 1.3;
   color: var(--text);
-}
-
-/* The team's division, shown once next to the Matches heading. */
-.quick-view-division {
-  margin-left: 8px;
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--text-faint);
 }
 
 /* Two columns: fixed stats rail on the left, matches filling the rest. The rail
@@ -8375,7 +8356,7 @@ a.org-note-row:hover { background: var(--surface-2); }
 }
 
 .quick-view-stats-col {
-  flex: 0 0 280px;
+  flex: 0 0 380px;
   min-width: 0;
   position: sticky;
   top: 0;
@@ -8386,42 +8367,26 @@ a.org-note-row:hover { background: var(--surface-2); }
   min-width: 0;
 }
 
-.quick-view-matches-col .quick-view-section-title {
-  margin-top: 0;
+/* Reuses the full team view's hairline stat cells (.about-stats/.about-stat),
+   compacted to fit the rail. */
+.quick-view-stats.about-stats {
+  border-radius: var(--radius);
 }
 
-/* Flat stat block — no per-stat borders; small muted labels over larger values. */
-.quick-view-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px 14px;
+.quick-view-stats .about-stat {
+  padding: 10px 12px;
 }
 
-.quick-view-stat {
-  min-width: 0;
+.quick-view-stats .about-stat-figure {
+  margin-top: 5px;
 }
 
-.quick-view-stat-label {
-  display: block;
+.quick-view-stats .about-stat-value {
+  font-size: 20px;
+}
+
+.quick-view-stats .about-stat-sub {
   font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  margin-bottom: 1px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.quick-view-stat-value {
-  display: block;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.2;
-  color: var(--text);
-  white-space: nowrap; /* never split a hyphenated record like "8-4-0" */
-  font-variant-numeric: tabular-nums; /* steadier numeric widths */
 }
 
 /* Qual-score sparkline under the stats, with a plain caption. */
@@ -8471,9 +8436,6 @@ a.org-note-row:hover { background: var(--surface-2); }
     position: static;
     flex: none;
     width: 100%;
-  }
-  .quick-view-stats {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
