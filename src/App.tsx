@@ -7588,9 +7588,9 @@ function QuickViewPicklistButton({ orgId, eventId, teamId, teamNumber, teamName 
   );
 }
 
-// Sticky side-drawer (centered modal on narrow screens) showing a quick overview
-// of a team — reuses the full team page's About cards/graphs + awards, plus quick
-// actions. Self-contained: loads the team and its latest season's data on its own.
+// Bottom-center sheet (centered modal on narrow screens) showing a quick look at
+// a team at the current event — stats + match table, plus quick actions.
+// Self-contained: loads the team and its latest season's data on its own.
 function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>; onClose: () => void }) {
   const [mounted, setMounted] = useState(false);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -7770,33 +7770,32 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
               </div>
             )}
           </div>
+          <div className="quick-view-actions">
+            <button type="button" className="quick-view-action primary" onClick={goFull}>
+              <ExternalLink size={13} /> Full view
+            </button>
+            <button
+              type="button"
+              className={`quick-view-action${inTray ? " active" : ""}`}
+              disabled={teamId == null || (!canAddToTray() && !inTray)}
+              onClick={() => teamId != null && addOrRemoveCompareTeam(teamId, state.teamNumber, programCode, team?.team_name)}
+            >
+              <Scale size={13} /> {inTray ? "In compare" : "Compare"}
+            </button>
+            {primaryOrg && eventIdForPicklist != null && teamId != null && (
+              <QuickViewPicklistButton
+                orgId={primaryOrg.orgId}
+                eventId={String(eventIdForPicklist)}
+                teamId={String(teamId)}
+                teamNumber={state.teamNumber}
+                teamName={team?.team_name ?? state.teamName ?? undefined}
+              />
+            )}
+          </div>
           <span className="close-btn-wrap">
             <kbd className="esc-hint">Esc</kbd>
             <button ref={closeRef} type="button" className="video-close-btn" onClick={onClose} aria-label="Close quick view">×</button>
           </span>
-        </div>
-
-        <div className="quick-view-actions">
-          <button type="button" className="quick-view-action primary" onClick={goFull}>
-            <ExternalLink size={14} /> Open full team view
-          </button>
-          <button
-            type="button"
-            className={`quick-view-action${inTray ? " active" : ""}`}
-            disabled={teamId == null || (!canAddToTray() && !inTray)}
-            onClick={() => teamId != null && addOrRemoveCompareTeam(teamId, state.teamNumber, programCode, team?.team_name)}
-          >
-            <Scale size={14} /> {inTray ? "In compare" : "Compare"}
-          </button>
-          {primaryOrg && eventIdForPicklist != null && teamId != null && (
-            <QuickViewPicklistButton
-              orgId={primaryOrg.orgId}
-              eventId={String(eventIdForPicklist)}
-              teamId={String(teamId)}
-              teamNumber={state.teamNumber}
-              teamName={team?.team_name ?? state.teamName ?? undefined}
-            />
-          )}
         </div>
 
         <div className="quick-view-body">
@@ -7809,34 +7808,49 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
               {seasonId == null ? (
                 <div className="empty">No season data for this team yet.</div>
               ) : contextEventId != null ? (
-                <section className="quick-view-event">
-                  {contextEvent && <div className="quick-view-event-title">{contextEvent.name}</div>}
-                  <div className="quick-view-stat-grid">
-                    {rankRow.map((c) => <EventStatCard key={c.label} label={c.label} value={eventLoading ? "…" : c.value} />)}
-                    {skillsRow.map((c) => <EventStatCard key={c.label} label={c.label} value={skillsQ.loading ? "…" : c.value} />)}
-                  </div>
-                  {!matchesQ.loading && (qualScores.length > 1 || evtOpr != null) && (
-                    <div className="quick-view-spark">
-                      {qualScores.length > 1 && (
-                        <div className="quick-view-spark-chart"><ScoreSparkline values={qualScores} /></div>
+                <section className="quick-view-event quick-view-cols">
+                  <div className="quick-view-stats-col">
+                    {contextEvent && <div className="quick-view-event-title">{contextEvent.name}</div>}
+                    <div className="quick-view-stats">
+                      {rankRow.map((c) => (
+                        <div key={c.label} className="quick-view-stat">
+                          <span className="quick-view-stat-label">{c.label}</span>
+                          <span className="quick-view-stat-value">{eventLoading ? "…" : c.value}</span>
+                        </div>
+                      ))}
+                      {skillsRow.map((c) => (
+                        <div key={c.label} className="quick-view-stat">
+                          <span className="quick-view-stat-label">{c.label}</span>
+                          <span className="quick-view-stat-value">{skillsQ.loading ? "…" : c.value}</span>
+                        </div>
+                      ))}
+                      {evtOpr != null && (
+                        <div className="quick-view-stat">
+                          <span className="quick-view-stat-label">OPR</span>
+                          <span className="quick-view-stat-value">{evtOpr.toFixed(1)}</span>
+                        </div>
                       )}
-                      <span className="quick-view-spark-label">
-                        Qual scores
-                        {evtOpr != null && <> · <strong>OPR {evtOpr.toFixed(1)}</strong></>}
-                      </span>
                     </div>
-                  )}
-                  <div className="quick-view-section-title">
-                    Matches
-                    {teamDivision && <span className="quick-view-division">{teamDivision}</span>}
+                    {!matchesQ.loading && qualScores.length > 1 && (
+                      <div className="quick-view-trend">
+                        <span className="quick-view-trend-label">Qual score trend</span>
+                        <ScoreSparkline values={qualScores} />
+                      </div>
+                    )}
                   </div>
-                  {matchesQ.loading ? (
-                    <div className="empty">Loading matches…</div>
-                  ) : eventMatches.length ? (
-                    <TeamMatchTable matches={eventMatches} focusTeamId={team.id} isIq={isIq} hideDivision />
-                  ) : (
-                    <div className="empty">No matches for this team at this event.</div>
-                  )}
+                  <div className="quick-view-matches-col">
+                    <div className="quick-view-section-title">
+                      Matches
+                      {teamDivision && <span className="quick-view-division">{teamDivision}</span>}
+                    </div>
+                    {matchesQ.loading ? (
+                      <div className="empty">Loading matches…</div>
+                    ) : eventMatches.length ? (
+                      <TeamMatchTable matches={eventMatches} focusTeamId={team.id} isIq={isIq} hideDivision />
+                    ) : (
+                      <div className="empty">No matches for this team at this event.</div>
+                    )}
+                  </div>
                 </section>
               ) : (
                 <div className="empty">Open this from an event to see event stats.</div>
