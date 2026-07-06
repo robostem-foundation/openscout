@@ -8206,6 +8206,7 @@ a.org-note-row:hover { background: var(--surface-2); }
   border: 1px solid var(--border);
   border-bottom: none;
   border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: var(--shadow-md); /* lift the sheet off busy page content */
   overflow: hidden;
   transform: translateX(-50%) translateY(100%);
   transition: transform 0.22s ease;
