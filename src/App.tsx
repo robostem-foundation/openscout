@@ -7811,8 +7811,9 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
               ) : contextEventId != null ? (
                 <section className="quick-view-event">
                   {contextEvent && <div className="quick-view-event-title">{contextEvent.name}</div>}
-                  <div className="quick-view-stat-row">
+                  <div className="quick-view-stat-grid">
                     {rankRow.map((c) => <EventStatCard key={c.label} label={c.label} value={eventLoading ? "…" : c.value} />)}
+                    {skillsRow.map((c) => <EventStatCard key={c.label} label={c.label} value={skillsQ.loading ? "…" : c.value} />)}
                   </div>
                   {!matchesQ.loading && (qualScores.length > 1 || evtOpr != null) && (
                     <div className="quick-view-spark">
@@ -7825,9 +7826,6 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
                       </span>
                     </div>
                   )}
-                  <div className="quick-view-stat-row">
-                    {skillsRow.map((c) => <EventStatCard key={c.label} label={c.label} value={skillsQ.loading ? "…" : c.value} />)}
-                  </div>
                   <div className="quick-view-section-title">
                     Matches
                     {teamDivision && <span className="quick-view-division">{teamDivision}</span>}
