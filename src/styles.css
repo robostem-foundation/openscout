@@ -8314,7 +8314,7 @@ a.org-note-row:hover { background: var(--surface-2); }
 .quick-view-body {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 12px 14px;
+  padding: 14px 18px;
 }
 
 /* Space the collapsible Events/Awards panels from the season charts above. */
@@ -8365,35 +8365,35 @@ a.org-note-row:hover { background: var(--surface-2); }
   color: var(--text-faint);
 }
 
-.quick-view-stat-row {
-  display: flex;
+/* All 8 event stat tiles in one row on the wide sheet; 4+4 in the narrow modal. */
+.quick-view-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
-/* Stacked, compact tiles so 4 fit the narrow panel without overflowing. */
-.quick-view-stat-row .event-stat-card {
-  flex: 1 1 0;
+.quick-view-stat-grid .event-stat-card {
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
   justify-content: flex-start;
-  gap: 3px;
-  padding: 7px 9px;
+  gap: 4px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
 
-.quick-view-stat-row .event-stat-label {
-  font-size: 10px;
+.quick-view-stat-grid .event-stat-label {
+  font-size: 11px;
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.quick-view-stat-row .event-stat-value {
-  font-size: clamp(13px, 3.6vw, 16px);
+.quick-view-stat-grid .event-stat-value {
+  font-size: 16px;
   max-width: 100%;
   white-space: nowrap; /* never split a hyphenated record like "8-4-0" */
   overflow: hidden;
@@ -8423,6 +8423,9 @@ a.org-note-row:hover { background: var(--surface-2); }
   }
   .quick-view-panel.open {
     transform: translate(-50%, -50%) scale(1);
+  }
+  .quick-view-stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
