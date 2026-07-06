@@ -101,7 +101,7 @@ import {
 } from "./orgs";
 import type { OrgInvite, OrgMember, OrgMembership, OrgRole } from "./orgs";
 import { supabase } from "./supabase";
-import { setEventsSettings, setQuickViewExpandExtras, setQuickViewFirst, useQuickViewExpandExtras, useQuickViewFirst, useSettingsEpoch } from "./settings";
+import { setEventsSettings, setQuickViewFirst, useQuickViewFirst, useSettingsEpoch } from "./settings";
 import type { TabLayout } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
@@ -11821,11 +11821,6 @@ const QUICK_VIEW_OPTIONS: Array<{ value: boolean; label: string }> = [
   { value: false, label: "Open full team view" },
 ];
 
-const QUICK_VIEW_SECTION_OPTIONS: Array<{ value: boolean; label: string }> = [
-  { value: false, label: "Collapsed" },
-  { value: true, label: "Expanded" },
-];
-
 // Mini wireframe preview: "quick view first" shows a content area with a side
 // drawer; "full" shows a plain full-page content area.
 function QuickViewWire({ value }: { value: boolean }) {
@@ -11844,7 +11839,6 @@ function AppearanceSettings() {
   const { updateProfile } = useAuth();
   const theme = useTheme(); // global theme store — already reflects the synced cloud value
   const quickViewFirst = useQuickViewFirst(); // team-click behavior, synced
-  const quickViewExpand = useQuickViewExpandExtras(); // quick-view Events/Awards default, synced
 
   const choose = (value: NonNullable<Profile["theme"]>) => {
     applyTheme(value); // instant local apply + localStorage
@@ -11893,26 +11887,6 @@ function AppearanceSettings() {
                 aria-pressed={quickViewFirst === option.value}
               >
                 <QuickViewWire value={option.value} />
-                <span className="theme-tile-label">{option.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="settings-field">
-          <h3 className="settings-field-title">Quick view sections</h3>
-          <p className="settings-section-copy">
-            In the team quick view, start the Events &amp; Awards sections collapsed, or expanded.
-          </p>
-          <div className="layout-picker" role="group" aria-label="Quick view sections">
-            {QUICK_VIEW_SECTION_OPTIONS.map((option) => (
-              <button
-                key={String(option.value)}
-                type="button"
-                className={`theme-tile ${quickViewExpand === option.value ? "active" : ""}`}
-                onClick={() => setQuickViewExpandExtras(option.value)}
-                aria-pressed={quickViewExpand === option.value}
-              >
                 <span className="theme-tile-label">{option.label}</span>
               </button>
             ))}
