@@ -7736,10 +7736,10 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   const skillLabel = (base: string, s?: Skill) => (s?.attempts != null ? `${base} (${s.attempts})` : base);
   const combinedSkill = driverSkill || progSkill ? (driverSkill?.score ?? 0) + (progSkill?.score ?? 0) : null;
   const skillsRow: Array<{ label: string; value: ReactNode }> = [
-    { label: "Skills Rank", value: skillsRank != null ? `#${skillsRank}` : "—" },
+    { label: "Skills", value: skillsRank != null ? `#${skillsRank}` : "—" },
     { label: skillLabel("Driver", driverSkill), value: driverSkill?.score ?? "—" },
     { label: skillLabel("Prog", progSkill), value: progSkill?.score ?? "—" },
-    { label: "Combined", value: combinedSkill ?? "—" },
+    { label: "Total", value: combinedSkill ?? "—" },
   ];
 
   const goFull = () => {
