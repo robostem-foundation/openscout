@@ -7303,8 +7303,8 @@ td.quick-look-col {
   width: 55%;
 }
 
-/* Quick-view picker wireframe: "quick" shows a content area with a side drawer
-   docked on the right; "full" is a plain full-width content area. */
+/* Quick-view picker wireframe: "quick" shows a content area with a bottom sheet
+   rising from the lower edge; "full" is a plain full-width content area. */
 .qv-wire {
   position: relative;
 }
@@ -7312,15 +7312,15 @@ td.quick-look-col {
   padding: 6px;
 }
 .qv-wire-quick .lw-body {
-  margin-right: 34%;
+  margin-bottom: 26%;
 }
 .qv-wire-panel {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  bottom: 4px;
-  width: 30%;
-  border-radius: 3px;
+  left: 14%;
+  right: 14%;
+  bottom: 0;
+  height: 30%;
+  border-radius: 3px 3px 0 0;
   background: var(--accent);
   opacity: 0.55;
 }
