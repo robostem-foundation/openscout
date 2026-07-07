@@ -101,7 +101,8 @@ import {
 } from "./orgs";
 import type { OrgInvite, OrgMember, OrgMembership, OrgRole } from "./orgs";
 import { supabase } from "./supabase";
-import { setEventsSettings, setQuickViewExpandExtras, setQuickViewFirst, useQuickViewExpandExtras, useQuickViewFirst, useSettingsEpoch } from "./settings";
+import { setEventsSettings, setQuickViewFirst, setQuickViewMode, setQuickViewSide, useQuickViewFirst, useQuickViewMode, useQuickViewSide, useSettingsEpoch } from "./settings";
+import type { QuickViewMode, QuickViewSide } from "./settings";
 import type { TabLayout } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
@@ -256,21 +257,25 @@ type QuickViewState = {
   teamNumber: string;
   programCode?: string;
   teamName?: string | null;
-  side: "left" | "right";
+  // Which half of the viewport the opening click landed on — feeds the
+  // "adaptive" sidebar-side setting. Absent (e.g. keyboard) → right.
+  pointerSide?: "left" | "right";
 } | null;
 let _quickView: QuickViewState = null;
+// Bumped on every open; keys the panel so each open mounts a FRESH instance.
+// Without it, opening team B while team A's panel is mid-close reuses the
+// instance with stale mounted/closing state (panel stuck off-screen, unclosable).
+let _quickViewSeq = 0;
 const _quickViewListeners = new Set<() => void>();
 function _emitQuickView() { for (const l of _quickViewListeners) l(); }
-function openQuickView(payload: NonNullable<QuickViewState>) { _quickView = payload; _emitQuickView(); }
+function openQuickView(payload: NonNullable<QuickViewState>) { _quickView = payload; _quickViewSeq++; _emitQuickView(); }
+function pointerSideFromEvent(e: { clientX: number }): "left" | "right" {
+  return e.clientX < window.innerWidth / 2 ? "left" : "right";
+}
 function closeQuickView() { _quickView = null; _emitQuickView(); }
 function subscribeQuickView(l: () => void) { _quickViewListeners.add(l); return () => _quickViewListeners.delete(l); }
 function getQuickView() { return _quickView; }
 function useQuickView() { return useSyncExternalStore(subscribeQuickView, getQuickView, getQuickView); }
-// Choose the drawer side from the click position so the panel doesn't cover what
-// you just clicked (left half → left drawer, right half → right drawer).
-function quickViewSideFromEvent(e: { clientX: number }): "left" | "right" {
-  return e.clientX < window.innerWidth / 2 ? "left" : "right";
-}
 
 // ── Compare pick mode ───────────────────────────────────────────────────────
 let _comparePickMode = false;
@@ -2045,7 +2050,7 @@ function CompareTeamLink({
           if (!quickViewFirst || _currentEventId == null) return;
           e.preventDefault();
           e.stopPropagation();
-          openQuickView({ teamId, teamNumber, programCode, teamName, side: quickViewSideFromEvent(e) });
+          openQuickView({ teamId, teamNumber, programCode, teamName, pointerSide: pointerSideFromEvent(e) });
         }}
       >
         {content}
@@ -2096,7 +2101,7 @@ function TeamQuickLink({ teamId, teamNumber, programCode, teamName, className, t
         if (!quickViewFirst || _currentEventId == null) return;
         e.preventDefault();
         e.stopPropagation();
-        openQuickView({ teamId, teamNumber, programCode, teamName, side: quickViewSideFromEvent(e) });
+        openQuickView({ teamId, teamNumber, programCode, teamName, pointerSide: pointerSideFromEvent(e) });
       }}
     >
       {content}
@@ -5319,7 +5324,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, orgId, divisionMap,
                     if (compareMode) return;
                     // Quick view only inside an event (Teams tab); the /teams list navigates.
                     if (quickViewFirst && _currentEventId != null) {
-                      openQuickView({ teamId: team.id, teamNumber: team.number, programCode: programSlug(team.program), teamName: team.team_name, side: quickViewSideFromEvent(e) });
+                      openQuickView({ teamId: team.id, teamNumber: team.number, programCode: programSlug(team.program), teamName: team.team_name, pointerSide: pointerSideFromEvent(e) });
                     } else {
                       navigate(teamPath(team));
                     }
@@ -6569,12 +6574,12 @@ function starPoints(cx: number, cy: number, outer: number, inner: number) {
 
 // Compact recharts sparkline of a team's qual scores in match order — no axes,
 // grid, or tooltip. Visually consistent with TrendChart; used in quick view.
-function ScoreSparkline({ values, height = 44 }: { values: number[]; height?: number }) {
+function ScoreSparkline({ values, labels, height = 44 }: { values: number[]; labels?: string[]; height?: number }) {
   // Unique per-instance gradient id so multiple sparklines don't collide.
   const gradId = `score-spark-fill-${useId().replace(/:/g, "")}`;
   const config: ChartConfig = { score: { label: "Qual score", color: "#5cb85c" } };
   if (values.length < 2) return null;
-  const data = values.map((v, i) => ({ i, score: v }));
+  const data = values.map((v, i) => ({ i, score: v, _label: labels?.[i] }));
   return (
     <ChartContainer config={config} className="w-full" style={{ height, aspectRatio: "auto" }}>
       <AreaChart accessibilityLayer data={data} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
@@ -6584,6 +6589,22 @@ function ScoreSparkline({ values, height = 44 }: { values: number[]; height?: nu
             <stop offset="100%" stopColor="var(--color-score)" stopOpacity={0} />
           </linearGradient>
         </defs>
+        <ChartTooltip
+          cursor={{ strokeDasharray: "3 3" }}
+          content={(props) => {
+            const { active, payload } = props as unknown as {
+              active?: boolean;
+              payload?: ReadonlyArray<{ value?: number | null; payload?: { _label?: string } }>;
+            };
+            if (!active || !payload?.length) return null;
+            return (
+              <div className="rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+                {payload[0]?.payload?._label && <span className="text-muted-foreground">{payload[0].payload._label} · </span>}
+                <span className="font-mono font-medium tabular-nums">{payload[0]?.value}</span>
+              </div>
+            );
+          }}
+        />
         <Area dataKey="score" type="monotone" stroke="var(--color-score)" strokeWidth={1.5} fill={`url(#${gradId})`} isAnimationActive={false} dot={false} />
       </AreaChart>
     </ChartContainer>
@@ -7594,15 +7615,33 @@ function QuickViewPicklistButton({ orgId, eventId, teamId, teamNumber, teamName 
   );
 }
 
-// Sticky side-drawer (centered modal on narrow screens) showing a quick overview
-// of a team — reuses the full team page's About cards/graphs + awards, plus quick
-// actions. Self-contained: loads the team and its latest season's data on its own.
+// Quick look at a team at the current event — stats + match table, plus quick
+// actions. Two desktop modes (a setting): a docked sidebar that pushes the page
+// content aside (default), or a bottom-center sheet. Centered modal on narrow
+// screens. Self-contained: loads the team and its latest season's data on its own.
 function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>; onClose: () => void }) {
   const [mounted, setMounted] = useState(false);
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  // Sidebar (default) docks beside the page content; sheet slides up from the
+  // bottom. Side is a setting; "adaptive" follows the opening click's half.
+  const mode = useQuickViewMode();
+  const sideSetting = useQuickViewSide();
+  const side: "left" | "right" = sideSetting === "adaptive" ? (state.pointerSide ?? "right") : sideSetting;
+  // Animated close: drop `.open` so the slide-out transition plays, then tell
+  // the store to unmount once it finishes. Every close path funnels through here.
+  // The timer is cleared on unmount so a panel replaced mid-close (openQuickView
+  // remounts via the seq key) can't close its successor.
+  const closingRef = useRef(false);
+  const closeTimer = useRef<number | undefined>(undefined);
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setMounted(false);
+    closeTimer.current = window.setTimeout(onClose, 240);
+  }, [onClose]);
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   const orgs = useOrgs();
   const primaryOrg = orgs[0] ?? null;
-  const expandExtras = useQuickViewExpandExtras();
   // Capture the event context once — quick view is opened from an event, and the
   // panel closes on navigation, so these stay valid for its lifetime.
   const contextEventId = useRef(_currentEventId).current;
@@ -7628,7 +7667,6 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
     [teamId],
   );
   const teamEvents = eventsQ.data?.data ?? [];
-  const eventIndex = useMemo(() => makeEventIndex(teamEvents), [teamEvents]);
 
   const latestSeason = useMemo(() => {
     const bySeason = new Map<number, { id: number; label: string; latest: number }>();
@@ -7642,10 +7680,6 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   }, [teamEvents]);
   // Prefer the season of the event we were opened from, so its data is loaded.
   const seasonId = contextSeasonId ?? latestSeason?.id ?? null;
-  const seasonLabel = useMemo(() => {
-    const ev = teamEvents.find((e) => e.season.id === seasonId);
-    return ev ? shortSeasonName(ev.season.name) : latestSeason?.label;
-  }, [teamEvents, seasonId, latestSeason]);
 
   const rankingsQ = useAsync(
     async () => (teamId != null && seasonId ? (await collectAllPages<Ranking>((page) => api.teamRankings(teamId, { "season[]": [seasonId], per_page: 250, page }))).data : []),
@@ -7658,15 +7692,6 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   const matchesQ = useAsync(
     async () => (teamId != null && seasonId ? (await collectAllPages<Match>((page) => api.teamMatches(teamId, { "season[]": [seasonId], per_page: 250, page }))).data : []),
     [teamId, seasonId],
-  );
-  const awardsQ = useAsync(
-    async () => (teamId != null && seasonId ? (await collectAllPages<Award>((page) => api.teamAwards(teamId, { "season[]": [seasonId], per_page: 250, page }))).data : []),
-    [teamId, seasonId],
-  );
-
-  const seasonEvents = useMemo(
-    () => teamEvents.filter((ev) => !seasonId || ev.season.id === seasonId).sort(compareEventsByDirection("asc")),
-    [teamEvents, seasonId],
   );
 
   // ── The event we were opened from: ranking, this team's matches, skills ──
@@ -7692,43 +7717,59 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   useEffect(() => {
     const trigger = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") requestClose(); };
     window.addEventListener("keydown", onKey);
     // Close when the user navigates away (e.g. clicks an event/team link inside).
-    window.addEventListener(NAV_EVENT, onClose);
-    window.addEventListener("popstate", onClose);
+    window.addEventListener(NAV_EVENT, requestClose);
+    window.addEventListener("popstate", requestClose);
     // Only lock page scroll in the narrow-screen modal mode; the desktop drawer is
     // non-blocking so the page behind it stays scrollable/usable.
     const isModal = window.matchMedia("(max-width: 820px)").matches;
+    // Sheet mode: if the sheet would cover the clicked team, nudge the page so the
+    // trigger ends up just above it. 360px/72vh mirrors .quick-view-panel's max-height.
+    if (!isModal && mode === "sheet" && trigger && trigger !== document.body) {
+      const sheetTop = window.innerHeight - Math.min(360, window.innerHeight * 0.72);
+      const overlap = trigger.getBoundingClientRect().bottom - (sheetTop - 12);
+      if (overlap > 0) window.scrollBy({ top: overlap, behavior: "smooth" });
+    }
     const prevOverflow = document.body.style.overflow;
     if (isModal) document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener(NAV_EVENT, onClose);
-      window.removeEventListener("popstate", onClose);
+      window.removeEventListener(NAV_EVENT, requestClose);
+      window.removeEventListener("popstate", requestClose);
       if (isModal) document.body.style.overflow = prevOverflow;
       trigger?.focus?.();
     };
-  }, [onClose]);
+    // `mode` only steers the one-time scroll nudge; deliberately not a dep.
+  }, [requestClose]);
+
+  // Sidebar mode pushes the page content aside (main gets side padding) so the
+  // panel occupies the freed space. Tied to `mounted` so the push animates in
+  // sync with the panel's slide on both open and close.
+  useEffect(() => {
+    if (mode !== "sidebar" || !mounted || window.matchMedia("(max-width: 820px)").matches) return;
+    const cls = side === "left" ? "qv-push-left" : "qv-push-right";
+    document.body.classList.add(cls);
+    return () => document.body.classList.remove(cls);
+  }, [mode, side, mounted]);
 
   const isIq = team ? isIqProgramInfo(team.program) : false;
   const programCode = team ? programSlug(team.program) : (state.programCode ?? "");
-  const aboutLoading = eventsQ.loading || rankingsQ.loading || skillsQ.loading || matchesQ.loading;
   const eventLoading = rankingsQ.loading || (isIq && matchesQ.loading);
-  const contextEvent = contextEventId != null ? eventIndex.get(contextEventId) : undefined;
 
   // Event stat tiles for the panel's lead section.
   const iqEvt = isIq && teamId != null ? iqTeamQualStats(eventMatches, teamId, eventRanking) : null;
   const teamDivision = eventRanking?.division?.name ?? eventMatches.find((m) => m.division?.name)?.division?.name ?? null;
   // Within-event qual-score trend + OPR (only when opened from the current event,
   // where we hold all its matches for the OPR solve).
-  const qualScores = useMemo(
+  const qualTrend = useMemo(
     () =>
       eventMatches
         .filter((m) => m.round === 2)
         .sort((a, b) => a.matchnum - b.matchnum)
-        .map((m) => m.alliances.find((al) => isTeamInAlliance(al, teamId ?? -1))?.score)
-        .filter((s): s is number => typeof s === "number"),
+        .map((m) => ({ label: shortMatchName(m.name), score: m.alliances.find((al) => isTeamInAlliance(al, teamId ?? -1))?.score }))
+        .filter((e): e is { label: string; score: number } => typeof e.score === "number"),
     [eventMatches, teamId],
   );
   const evtOpr =
@@ -7736,79 +7777,101 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
       ? currentEventOprMap().get(teamId)?.opr ?? null
       : null;
   const fmtNum = (v: number | null | undefined) => (v == null ? "—" : Number.isInteger(v) ? String(v) : v.toFixed(1));
-  const rankRow: Array<{ label: string; value: ReactNode }> = isIq
-    ? [
-        { label: "Rank", value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—" },
-        { label: "Avg", value: fmtNum(iqEvt?.avg ?? eventRanking?.average_points ?? null) },
-        { label: "High", value: fmtNum(iqEvt?.high ?? eventRanking?.high_score ?? null) },
-        { label: "Low", value: fmtNum(iqEvt?.low ?? null) },
-      ]
-    : [
-        { label: "Rank", value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—" },
-        { label: "Record", value: eventRanking ? `${eventRanking.wins ?? 0}-${eventRanking.losses ?? 0}-${eventRanking.ties ?? 0}` : "—" },
-        { label: "WP", value: fmtNum(eventRanking?.wp ?? null) },
-        { label: "AP", value: fmtNum(eventRanking?.ap ?? null) },
-      ];
-  // Skills row: rank + driver/prog (attempts shown in the label) + combined.
   const driverSkill = eventSkills.find((s) => (s.type ?? "").toLowerCase().includes("driver"));
   const progSkill = eventSkills.find((s) => !(s.type ?? "").toLowerCase().includes("driver"));
+  const combinedSkill = driverSkill || progSkill ? (driverSkill?.score ?? 0) + (progSkill?.score ?? 0) : null;
   const skillRanks = eventSkills.map((s) => s.rank).filter((r): r is number => r != null && r > 0);
   const skillsRank = skillRanks.length ? Math.min(...skillRanks) : null;
-  const skillLabel = (base: string, s?: Skill) => (s?.attempts != null ? `${base} (${s.attempts})` : base);
-  const combinedSkill = driverSkill || progSkill ? (driverSkill?.score ?? 0) + (progSkill?.score ?? 0) : null;
-  const skillsRow: Array<{ label: string; value: ReactNode }> = [
-    { label: "Skills Rank", value: skillsRank != null ? `#${skillsRank}` : "—" },
-    { label: skillLabel("Driver", driverSkill), value: driverSkill?.score ?? "—" },
-    { label: skillLabel("Prog", progSkill), value: progSkill?.score ?? "—" },
-    { label: "Combined", value: combinedSkill ?? "—" },
-  ];
+  const attemptsSub = (s?: Skill) => (s?.attempts != null ? `${s.attempts} attempt${s.attempts === 1 ? "" : "s"}` : undefined);
+  // Full-team-view-style cards, three per row:
+  //   V5: Rank·Record·OPR / WP·AP·AWP / Skills(score+rank)·Driver·Prog
+  //   IQ (no record/WP): Rank·Avg·OPR / High·Low·Skills(combined)
+  const statCards: Array<{ label: string; value: ReactNode; sub?: string; loading: boolean }> = isIq
+    ? [
+        { label: "Rank", value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—", loading: eventLoading },
+        { label: "Avg", value: fmtNum(iqEvt?.avg ?? eventRanking?.average_points ?? null), loading: eventLoading },
+        { label: "OPR", value: evtOpr != null ? evtOpr.toFixed(1) : "—", loading: false },
+        { label: "High", value: fmtNum(iqEvt?.high ?? eventRanking?.high_score ?? null), loading: eventLoading },
+        { label: "Low", value: fmtNum(iqEvt?.low ?? null), loading: eventLoading },
+        {
+          label: "Skills",
+          value: combinedSkill ?? "—",
+          sub: driverSkill || progSkill ? `D ${driverSkill?.score ?? 0} (${driverSkill?.attempts ?? 0}) · P ${progSkill?.score ?? 0} (${progSkill?.attempts ?? 0})` : "No skills runs",
+          loading: skillsQ.loading,
+        },
+      ]
+    : [
+        { label: "Rank", value: eventRanking?.rank != null ? `#${eventRanking.rank}` : "—", loading: eventLoading },
+        { label: "Record", value: eventRanking ? `${eventRanking.wins ?? 0}-${eventRanking.losses ?? 0}-${eventRanking.ties ?? 0}` : "—", loading: eventLoading },
+        { label: "OPR", value: evtOpr != null ? evtOpr.toFixed(1) : "—", loading: false },
+        { label: "WP", value: fmtNum(eventRanking?.wp ?? null), loading: eventLoading },
+        { label: "AP", value: fmtNum(eventRanking?.ap ?? null), loading: eventLoading },
+        { label: "AWP", value: eventRanking ? rankingAwp(eventRanking) : "—", loading: eventLoading },
+        {
+          label: "Skills",
+          value: combinedSkill ?? "—",
+          sub: skillsRank != null ? `#${skillsRank} rank` : "No skills runs",
+          loading: skillsQ.loading,
+        },
+        { label: "Driver", value: driverSkill?.score ?? "—", sub: attemptsSub(driverSkill), loading: skillsQ.loading },
+        { label: "Prog", value: progSkill?.score ?? "—", sub: attemptsSub(progSkill), loading: skillsQ.loading },
+      ];
 
   const goFull = () => {
-    onClose();
     navigate(teamSlugPath(state.programCode ?? programCode, state.teamNumber, teamId ?? undefined));
+    requestClose(); // navigate fires NAV_EVENT → requestClose; explicit for clarity
   };
 
   return (
-    <div className="quick-view-overlay" onClick={onClose}>
+    <div className="quick-view-overlay" onClick={requestClose}>
       <aside
-        className={`quick-view-panel side-${state.side}${mounted ? " open" : ""}`}
+        className={`quick-view-panel mode-${mode}${mode === "sidebar" ? ` side-${side}` : ""}${mounted ? " open" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={`Quick view for team ${state.teamNumber}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="quick-view-header">
-          <div className="quick-view-title">
-            <strong>{state.teamNumber}</strong>
-            {(team?.team_name ?? state.teamName) && <span> · {team?.team_name ?? state.teamName}</span>}
+          <div className="quick-view-heading">
+            <div className="quick-view-title">
+              <strong>{state.teamNumber}</strong>
+              {(team?.team_name ?? state.teamName) && <span> · {team?.team_name ?? state.teamName}</span>}
+            </div>
+            {team && (
+              <div className="quick-view-meta">
+                <ProgramBadge program={team.program} />
+                {teamDivision && <Badge variant="secondary">{teamDivision}</Badge>}
+                <span>{locationLine(team)}</span>
+                <span>{team.grade ?? "Grade unknown"}</span>
+              </div>
+            )}
+          </div>
+          <div className="quick-view-actions">
+            <button type="button" className="quick-view-action primary" onClick={goFull}>
+              <ExternalLink size={13} /> Full view
+            </button>
+            <button
+              type="button"
+              className={`quick-view-action${inTray ? " active" : ""}`}
+              disabled={teamId == null || (!canAddToTray() && !inTray)}
+              onClick={() => teamId != null && addOrRemoveCompareTeam(teamId, state.teamNumber, programCode, team?.team_name)}
+            >
+              <Scale size={13} /> {inTray ? "In compare" : "Compare"}
+            </button>
+            {primaryOrg && eventIdForPicklist != null && teamId != null && (
+              <QuickViewPicklistButton
+                orgId={primaryOrg.orgId}
+                eventId={String(eventIdForPicklist)}
+                teamId={String(teamId)}
+                teamNumber={state.teamNumber}
+                teamName={team?.team_name ?? state.teamName ?? undefined}
+              />
+            )}
           </div>
           <span className="close-btn-wrap">
             <kbd className="esc-hint">Esc</kbd>
-            <button ref={closeRef} type="button" className="video-close-btn" onClick={onClose} aria-label="Close quick view">×</button>
+            <button ref={closeRef} type="button" className="video-close-btn" onClick={requestClose} aria-label="Close quick view">×</button>
           </span>
-        </div>
-
-        <div className="quick-view-actions">
-          <button type="button" className="quick-view-action primary" onClick={goFull}>
-            <ExternalLink size={14} /> Open full team view
-          </button>
-          <button
-            type="button"
-            className={`quick-view-action${inTray ? " active" : ""}`}
-            disabled={teamId == null || (!canAddToTray() && !inTray)}
-            onClick={() => teamId != null && addOrRemoveCompareTeam(teamId, state.teamNumber, programCode, team?.team_name)}
-          >
-            <Scale size={14} /> {inTray ? "In compare" : "Compare"}
-          </button>
-          {primaryOrg && eventIdForPicklist != null && teamId != null && (
-            <QuickViewPicklistButton
-              orgId={primaryOrg.orgId}
-              eventId={String(eventIdForPicklist)}
-              teamId={String(teamId)}
-              teamNumber={state.teamNumber}
-              teamName={team?.team_name ?? state.teamName ?? undefined}
-            />
-          )}
         </div>
 
         <div className="quick-view-body">
@@ -7818,90 +7881,35 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
             <div className="empty">Team not found.</div>
           ) : (
             <ProgramContext.Provider value={programCode}>
-              <div className="quick-view-meta">
-                <ProgramBadge program={team.program} />
-                <span>{locationLine(team)}</span>
-                <span>{team.grade ?? "Grade unknown"}</span>
-              </div>
               {seasonId == null ? (
                 <div className="empty">No season data for this team yet.</div>
-              ) : (
-                <>
-                  {/* Lead with stats for the event we were opened from. */}
-                  {contextEventId != null && (
-                    <section className="quick-view-event">
-                      {contextEvent && <div className="quick-view-event-title">{contextEvent.name}</div>}
-                      <div className="quick-view-stat-row">
-                        {rankRow.map((c) => <EventStatCard key={c.label} label={c.label} value={eventLoading ? "…" : c.value} />)}
+              ) : contextEventId != null ? (
+                <section className="quick-view-event quick-view-cols">
+                  <div className="quick-view-stats-col">
+                    <div className="quick-view-stats about-stats">
+                      {statCards.map((c) => (
+                        <StatCard key={c.label} label={c.label} value={c.loading ? "…" : c.value} sub={c.loading ? undefined : c.sub} />
+                      ))}
+                    </div>
+                    {!matchesQ.loading && qualTrend.length > 1 && (
+                      <div className="quick-view-trend">
+                        <span className="quick-view-trend-label">Qual score trend</span>
+                        <ScoreSparkline values={qualTrend.map((e) => e.score)} labels={qualTrend.map((e) => e.label)} />
                       </div>
-                      {!matchesQ.loading && (qualScores.length > 1 || evtOpr != null) && (
-                        <div className="quick-view-spark">
-                          {qualScores.length > 1 && (
-                            <div className="quick-view-spark-chart"><ScoreSparkline values={qualScores} /></div>
-                          )}
-                          <span className="quick-view-spark-label">
-                            Qual scores
-                            {evtOpr != null && <> · <strong>OPR {evtOpr.toFixed(1)}</strong></>}
-                          </span>
-                        </div>
-                      )}
-                      <div className="quick-view-stat-row">
-                        {skillsRow.map((c) => <EventStatCard key={c.label} label={c.label} value={skillsQ.loading ? "…" : c.value} />)}
-                      </div>
-                      <div className="quick-view-section-title">
-                        Matches
-                        {teamDivision && <span className="quick-view-division">{teamDivision}</span>}
-                      </div>
-                      {matchesQ.loading ? (
-                        <div className="empty">Loading matches…</div>
-                      ) : eventMatches.length ? (
-                        <TeamMatchTable matches={eventMatches} focusTeamId={team.id} isIq={isIq} hideDivision />
-                      ) : (
-                        <div className="empty">No matches for this team at this event.</div>
-                      )}
-                    </section>
-                  )}
-
-                  {/* Season stats below the fold. */}
-                  <div className="quick-view-section-title">Season stats{seasonLabel ? ` · ${seasonLabel}` : ""}</div>
-                  <TeamAboutTab
-                    team={team}
-                    isIq={isIq}
-                    seasonId={seasonId}
-                    seasonLabel={seasonLabel}
-                    rankings={rankingsQ.data ?? []}
-                    skills={skillsQ.data ?? []}
-                    matches={matchesQ.data ?? []}
-                    allEvents={teamEvents}
-                    eventIndex={eventIndex}
-                    loading={aboutLoading}
-                    compact
-                  />
-                  <Panel title={`Events ${seasonEvents.length || ""}`} icon={<CalendarDays />} collapsible defaultCollapsed={!expandExtras}>
-                    {seasonEvents.length ? (
-                      <ul className="quick-view-events">
-                        {seasonEvents.map((ev) => (
-                          <li key={ev.id}>
-                            <Link href={eventPath(ev)} className="quick-view-event-name">{ev.name}</Link>
-                            <span className="quick-view-event-sub">{formatEventDateRange(ev.start, ev.end)} · {locationLine(ev)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="empty">No events this season.</div>
                     )}
-                  </Panel>
-                  <TeamAwardsByEvent
-                    awards={awardsQ.data ?? []}
-                    eventIndex={eventIndex}
-                    seasonId={seasonId}
-                    focusTeamId={team.id}
-                    focusTeamNumber={team.number}
-                    direction="asc"
-                    collapsible
-                    defaultCollapsed={!expandExtras}
-                  />
-                </>
+                  </div>
+                  <div className="quick-view-matches-col">
+                    {matchesQ.loading ? (
+                      <div className="empty">Loading matches…</div>
+                    ) : eventMatches.length ? (
+                      <TeamMatchTable matches={eventMatches} focusTeamId={team.id} isIq={isIq} hideDivision />
+                    ) : (
+                      <div className="empty">No matches for this team at this event.</div>
+                    )}
+                  </div>
+                </section>
+              ) : (
+                <div className="empty">Open this from an event to see event stats.</div>
               )}
             </ProgramContext.Provider>
           )}
@@ -8621,8 +8629,8 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDiv
       <thead>
         <tr>
           <th>Match</th>
-          <th>{isIq ? "Team" : "Red Alliance"}</th>
-          <th>{isIq ? "Team" : "Blue Alliance"}</th>
+          <th>{isIq ? "Team" : <><span className="alliance-th-full">Red Alliance</span><span className="alliance-th-short">Red</span></>}</th>
+          <th>{isIq ? "Team" : <><span className="alliance-th-full">Blue Alliance</span><span className="alliance-th-short">Blue</span></>}</th>
           <th>Score</th>
         </tr>
       </thead>
@@ -9770,8 +9778,8 @@ function ResultsMatchTable({
               )}
             </span>
           </th>
-          <th>{isIq ? "Team" : "Red Alliance"}</th>
-          <th>{isIq ? "Team" : "Blue Alliance"}</th>
+          <th>{isIq ? "Team" : <><span className="alliance-th-full">Red Alliance</span><span className="alliance-th-short">Red</span></>}</th>
+          <th>{isIq ? "Team" : <><span className="alliance-th-full">Blue Alliance</span><span className="alliance-th-short">Blue</span></>}</th>
           <th>Score</th>
         </tr>
       </thead>
@@ -11881,11 +11889,6 @@ const QUICK_VIEW_OPTIONS: Array<{ value: boolean; label: string }> = [
   { value: false, label: "Open full team view" },
 ];
 
-const QUICK_VIEW_SECTION_OPTIONS: Array<{ value: boolean; label: string }> = [
-  { value: false, label: "Collapsed" },
-  { value: true, label: "Expanded" },
-];
-
 // Mini wireframe preview: "quick view first" shows a content area with a side
 // drawer; "full" shows a plain full-page content area.
 function QuickViewWire({ value }: { value: boolean }) {
@@ -11900,11 +11903,38 @@ function QuickViewWire({ value }: { value: boolean }) {
   );
 }
 
+const QUICK_VIEW_MODE_OPTIONS: Array<{ value: QuickViewMode; label: string }> = [
+  { value: "sidebar", label: "Sidebar" },
+  { value: "sheet", label: "Bottom sheet" },
+];
+
+const QUICK_VIEW_SIDE_OPTIONS: Array<{ value: QuickViewSide; label: string }> = [
+  { value: "right", label: "Right" },
+  { value: "left", label: "Left" },
+  { value: "adaptive", label: "Adaptive" },
+];
+
+// Mini wireframe preview of where the quick view panel sits: docked right/left,
+// the bottom sheet, or adaptive (both sides, one ghosted).
+function QuickViewPlacementWire({ panel }: { panel: "bottom" | "right" | "left" | "adaptive" }) {
+  return (
+    <span className={`layout-wire qv-wire qv-p-${panel}`} aria-hidden="true">
+      <span className="lw-body">
+        <span className="lw-line" />
+        <span className="lw-line short" />
+      </span>
+      <span className="qv-wire-panel" />
+      {panel === "adaptive" && <span className="qv-wire-panel ghost" />}
+    </span>
+  );
+}
+
 function AppearanceSettings() {
   const { updateProfile } = useAuth();
   const theme = useTheme(); // global theme store — already reflects the synced cloud value
   const quickViewFirst = useQuickViewFirst(); // team-click behavior, synced
-  const quickViewExpand = useQuickViewExpandExtras(); // quick-view Events/Awards default, synced
+  const quickViewMode = useQuickViewMode(); // sidebar vs bottom sheet, synced
+  const quickViewSide = useQuickViewSide(); // sidebar dock side, synced
 
   const choose = (value: NonNullable<Profile["theme"]>) => {
     applyTheme(value); // instant local apply + localStorage
@@ -11959,25 +11989,49 @@ function AppearanceSettings() {
           </div>
         </div>
 
-        <div className="settings-field">
-          <h3 className="settings-field-title">Quick view sections</h3>
-          <p className="settings-section-copy">
-            In the team quick view, start the Events &amp; Awards sections collapsed, or expanded.
-          </p>
-          <div className="layout-picker" role="group" aria-label="Quick view sections">
-            {QUICK_VIEW_SECTION_OPTIONS.map((option) => (
-              <button
-                key={String(option.value)}
-                type="button"
-                className={`theme-tile ${quickViewExpand === option.value ? "active" : ""}`}
-                onClick={() => setQuickViewExpandExtras(option.value)}
-                aria-pressed={quickViewExpand === option.value}
-              >
-                <span className="theme-tile-label">{option.label}</span>
-              </button>
-            ))}
+        {quickViewFirst && (
+          <div className="settings-field">
+            <h3 className="settings-field-title">Quick view style</h3>
+            <p className="settings-section-copy">
+              Dock the quick view beside the page as a sidebar, or slide it up from the bottom.
+            </p>
+            <div className="layout-picker" role="group" aria-label="Quick view style">
+              {QUICK_VIEW_MODE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`theme-tile ${quickViewMode === option.value ? "active" : ""}`}
+                  onClick={() => setQuickViewMode(option.value)}
+                  aria-pressed={quickViewMode === option.value}
+                >
+                  <QuickViewPlacementWire panel={option.value === "sheet" ? "bottom" : quickViewSide === "left" ? "left" : "right"} />
+                  <span className="theme-tile-label">{option.label}</span>
+                </button>
+              ))}
+            </div>
+            {quickViewMode === "sidebar" && (
+              <>
+                <p className="settings-section-copy" style={{ marginTop: 14 }}>
+                  Which side the sidebar opens on. Adaptive picks the side closest to your cursor.
+                </p>
+                <div className="layout-picker layout-picker-3" role="group" aria-label="Sidebar side">
+                  {QUICK_VIEW_SIDE_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`theme-tile ${quickViewSide === option.value ? "active" : ""}`}
+                      onClick={() => setQuickViewSide(option.value)}
+                      aria-pressed={quickViewSide === option.value}
+                    >
+                      <QuickViewPlacementWire panel={option.value} />
+                      <span className="theme-tile-label">{option.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -14870,7 +14924,7 @@ export default function App() {
       {shortcutsOpen && <ErrorBoundary silent><ShortcutsOverlay onClose={() => setShortcutsOpen(false)} /></ErrorBoundary>}
       {trayEntries.length > 0 && <ErrorBoundary silent><CompareTray entries={trayEntries} /></ErrorBoundary>}
       {compareModalOpen && <ErrorBoundary silent><ComparisonModal entries={trayEntries} onClose={closeCompareModal} /></ErrorBoundary>}
-      {quickView && <ErrorBoundary silent><TeamQuickView state={quickView} onClose={closeQuickView} /></ErrorBoundary>}
+      {quickView && <ErrorBoundary silent><TeamQuickView key={_quickViewSeq} state={quickView} onClose={closeQuickView} /></ErrorBoundary>}
     </ErrorBoundary>
   );
 }

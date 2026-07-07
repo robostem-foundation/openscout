@@ -310,6 +310,9 @@ nav a.active {
 
 main {
   min-height: calc(100vh - 160px);
+  /* Animates the quick-view sidebar push (body.qv-push-*) in sync with the
+     panel's slide; padding never changes otherwise. */
+  transition: padding 0.24s ease;
 }
 
 .page {
@@ -3184,6 +3187,20 @@ a.team-card-num:hover {
 
 .results-column:last-child .results-alliance-col {
   width: auto;
+}
+
+/* The narrow elims column can't fit "Red Alliance"/"Blue Alliance" without the
+   headers colliding — swap to the short labels there. */
+.alliance-th-short {
+  display: none;
+}
+
+.results-column:last-child .alliance-th-full {
+  display: none;
+}
+
+.results-column:last-child .alliance-th-short {
+  display: inline;
 }
 
 .results-column:last-child .results-score-col {
@@ -7303,8 +7320,8 @@ td.quick-look-col {
   width: 55%;
 }
 
-/* Quick-view picker wireframe: "quick" shows a content area with a side drawer
-   docked on the right; "full" is a plain full-width content area. */
+/* Quick-view picker wireframe: "quick" shows a content area with a bottom sheet
+   rising from the lower edge; "full" is a plain full-width content area. */
 .qv-wire {
   position: relative;
 }
@@ -7312,17 +7329,58 @@ td.quick-look-col {
   padding: 6px;
 }
 .qv-wire-quick .lw-body {
-  margin-right: 34%;
+  margin-bottom: 26%;
 }
 .qv-wire-panel {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  bottom: 4px;
-  width: 30%;
-  border-radius: 3px;
+  left: 14%;
+  right: 14%;
+  bottom: 0;
+  height: 30%;
+  border-radius: 3px 3px 0 0;
   background: var(--accent);
   opacity: 0.55;
+}
+
+/* Placement wireframes for the quick-view style/side pickers: the accent panel
+   docks on the chosen edge ("adaptive" ghosts the opposite side too). */
+.layout-picker-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.qv-p-bottom .lw-body {
+  margin-bottom: 26%;
+}
+.qv-p-right .lw-body {
+  margin-right: 30%;
+}
+.qv-p-left .lw-body {
+  margin-left: 30%;
+}
+.qv-p-adaptive .lw-body {
+  margin: 0 30%;
+}
+.qv-p-right .qv-wire-panel,
+.qv-p-left .qv-wire-panel,
+.qv-p-adaptive .qv-wire-panel {
+  top: 12%;
+  bottom: 12%;
+  height: auto;
+  width: 24%;
+}
+.qv-p-right .qv-wire-panel,
+.qv-p-adaptive .qv-wire-panel {
+  left: auto;
+  right: 0;
+  border-radius: 3px 0 0 3px;
+}
+.qv-p-left .qv-wire-panel,
+.qv-p-adaptive .qv-wire-panel.ghost {
+  left: 0;
+  right: auto;
+  border-radius: 0 3px 3px 0;
+}
+.qv-p-adaptive .qv-wire-panel.ghost {
+  opacity: 0.25;
 }
 
 .settings-actions {
@@ -8196,40 +8254,102 @@ a.org-note-row:hover { background: var(--surface-2); }
 
 .quick-view-panel {
   position: fixed;
-  top: 50px; /* below the sticky topbar (min-height 50px) */
   bottom: 0;
-  width: min(420px, 92vw);
+  left: 50%;
+  width: min(1100px, calc(100vw - 32px));
+  max-height: min(360px, 72vh);
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: var(--shadow-md); /* lift the sheet off busy page content */
   overflow: hidden;
+  transform: translateX(-50%) translateY(100%);
   transition: transform 0.22s ease;
   pointer-events: auto; /* the panel itself stays interactive */
 }
 
-.quick-view-panel.side-right {
-  right: 0;
-  border-left: 1px solid var(--border);
-  transform: translateX(100%);
-}
-
-.quick-view-panel.side-left {
-  left: 0;
-  border-right: 1px solid var(--border);
-  transform: translateX(-100%);
-}
-
 .quick-view-panel.open {
-  transform: translateX(0);
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── Sidebar mode (desktop only) ──
+   An inset card docked to one edge, below the floating topbar. The page content
+   is pushed aside (body.qv-push-* pads <main>, transitioned above) so the panel
+   occupies the freed space instead of covering anything — same idea as the
+   events page's sidebar + list split. */
+@media (min-width: 821px) {
+  :root {
+    --qv-sidebar-w: min(460px, 38vw);
+  }
+
+  .quick-view-panel.mode-sidebar {
+    top: 80px; /* clears the floating topbar island (12px margin + 56px bar) */
+    bottom: 12px;
+    right: 12px;
+    left: auto;
+    width: var(--qv-sidebar-w);
+    max-height: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    transform: translateX(calc(100% + 12px));
+  }
+  .quick-view-panel.mode-sidebar.open {
+    transform: translateX(0);
+  }
+  .quick-view-panel.mode-sidebar.side-left {
+    left: 12px;
+    right: auto;
+    transform: translateX(calc(-100% - 12px));
+  }
+  .quick-view-panel.mode-sidebar.side-left.open {
+    transform: translateX(0);
+  }
+
+  body.qv-push-right main {
+    padding-right: calc(var(--qv-sidebar-w) + 24px);
+  }
+  body.qv-push-left main {
+    padding-left: calc(var(--qv-sidebar-w) + 24px);
+  }
+
+  /* The narrow panel stacks what the wide sheet lays out in rows: the header
+     wraps (title + close first, actions below) and the stats/matches columns
+     become a single column. */
+  .quick-view-panel.mode-sidebar .quick-view-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  /* Zero flex-basis so the (wrappable) heading shares row 1 with the close
+     control instead of pushing it to its own row. */
+  .quick-view-panel.mode-sidebar .quick-view-heading {
+    flex: 1 1 0;
+  }
+  .quick-view-panel.mode-sidebar .close-btn-wrap {
+    order: 1;
+  }
+  .quick-view-panel.mode-sidebar .quick-view-actions {
+    order: 2;
+    flex-basis: 100%;
+  }
+  .quick-view-panel.mode-sidebar .quick-view-cols {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .quick-view-panel.mode-sidebar .quick-view-stats-col {
+    position: static;
+    flex: none;
+    width: 100%;
+  }
 }
 
 .quick-view-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: 14px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
 }
@@ -8254,6 +8374,17 @@ a.org-note-row:hover { background: var(--surface-2); }
   flex: 0 0 auto;
 }
 
+/* Title + meta share one line on the wide sheet, wrapping when tight. */
+.quick-view-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  row-gap: 2px;
+}
+
 .esc-hint {
   font-size: 10px;
   line-height: 1;
@@ -8265,20 +8396,20 @@ a.org-note-row:hover { background: var(--surface-2); }
   font-family: inherit;
 }
 
+/* Compact actions, inline in the header row. */
 .quick-view-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
+  gap: 6px;
+  flex: 0 0 auto;
 }
 
 .quick-view-action {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  font-size: 13px;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  white-space: nowrap;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--surface);
@@ -8291,8 +8422,6 @@ a.org-note-row:hover { background: var(--surface-2); }
 }
 
 .quick-view-action.primary {
-  flex: 1 1 100%;
-  justify-content: center;
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
@@ -8315,12 +8444,7 @@ a.org-note-row:hover { background: var(--surface-2); }
 .quick-view-body {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 12px 14px;
-}
-
-/* Space the collapsible Events/Awards panels from the season charts above. */
-.quick-view-body > .panel {
-  margin-top: 14px;
+  padding: 14px 16px;
 }
 
 /* Stop scroll from chaining to the page when a modal's scroll area hits its
@@ -8338,138 +8462,65 @@ a.org-note-row:hover { background: var(--surface-2); }
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
   color: var(--text-muted);
   font-size: 13px;
 }
 
-/* Lead "At this event" section: stat tiles, section titles, matches table. */
-.quick-view-section-title {
-  margin: 16px 0 8px;
-  font-size: 12px;
+/* Two columns: fixed stats rail on the left, matches filling the rest. The rail
+   sticks while the match list scrolls under it. */
+.quick-view-cols {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.quick-view-stats-col {
+  flex: 0 0 380px;
+  min-width: 0;
+  position: sticky;
+  top: 0;
+}
+
+.quick-view-matches-col {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Reuses the full team view's hairline stat cells (.about-stats/.about-stat),
+   compacted to fit the rail. */
+.quick-view-stats.about-stats {
+  border-radius: var(--radius);
+}
+
+.quick-view-stats .about-stat {
+  padding: 10px 12px;
+}
+
+.quick-view-stats .about-stat-figure {
+  margin-top: 5px;
+}
+
+.quick-view-stats .about-stat-value {
+  font-size: 20px;
+}
+
+.quick-view-stats .about-stat-sub {
+  font-size: 11px;
+}
+
+/* Qual-score sparkline under the stats, with a plain caption. */
+.quick-view-trend {
+  margin-top: 16px;
+}
+
+.quick-view-trend-label {
+  display: block;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
-}
-
-/* The event name heading — normal case so long names read like the rest of the site. */
-.quick-view-event-title {
-  margin: 0 0 10px;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--text);
-}
-
-/* The team's division, shown once next to the Matches heading. */
-.quick-view-division {
-  margin-left: 8px;
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--text-faint);
-}
-
-.quick-view-stat-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-/* Stacked, compact tiles so 4 fit the narrow panel without overflowing. */
-.quick-view-stat-row .event-stat-card {
-  flex: 1 1 0;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 3px;
-  padding: 7px 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.quick-view-stat-row .event-stat-label {
-  font-size: 10px;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.quick-view-stat-row .event-stat-value {
-  font-size: clamp(13px, 3.6vw, 16px);
-  max-width: 100%;
-  white-space: nowrap; /* never split a hyphenated record like "8-4-0" */
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-variant-numeric: tabular-nums; /* steadier numeric widths */
-}
-
-.quick-view-events {
-  list-style: none;
-  margin: 0;
-  padding: 4px 14px 8px;
-}
-
-.quick-view-events li {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--border-soft);
-}
-
-.quick-view-events li:last-child {
-  border-bottom: none;
-}
-
-.quick-view-event-name {
-  font-weight: 500;
-}
-
-.quick-view-event-sub {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-/* Compact the reused team-About cards/charts inside the narrow quick-view panel. */
-.quick-view-panel .about-wrap {
-  gap: 12px;
-}
-/* Header already shows program/location/grade/status — hide the duplicate profile. */
-.quick-view-panel .about-profile {
-  display: none;
-}
-.quick-view-panel .about-stats {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.quick-view-panel .about-stat {
-  padding: 10px 12px;
-}
-.quick-view-panel .about-stat-label {
-  font-size: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.quick-view-panel .about-stat-figure {
-  margin-top: 4px;
-}
-.quick-view-panel .about-stat-value {
-  font-size: 17px;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-/* Drop the sub-text so each card is a tidy label + value, much shorter. */
-.quick-view-panel .about-stat-sub {
-  display: none;
-}
-/* One chart per row — two columns would be too cramped in the drawer. */
-.quick-view-panel .about-charts {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  margin-bottom: 4px;
 }
 
 /* Narrow screens: drop the side drawer for a centered modal. */
@@ -8481,9 +8532,7 @@ a.org-note-row:hover { background: var(--surface-2); }
     backdrop-filter: blur(8px);
     pointer-events: auto; /* modal mode blocks the page + enables click-outside-to-close */
   }
-  .quick-view-panel,
-  .quick-view-panel.side-left,
-  .quick-view-panel.side-right {
+  .quick-view-panel {
     top: 50%;
     left: 50%;
     right: auto;
@@ -8496,6 +8545,16 @@ a.org-note-row:hover { background: var(--surface-2); }
   }
   .quick-view-panel.open {
     transform: translate(-50%, -50%) scale(1);
+  }
+  /* Stack the columns in the narrow modal; stats become a 4-across block. */
+  .quick-view-cols {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .quick-view-stats-col {
+    position: static;
+    flex: none;
+    width: 100%;
   }
 }
 
@@ -11006,16 +11065,6 @@ a.org-note-row:hover { background: var(--surface-2); }
 .alliance-slot-seed { color: var(--text-muted); font-size: 12px; }
 @media (max-width: 720px) { .alliance-board-grid { grid-template-columns: 1fr; } }
 
-/* ── Quick-view within-event score sparkline ─────────────────────────────── */
-.quick-view-spark {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 2px 2px 8px;
-}
-.quick-view-spark-chart { flex: 1; min-width: 0; max-width: 160px; }
-.quick-view-spark-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-.quick-view-spark-label strong { color: var(--text-2); }
 
 /* ── Sortable table headers ──────────────────────────────────────────────── */
 .sortable-th {
