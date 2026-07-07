@@ -3186,6 +3186,20 @@ a.team-card-num:hover {
   width: auto;
 }
 
+/* The narrow elims column can't fit "Red Alliance"/"Blue Alliance" without the
+   headers colliding — swap to the short labels there. */
+.alliance-th-short {
+  display: none;
+}
+
+.results-column:last-child .alliance-th-full {
+  display: none;
+}
+
+.results-column:last-child .alliance-th-short {
+  display: inline;
+}
+
 .results-column:last-child .results-score-col {
   width: 94px;
 }

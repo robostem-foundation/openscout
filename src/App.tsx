@@ -8588,8 +8588,8 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDiv
       <thead>
         <tr>
           <th>Match</th>
-          <th>{isIq ? "Team" : "Red Alliance"}</th>
-          <th>{isIq ? "Team" : "Blue Alliance"}</th>
+          <th>{isIq ? "Team" : <><span className="alliance-th-full">Red Alliance</span><span className="alliance-th-short">Red</span></>}</th>
+          <th>{isIq ? "Team" : <><span className="alliance-th-full">Blue Alliance</span><span className="alliance-th-short">Blue</span></>}</th>
           <th>Score</th>
         </tr>
       </thead>
@@ -9737,8 +9737,8 @@ function ResultsMatchTable({
               )}
             </span>
           </th>
-          <th>{isIq ? "Team" : "Red Alliance"}</th>
-          <th>{isIq ? "Team" : "Blue Alliance"}</th>
+          <th>{isIq ? "Team" : <><span className="alliance-th-full">Red Alliance</span><span className="alliance-th-short">Red</span></>}</th>
+          <th>{isIq ? "Team" : <><span className="alliance-th-full">Blue Alliance</span><span className="alliance-th-short">Blue</span></>}</th>
           <th>Score</th>
         </tr>
       </thead>
