@@ -101,7 +101,8 @@ import {
 } from "./orgs";
 import type { OrgInvite, OrgMember, OrgMembership, OrgRole } from "./orgs";
 import { supabase } from "./supabase";
-import { setEventsSettings, setQuickViewFirst, useQuickViewFirst, useSettingsEpoch } from "./settings";
+import { setEventsSettings, setQuickViewFirst, setQuickViewMode, setQuickViewSide, useQuickViewFirst, useQuickViewMode, useQuickViewSide, useSettingsEpoch } from "./settings";
+import type { QuickViewMode, QuickViewSide } from "./settings";
 import type { TabLayout } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
@@ -256,11 +257,17 @@ type QuickViewState = {
   teamNumber: string;
   programCode?: string;
   teamName?: string | null;
+  // Which half of the viewport the opening click landed on — feeds the
+  // "adaptive" sidebar-side setting. Absent (e.g. keyboard) → right.
+  pointerSide?: "left" | "right";
 } | null;
 let _quickView: QuickViewState = null;
 const _quickViewListeners = new Set<() => void>();
 function _emitQuickView() { for (const l of _quickViewListeners) l(); }
 function openQuickView(payload: NonNullable<QuickViewState>) { _quickView = payload; _emitQuickView(); }
+function pointerSideFromEvent(e: { clientX: number }): "left" | "right" {
+  return e.clientX < window.innerWidth / 2 ? "left" : "right";
+}
 function closeQuickView() { _quickView = null; _emitQuickView(); }
 function subscribeQuickView(l: () => void) { _quickViewListeners.add(l); return () => _quickViewListeners.delete(l); }
 function getQuickView() { return _quickView; }
@@ -2039,7 +2046,7 @@ function CompareTeamLink({
           if (!quickViewFirst || _currentEventId == null) return;
           e.preventDefault();
           e.stopPropagation();
-          openQuickView({ teamId, teamNumber, programCode, teamName });
+          openQuickView({ teamId, teamNumber, programCode, teamName, pointerSide: pointerSideFromEvent(e) });
         }}
       >
         {content}
@@ -2090,7 +2097,7 @@ function TeamQuickLink({ teamId, teamNumber, programCode, teamName, className, t
         if (!quickViewFirst || _currentEventId == null) return;
         e.preventDefault();
         e.stopPropagation();
-        openQuickView({ teamId, teamNumber, programCode, teamName });
+        openQuickView({ teamId, teamNumber, programCode, teamName, pointerSide: pointerSideFromEvent(e) });
       }}
     >
       {content}
@@ -5309,11 +5316,11 @@ function TeamTable({ teams, loading, localPageSize, eventId, orgId, divisionMap,
               const expanded = expandedTeamId === team.id;
               return (
                 <Fragment key={team.id}>
-                  <tr key={team.id} className={`team-row${compareMode ? " compare-pick-row" : ""}`} onClick={() => {
+                  <tr key={team.id} className={`team-row${compareMode ? " compare-pick-row" : ""}`} onClick={(e) => {
                     if (compareMode) return;
                     // Quick view only inside an event (Teams tab); the /teams list navigates.
                     if (quickViewFirst && _currentEventId != null) {
-                      openQuickView({ teamId: team.id, teamNumber: team.number, programCode: programSlug(team.program), teamName: team.team_name });
+                      openQuickView({ teamId: team.id, teamNumber: team.number, programCode: programSlug(team.program), teamName: team.team_name, pointerSide: pointerSideFromEvent(e) });
                     } else {
                       navigate(teamPath(team));
                     }
@@ -7604,12 +7611,27 @@ function QuickViewPicklistButton({ orgId, eventId, teamId, teamNumber, teamName 
   );
 }
 
-// Bottom-center sheet (centered modal on narrow screens) showing a quick look at
-// a team at the current event — stats + match table, plus quick actions.
-// Self-contained: loads the team and its latest season's data on its own.
+// Quick look at a team at the current event — stats + match table, plus quick
+// actions. Two desktop modes (a setting): a docked sidebar that pushes the page
+// content aside (default), or a bottom-center sheet. Centered modal on narrow
+// screens. Self-contained: loads the team and its latest season's data on its own.
 function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>; onClose: () => void }) {
   const [mounted, setMounted] = useState(false);
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  // Sidebar (default) docks beside the page content; sheet slides up from the
+  // bottom. Side is a setting; "adaptive" follows the opening click's half.
+  const mode = useQuickViewMode();
+  const sideSetting = useQuickViewSide();
+  const side: "left" | "right" = sideSetting === "adaptive" ? (state.pointerSide ?? "right") : sideSetting;
+  // Animated close: drop `.open` so the slide-out transition plays, then tell
+  // the store to unmount once it finishes. Every close path funnels through here.
+  const closingRef = useRef(false);
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setMounted(false);
+    window.setTimeout(onClose, 240);
+  }, [onClose]);
   const orgs = useOrgs();
   const primaryOrg = orgs[0] ?? null;
   // Capture the event context once — quick view is opened from an event, and the
@@ -7687,17 +7709,17 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   useEffect(() => {
     const trigger = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") requestClose(); };
     window.addEventListener("keydown", onKey);
     // Close when the user navigates away (e.g. clicks an event/team link inside).
-    window.addEventListener(NAV_EVENT, onClose);
-    window.addEventListener("popstate", onClose);
+    window.addEventListener(NAV_EVENT, requestClose);
+    window.addEventListener("popstate", requestClose);
     // Only lock page scroll in the narrow-screen modal mode; the desktop drawer is
     // non-blocking so the page behind it stays scrollable/usable.
     const isModal = window.matchMedia("(max-width: 820px)").matches;
-    // If the sheet would cover the clicked team, nudge the page so the trigger
-    // ends up just above it. 360px/72vh mirrors .quick-view-panel's max-height.
-    if (!isModal && trigger && trigger !== document.body) {
+    // Sheet mode: if the sheet would cover the clicked team, nudge the page so the
+    // trigger ends up just above it. 360px/72vh mirrors .quick-view-panel's max-height.
+    if (!isModal && mode === "sheet" && trigger && trigger !== document.body) {
       const sheetTop = window.innerHeight - Math.min(360, window.innerHeight * 0.72);
       const overlap = trigger.getBoundingClientRect().bottom - (sheetTop - 12);
       if (overlap > 0) window.scrollBy({ top: overlap, behavior: "smooth" });
@@ -7706,12 +7728,23 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
     if (isModal) document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener(NAV_EVENT, onClose);
-      window.removeEventListener("popstate", onClose);
+      window.removeEventListener(NAV_EVENT, requestClose);
+      window.removeEventListener("popstate", requestClose);
       if (isModal) document.body.style.overflow = prevOverflow;
       trigger?.focus?.();
     };
-  }, [onClose]);
+    // `mode` only steers the one-time scroll nudge; deliberately not a dep.
+  }, [requestClose]);
+
+  // Sidebar mode pushes the page content aside (main gets side padding) so the
+  // panel occupies the freed space. Tied to `mounted` so the push animates in
+  // sync with the panel's slide on both open and close.
+  useEffect(() => {
+    if (mode !== "sidebar" || !mounted || window.matchMedia("(max-width: 820px)").matches) return;
+    const cls = side === "left" ? "qv-push-left" : "qv-push-right";
+    document.body.classList.add(cls);
+    return () => document.body.classList.remove(cls);
+  }, [mode, side, mounted]);
 
   const isIq = team ? isIqProgramInfo(team.program) : false;
   const programCode = team ? programSlug(team.program) : (state.programCode ?? "");
@@ -7777,14 +7810,14 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
       ];
 
   const goFull = () => {
-    onClose();
     navigate(teamSlugPath(state.programCode ?? programCode, state.teamNumber, teamId ?? undefined));
+    requestClose(); // navigate fires NAV_EVENT → requestClose; explicit for clarity
   };
 
   return (
-    <div className="quick-view-overlay" onClick={onClose}>
+    <div className="quick-view-overlay" onClick={requestClose}>
       <aside
-        className={`quick-view-panel${mounted ? " open" : ""}`}
+        className={`quick-view-panel mode-${mode}${mode === "sidebar" ? ` side-${side}` : ""}${mounted ? " open" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={`Quick view for team ${state.teamNumber}`}
@@ -7829,7 +7862,7 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
           </div>
           <span className="close-btn-wrap">
             <kbd className="esc-hint">Esc</kbd>
-            <button ref={closeRef} type="button" className="video-close-btn" onClick={onClose} aria-label="Close quick view">×</button>
+            <button ref={closeRef} type="button" className="video-close-btn" onClick={requestClose} aria-label="Close quick view">×</button>
           </span>
         </div>
 
@@ -11862,10 +11895,38 @@ function QuickViewWire({ value }: { value: boolean }) {
   );
 }
 
+const QUICK_VIEW_MODE_OPTIONS: Array<{ value: QuickViewMode; label: string }> = [
+  { value: "sidebar", label: "Sidebar" },
+  { value: "sheet", label: "Bottom sheet" },
+];
+
+const QUICK_VIEW_SIDE_OPTIONS: Array<{ value: QuickViewSide; label: string }> = [
+  { value: "right", label: "Right" },
+  { value: "left", label: "Left" },
+  { value: "adaptive", label: "Adaptive" },
+];
+
+// Mini wireframe preview of where the quick view panel sits: docked right/left,
+// the bottom sheet, or adaptive (both sides, one ghosted).
+function QuickViewPlacementWire({ panel }: { panel: "bottom" | "right" | "left" | "adaptive" }) {
+  return (
+    <span className={`layout-wire qv-wire qv-p-${panel}`} aria-hidden="true">
+      <span className="lw-body">
+        <span className="lw-line" />
+        <span className="lw-line short" />
+      </span>
+      <span className="qv-wire-panel" />
+      {panel === "adaptive" && <span className="qv-wire-panel ghost" />}
+    </span>
+  );
+}
+
 function AppearanceSettings() {
   const { updateProfile } = useAuth();
   const theme = useTheme(); // global theme store — already reflects the synced cloud value
   const quickViewFirst = useQuickViewFirst(); // team-click behavior, synced
+  const quickViewMode = useQuickViewMode(); // sidebar vs bottom sheet, synced
+  const quickViewSide = useQuickViewSide(); // sidebar dock side, synced
 
   const choose = (value: NonNullable<Profile["theme"]>) => {
     applyTheme(value); // instant local apply + localStorage
@@ -11919,6 +11980,50 @@ function AppearanceSettings() {
             ))}
           </div>
         </div>
+
+        {quickViewFirst && (
+          <div className="settings-field">
+            <h3 className="settings-field-title">Quick view style</h3>
+            <p className="settings-section-copy">
+              Dock the quick view beside the page as a sidebar, or slide it up from the bottom.
+            </p>
+            <div className="layout-picker" role="group" aria-label="Quick view style">
+              {QUICK_VIEW_MODE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`theme-tile ${quickViewMode === option.value ? "active" : ""}`}
+                  onClick={() => setQuickViewMode(option.value)}
+                  aria-pressed={quickViewMode === option.value}
+                >
+                  <QuickViewPlacementWire panel={option.value === "sheet" ? "bottom" : quickViewSide === "left" ? "left" : "right"} />
+                  <span className="theme-tile-label">{option.label}</span>
+                </button>
+              ))}
+            </div>
+            {quickViewMode === "sidebar" && (
+              <>
+                <p className="settings-section-copy" style={{ marginTop: 14 }}>
+                  Which side the sidebar opens on. Adaptive picks the side closest to your cursor.
+                </p>
+                <div className="layout-picker layout-picker-3" role="group" aria-label="Sidebar side">
+                  {QUICK_VIEW_SIDE_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`theme-tile ${quickViewSide === option.value ? "active" : ""}`}
+                      onClick={() => setQuickViewSide(option.value)}
+                      aria-pressed={quickViewSide === option.value}
+                    >
+                      <QuickViewPlacementWire panel={option.value} />
+                      <span className="theme-tile-label">{option.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

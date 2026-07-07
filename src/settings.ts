@@ -16,7 +16,9 @@ const EVENTS_PROGRAMS_KEY = "vex-events-programs";
 const EVENTS_FILTERS_KEY = "vex-events-filters";
 const TAB_LAYOUT_KEY = "vex-tab-layout";
 const QUICK_VIEW_FIRST_KEY = "vex-quick-view-first";
-const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY, QUICK_VIEW_FIRST_KEY] as const;
+const QUICK_VIEW_MODE_KEY = "vex-quick-view-mode";
+const QUICK_VIEW_SIDE_KEY = "vex-quick-view-side";
+const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY, QUICK_VIEW_FIRST_KEY, QUICK_VIEW_MODE_KEY, QUICK_VIEW_SIDE_KEY] as const;
 export type SyncedSettingKey = (typeof SYNCED_KEYS)[number];
 
 // Tab orientation for the event/team detail views. "horizontal" matches the
@@ -36,7 +38,8 @@ const listeners = new Set<() => void>();
 // an EventsPage remount), these fire whenever the layout value changes — including
 // self-writes — so EventDetail/TeamDetail/Settings re-render live.
 const tabListeners = new Set<() => void>();
-// Separate listener set for the quick-view-first preference (same rationale).
+// Separate listener set for the quick-view preferences (same rationale).
+// Shared by first/mode/side — they always render together.
 const quickViewListeners = new Set<() => void>();
 
 function emit() {
@@ -251,6 +254,50 @@ export function useQuickViewFirst(): boolean {
 export function setQuickViewFirst(value: boolean) {
   writeLS(QUICK_VIEW_FIRST_KEY, value);
   const next: Values = { ...currentValues, [QUICK_VIEW_FIRST_KEY]: value };
+  if (sameValues(next, currentValues)) return;
+  currentValues = next;
+  if (signedIn && supabase && userId) void upsertCloud(supabase, userId, next);
+  emitQuickViewFirst();
+}
+
+// --- quick-view mode + side preferences ---------------------------------------
+
+// "sidebar" docks the quick view beside the page content (pushing it aside);
+// "sheet" is the bottom-center sheet.
+export type QuickViewMode = "sidebar" | "sheet";
+// Which side the sidebar docks on. "adaptive" picks the side nearest the cursor
+// at open time (the pre-sheet behavior).
+export type QuickViewSide = "right" | "left" | "adaptive";
+
+function getQuickViewMode(): QuickViewMode {
+  return currentValues[QUICK_VIEW_MODE_KEY] === "sheet" ? "sheet" : "sidebar";
+}
+
+export function useQuickViewMode(): QuickViewMode {
+  return useSyncExternalStore(subscribeQuickViewFirst, getQuickViewMode, getQuickViewMode);
+}
+
+export function setQuickViewMode(value: QuickViewMode) {
+  writeLS(QUICK_VIEW_MODE_KEY, value);
+  const next: Values = { ...currentValues, [QUICK_VIEW_MODE_KEY]: value };
+  if (sameValues(next, currentValues)) return;
+  currentValues = next;
+  if (signedIn && supabase && userId) void upsertCloud(supabase, userId, next);
+  emitQuickViewFirst();
+}
+
+function getQuickViewSide(): QuickViewSide {
+  const v = currentValues[QUICK_VIEW_SIDE_KEY];
+  return v === "left" || v === "adaptive" ? v : "right";
+}
+
+export function useQuickViewSide(): QuickViewSide {
+  return useSyncExternalStore(subscribeQuickViewFirst, getQuickViewSide, getQuickViewSide);
+}
+
+export function setQuickViewSide(value: QuickViewSide) {
+  writeLS(QUICK_VIEW_SIDE_KEY, value);
+  const next: Values = { ...currentValues, [QUICK_VIEW_SIDE_KEY]: value };
   if (sameValues(next, currentValues)) return;
   currentValues = next;
   if (signedIn && supabase && userId) void upsertCloud(supabase, userId, next);

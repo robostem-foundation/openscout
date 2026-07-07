@@ -310,6 +310,9 @@ nav a.active {
 
 main {
   min-height: calc(100vh - 160px);
+  /* Animates the quick-view sidebar push (body.qv-push-*) in sync with the
+     panel's slide; padding never changes otherwise. */
+  transition: padding 0.24s ease;
 }
 
 .page {
@@ -7339,6 +7342,47 @@ td.quick-look-col {
   opacity: 0.55;
 }
 
+/* Placement wireframes for the quick-view style/side pickers: the accent panel
+   docks on the chosen edge ("adaptive" ghosts the opposite side too). */
+.layout-picker-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.qv-p-bottom .lw-body {
+  margin-bottom: 26%;
+}
+.qv-p-right .lw-body {
+  margin-right: 30%;
+}
+.qv-p-left .lw-body {
+  margin-left: 30%;
+}
+.qv-p-adaptive .lw-body {
+  margin: 0 30%;
+}
+.qv-p-right .qv-wire-panel,
+.qv-p-left .qv-wire-panel,
+.qv-p-adaptive .qv-wire-panel {
+  top: 12%;
+  bottom: 12%;
+  height: auto;
+  width: 24%;
+}
+.qv-p-right .qv-wire-panel,
+.qv-p-adaptive .qv-wire-panel {
+  left: auto;
+  right: 0;
+  border-radius: 3px 0 0 3px;
+}
+.qv-p-left .qv-wire-panel,
+.qv-p-adaptive .qv-wire-panel.ghost {
+  left: 0;
+  right: auto;
+  border-radius: 0 3px 3px 0;
+}
+.qv-p-adaptive .qv-wire-panel.ghost {
+  opacity: 0.25;
+}
+
 .settings-actions {
   display: flex;
   align-items: center;
@@ -8229,6 +8273,76 @@ a.org-note-row:hover { background: var(--surface-2); }
 
 .quick-view-panel.open {
   transform: translateX(-50%) translateY(0);
+}
+
+/* ── Sidebar mode (desktop only) ──
+   An inset card docked to one edge, below the floating topbar. The page content
+   is pushed aside (body.qv-push-* pads <main>, transitioned above) so the panel
+   occupies the freed space instead of covering anything — same idea as the
+   events page's sidebar + list split. */
+@media (min-width: 821px) {
+  :root {
+    --qv-sidebar-w: min(460px, 38vw);
+  }
+
+  .quick-view-panel.mode-sidebar {
+    top: 80px; /* clears the floating topbar island (12px margin + 56px bar) */
+    bottom: 12px;
+    right: 12px;
+    left: auto;
+    width: var(--qv-sidebar-w);
+    max-height: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    transform: translateX(calc(100% + 12px));
+  }
+  .quick-view-panel.mode-sidebar.open {
+    transform: translateX(0);
+  }
+  .quick-view-panel.mode-sidebar.side-left {
+    left: 12px;
+    right: auto;
+    transform: translateX(calc(-100% - 12px));
+  }
+  .quick-view-panel.mode-sidebar.side-left.open {
+    transform: translateX(0);
+  }
+
+  body.qv-push-right main {
+    padding-right: calc(var(--qv-sidebar-w) + 24px);
+  }
+  body.qv-push-left main {
+    padding-left: calc(var(--qv-sidebar-w) + 24px);
+  }
+
+  /* The narrow panel stacks what the wide sheet lays out in rows: the header
+     wraps (title + close first, actions below) and the stats/matches columns
+     become a single column. */
+  .quick-view-panel.mode-sidebar .quick-view-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  /* Zero flex-basis so the (wrappable) heading shares row 1 with the close
+     control instead of pushing it to its own row. */
+  .quick-view-panel.mode-sidebar .quick-view-heading {
+    flex: 1 1 0;
+  }
+  .quick-view-panel.mode-sidebar .close-btn-wrap {
+    order: 1;
+  }
+  .quick-view-panel.mode-sidebar .quick-view-actions {
+    order: 2;
+    flex-basis: 100%;
+  }
+  .quick-view-panel.mode-sidebar .quick-view-cols {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .quick-view-panel.mode-sidebar .quick-view-stats-col {
+    position: static;
+    flex: none;
+    width: 100%;
+  }
 }
 
 .quick-view-header {
