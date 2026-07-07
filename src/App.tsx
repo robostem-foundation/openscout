@@ -262,9 +262,13 @@ type QuickViewState = {
   pointerSide?: "left" | "right";
 } | null;
 let _quickView: QuickViewState = null;
+// Bumped on every open; keys the panel so each open mounts a FRESH instance.
+// Without it, opening team B while team A's panel is mid-close reuses the
+// instance with stale mounted/closing state (panel stuck off-screen, unclosable).
+let _quickViewSeq = 0;
 const _quickViewListeners = new Set<() => void>();
 function _emitQuickView() { for (const l of _quickViewListeners) l(); }
-function openQuickView(payload: NonNullable<QuickViewState>) { _quickView = payload; _emitQuickView(); }
+function openQuickView(payload: NonNullable<QuickViewState>) { _quickView = payload; _quickViewSeq++; _emitQuickView(); }
 function pointerSideFromEvent(e: { clientX: number }): "left" | "right" {
   return e.clientX < window.innerWidth / 2 ? "left" : "right";
 }
@@ -7625,13 +7629,17 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   const side: "left" | "right" = sideSetting === "adaptive" ? (state.pointerSide ?? "right") : sideSetting;
   // Animated close: drop `.open` so the slide-out transition plays, then tell
   // the store to unmount once it finishes. Every close path funnels through here.
+  // The timer is cleared on unmount so a panel replaced mid-close (openQuickView
+  // remounts via the seq key) can't close its successor.
   const closingRef = useRef(false);
+  const closeTimer = useRef<number | undefined>(undefined);
   const requestClose = useCallback(() => {
     if (closingRef.current) return;
     closingRef.current = true;
     setMounted(false);
-    window.setTimeout(onClose, 240);
+    closeTimer.current = window.setTimeout(onClose, 240);
   }, [onClose]);
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   const orgs = useOrgs();
   const primaryOrg = orgs[0] ?? null;
   // Capture the event context once — quick view is opened from an event, and the
@@ -14916,7 +14924,7 @@ export default function App() {
       {shortcutsOpen && <ErrorBoundary silent><ShortcutsOverlay onClose={() => setShortcutsOpen(false)} /></ErrorBoundary>}
       {trayEntries.length > 0 && <ErrorBoundary silent><CompareTray entries={trayEntries} /></ErrorBoundary>}
       {compareModalOpen && <ErrorBoundary silent><ComparisonModal entries={trayEntries} onClose={closeCompareModal} /></ErrorBoundary>}
-      {quickView && <ErrorBoundary silent><TeamQuickView state={quickView} onClose={closeQuickView} /></ErrorBoundary>}
+      {quickView && <ErrorBoundary silent><TeamQuickView key={_quickViewSeq} state={quickView} onClose={closeQuickView} /></ErrorBoundary>}
     </ErrorBoundary>
   );
 }
