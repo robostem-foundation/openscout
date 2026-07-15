@@ -6378,6 +6378,62 @@ td.quick-look-col {
   line-height: 1.3;
 }
 
+/* Team overview — the stat grid (now 2-up / 3 rows) sits beside the radar. */
+.about-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.82fr);
+  gap: 16px;
+  /* Both columns take the taller one's height so their edges line up. */
+  align-items: stretch;
+}
+
+.about-overview--solo {
+  grid-template-columns: 1fr;
+}
+
+/* Left block: 2 columns × 3 rows instead of the standalone 3 × 2. The 1fr rows
+   share the stretched height evenly, so the card fills with no blank strip. */
+.about-overview > .about-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+}
+
+.about-radar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.about-radar-title {
+  color: var(--text-faint);
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.about-radar-chart {
+  width: 100%;
+  flex: 1;
+  min-height: 200px;
+}
+
+.about-radar-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
 .about-charts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6528,13 +6584,19 @@ td.quick-look-col {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  /* Radar drops below the stats once the row gets too narrow to share. */
+  .about-overview {
+    grid-template-columns: 1fr;
+  }
+
   .about-charts {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 480px) {
-  .about-stats {
+  .about-stats,
+  .about-overview > .about-stats {
     grid-template-columns: 1fr;
   }
 }
