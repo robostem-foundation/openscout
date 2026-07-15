@@ -7215,11 +7215,13 @@ function TeamRadar({
   };
 
   const data = useMemo<RadarAxis[]>(() => {
-    const total = leaderboard?.length ?? 0;
-    // Global World Skills standing as a percentile (rank 1 ≈ 100).
-    const wsPct = wsEntry && total ? clamp100(100 * (1 - (wsEntry.rank - 1) / total)) : null;
-    const wsRaw = wsEntry
-      ? `#${wsEntry.rank.toLocaleString()}${total ? ` of ${total.toLocaleString()}` : ""}`
+    // World Skills as a share of the #1 combined score in this grade's
+    // leaderboard: a team at 50 pts when the top team scored 200 reads 25%.
+    const topScore = (leaderboard ?? []).reduce((m, e) => Math.max(m, e.scores.score ?? 0), 0);
+    const wsScore = wsEntry?.scores.score ?? null;
+    const wsPct = wsScore != null && topScore > 0 ? clamp100((wsScore / topScore) * 100) : null;
+    const wsRaw = wsPct != null
+      ? `${wsScore} pts · ${Math.round(wsPct)}% of #1 (${topScore})`
       : "Unranked";
 
     const consistency = cvConsistency(isIq ? perEventQualAvg : perEventAvgWp);
