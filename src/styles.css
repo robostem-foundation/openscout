@@ -6649,6 +6649,13 @@ td.quick-look-col {
   min-width: 0;
 }
 
+.about-radar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .about-radar-title {
   color: var(--text-faint);
   font-family: var(--font-geist-mono, ui-monospace, monospace);
@@ -6656,6 +6663,31 @@ td.quick-look-col {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.about-radar-dl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.about-radar-dl:hover {
+  color: var(--text-muted);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.about-radar-dl:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .about-radar-chart {
