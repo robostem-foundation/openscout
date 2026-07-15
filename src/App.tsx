@@ -7041,7 +7041,7 @@ const clamp100 = (n: number) => Math.max(0, Math.min(100, n));
 
 // Reference points where an axis reads "full" (100). Tune to taste.
 const RADAR_BENCH = {
-  awpRate: 1,   // AWP earned per qual match — max is 1 (auton reliability)
+  awpRate: 1,   // weighted AWP per qual match for a full ring (regular AWP maxes at 1/match; signature counts 3×)
   avgWp: 3,     // avg WP / match — max is 3: 2 (win) + 1 (AWP) (qual dominance)
   expScale: 45, // experience saturation constant (see the curve below)
   iqRank: 24,   // IQ: avg qual rank at/beyond which the axis bottoms out
@@ -7243,8 +7243,10 @@ function TeamRadar({
       ];
     }
 
-    // Signature/championship/worlds AWPs count double toward the auton axis.
-    const weightedAwp = sigAwp * 2 + regularAwp;
+    // AWP axis: weighted AWP per qual match. Signature/championship/worlds AWPs
+    // (much harder to earn) count triple toward the rate, so they push the spoke
+    // out far faster than regular AWPs do.
+    const weightedAwp = sigAwp * 3 + regularAwp;
     const awpRate = totalQualMatches > 0 ? weightedAwp / totalQualMatches : null;
 
     // Experience blends match volume, event breadth, and how far up the event
@@ -7254,7 +7256,7 @@ function TeamRadar({
     const expScore = 100 * (1 - Math.exp(-expPoints / RADAR_BENCH.expScale));
     return [
       { axis: "Win Rate", value: agg.matches > 0 ? clamp100(agg.winRate * 100) : 0, raw: agg.matches > 0 ? `${Math.round(agg.winRate * 100)}%` : "—", known: agg.matches > 0 },
-      { axis: "Sig AWP", value: awpRate != null ? clamp100((awpRate / RADAR_BENCH.awpRate) * 100) : 0, raw: `${sigAwp} Sig AWP · ${regularAwp} AWP`, known: awpRate != null, standalone: true },
+      { axis: "AWP", value: awpRate != null ? clamp100((awpRate / RADAR_BENCH.awpRate) * 100) : 0, raw: `${sigAwp} Sig AWP · ${regularAwp} AWP`, known: awpRate != null, standalone: true },
       { axis: "World Skills", value: wsPct ?? 0, raw: wsRaw, known: wsPct != null },
       { axis: "Consistency", value: consistency ?? 0, raw: consistency != null ? `${Math.round(consistency)}%` : "—", known: consistency != null },
       { axis: "Qual WP", value: agg.matches > 0 ? clamp100((agg.avgWp / RADAR_BENCH.avgWp) * 100) : 0, raw: agg.matches > 0 ? `${agg.avgWp.toFixed(1)} WP/match` : "—", known: agg.matches > 0 },
