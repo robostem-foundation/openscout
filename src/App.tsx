@@ -269,7 +269,25 @@ let _quickView: QuickViewState = null;
 let _quickViewSeq = 0;
 const _quickViewListeners = new Set<() => void>();
 function _emitQuickView() { for (const l of _quickViewListeners) l(); }
-function openQuickView(payload: NonNullable<QuickViewState>) { _quickView = payload; _quickViewSeq++; _emitQuickView(); }
+// The live panel registers here so a subsequent open can toggle (same team →
+// animated close) or transition (different team → swap content in place) instead
+// of blindly remounting. Cleared when the panel unmounts.
+let _quickViewHandle: { teamKey: string; isClosing: () => boolean; requestClose: () => void } | null = null;
+function quickViewKey(p: NonNullable<QuickViewState>): string {
+  return p.teamId != null ? `id:${p.teamId}` : `num:${(p.programCode ?? "").toLowerCase()}/${p.teamNumber.toUpperCase()}`;
+}
+function openQuickView(payload: NonNullable<QuickViewState>) {
+  const handle = _quickViewHandle;
+  if (handle && !handle.isClosing()) {
+    // Re-clicking the team that's already showing closes the panel (toggle).
+    if (handle.teamKey === quickViewKey(payload)) { handle.requestClose(); return; }
+    // A different team while one is open → swap in place (same instance, no
+    // slide-out/in) for a clean transition.
+    _quickView = payload; _emitQuickView(); return;
+  }
+  // Nothing live (or the previous panel is mid-close) → mount a fresh one.
+  _quickView = payload; _quickViewSeq++; _emitQuickView();
+}
 function pointerSideFromEvent(e: { clientX: number }): "left" | "right" {
   return e.clientX < window.innerWidth / 2 ? "left" : "right";
 }
@@ -303,6 +321,11 @@ let _currentEventRankings: Ranking[] = [];
 // All matches for the current event — used by the comparison modal to compute
 // per-event OPR/DPR/CCWM (per-team slots only hold a team's own matches).
 let _currentEventMatches: Match[] = [];
+
+// Module-level: true while the match-video modal is open. A quick view opened from
+// inside that modal (via a team pill in the notes) reads this to force a
+// non-dimmed bottom sheet that layers ABOVE the video dialog (see TeamQuickView).
+let _videoOverlayOpen = false;
 
 // Module-level: opens the in-event team search — registered by EventDetail while
 // mounted, cleared on unmount. Lets the global F shortcut expand the search bar
@@ -8125,8 +8148,13 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   const closeRef = useRef<HTMLButtonElement | null>(null);
   // Sidebar (default) docks beside the page content; sheet slides up from the
   // bottom. Side is a setting; "adaptive" follows the opening click's half.
-  const mode = useQuickViewMode();
+  const modeSetting = useQuickViewMode();
   const sideSetting = useQuickViewSide();
+  // Opened from inside the match-video modal: force a bottom sheet that layers
+  // above the video dialog (see the `in-video` styles), ignoring the mode/side
+  // settings so it never docks behind the darkened dialog backdrop.
+  const inVideo = useRef(_videoOverlayOpen).current;
+  const mode = inVideo ? "sheet" : modeSetting;
   const side: "left" | "right" = sideSetting === "adaptive" ? (state.pointerSide ?? "right") : sideSetting;
   // Animated close: drop `.open` so the slide-out transition plays, then tell
   // the store to unmount once it finishes. Every close path funnels through here.
@@ -8141,6 +8169,13 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
     closeTimer.current = window.setTimeout(onClose, 240);
   }, [onClose]);
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
+  // Register this panel so openQuickView can toggle/transition it (teamKey tracks
+  // the currently shown team, so an in-place swap updates it).
+  useEffect(() => {
+    const handle = { teamKey: quickViewKey(state), isClosing: () => closingRef.current, requestClose };
+    _quickViewHandle = handle;
+    return () => { if (_quickViewHandle === handle) _quickViewHandle = null; };
+  }, [state, requestClose]);
   const orgs = useOrgs();
   const primaryOrg = orgs[0] ?? null;
   // Capture the event context once — quick view is opened from an event, and the
@@ -8255,6 +8290,26 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
     return () => document.body.classList.remove(cls);
   }, [mode, side, mounted]);
 
+  // In video context: nudge the video modal upward a little so the bottom sheet
+  // doesn't fully cover the player. Clamped so the modal keeps some top padding —
+  // overlapping the sheet is fine, pushing off the top is not.
+  useEffect(() => {
+    if (!inVideo || !mounted) return;
+    document.body.classList.add("qv-video-sheet");
+    const modal = document.querySelector<HTMLElement>(".video-modal");
+    if (modal) {
+      const PAD = 16;
+      const desired = window.innerHeight * 0.12;
+      const shift = Math.min(desired, Math.max(0, modal.getBoundingClientRect().top - PAD));
+      modal.style.transform = `translateY(${-shift}px)`;
+    }
+    return () => {
+      document.body.classList.remove("qv-video-sheet");
+      const m = document.querySelector<HTMLElement>(".video-modal");
+      if (m) m.style.transform = "";
+    };
+  }, [inVideo, mounted]);
+
   const isIq = team ? isIqProgramInfo(team.program) : false;
   const programCode = team ? programSlug(team.program) : (state.programCode ?? "");
   const eventLoading = rankingsQ.loading || (isIq && matchesQ.loading);
@@ -8324,9 +8379,9 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   };
 
   return (
-    <div className="quick-view-overlay" onClick={requestClose}>
+    <div className={`quick-view-overlay${inVideo ? " in-video" : ""}`} onClick={requestClose}>
       <aside
-        className={`quick-view-panel mode-${mode}${mode === "sidebar" ? ` side-${side}` : ""}${mounted ? " open" : ""}`}
+        className={`quick-view-panel mode-${mode}${mode === "sidebar" ? ` side-${side}` : ""}${inVideo ? " in-video" : ""}${mounted ? " open" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={`Quick view for team ${state.teamNumber}`}
@@ -10036,6 +10091,331 @@ function NoteTeamChips({ match, body, eventTeams }: { match: Match; body: string
   );
 }
 
+// ── Inline team pills inside note editors ─────────────────────────────────────
+// A team number typed into a note (1-5 digits + one letter, e.g. "169W") is
+// auto-detected and rendered as an inline, clickable pill colored by its alliance
+// (red/blue for teams in this match, accent for any other event team). The editor
+// is a contentEditable surface whose *source of truth is plain text*: on each
+// change we re-tokenize the text and rebuild the DOM, wrapping recognized team
+// numbers in atomic (contentEditable=false) spans. The store, org notes, the
+// timestamp jump-bar and search all keep seeing a plain string via textContent —
+// no storage/format change. Clicking a pill honors the quick-view-first setting,
+// exactly like TeamQuickLink.
+
+type NoteTeamInfo = { teamId?: number; teamNumber: string; color: "red" | "blue" | "accent" };
+type NoteSeg = { type: "text"; text: string } | { type: "pill"; text: string; team: NoteTeamInfo };
+
+// Candidate token: 1-5 digits then a single letter. Word boundaries are checked
+// against the surrounding characters so "abc10B" / "10BC" are left as plain text.
+const NOTE_TEAM_TOKEN_RE = /\d{1,5}[A-Za-z]/g;
+// A lone trailing pill can't hold a caret after it, so renderNoteSegs appends this
+// zero-width space as an editable landing spot. It is stripped from every read.
+const NOTE_ZWSP = "​";
+
+function tokenizeNote(text: string, lookup: (token: string) => NoteTeamInfo | null): NoteSeg[] {
+  const segs: NoteSeg[] = [];
+  let last = 0;
+  NOTE_TEAM_TOKEN_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = NOTE_TEAM_TOKEN_RE.exec(text))) {
+    const start = m.index;
+    const end = start + m[0].length;
+    const before = start > 0 ? text[start - 1] : "";
+    const after = end < text.length ? text[end] : "";
+    if (/[A-Za-z0-9]/.test(before) || /[A-Za-z0-9]/.test(after)) continue;
+    const team = lookup(m[0]);
+    if (!team) continue;
+    if (start > last) segs.push({ type: "text", text: text.slice(last, start) });
+    segs.push({ type: "pill", text: m[0], team });
+    last = end;
+  }
+  if (last < text.length) segs.push({ type: "text", text: text.slice(last) });
+  return segs;
+}
+
+function renderNoteSegs(el: HTMLElement, segs: NoteSeg[], programCode?: string) {
+  const nodes: Node[] = [];
+  let endsWithPill = false;
+  for (const seg of segs) {
+    if (seg.type === "text") {
+      nodes.push(document.createTextNode(seg.text));
+      endsWithPill = false;
+    } else {
+      const span = document.createElement("span");
+      span.className = `note-inline-pill note-inline-pill-${seg.team.color}`;
+      span.setAttribute("contenteditable", "false");
+      span.dataset.teamNumber = seg.team.teamNumber;
+      if (seg.team.teamId != null) span.dataset.teamId = String(seg.team.teamId);
+      if (programCode) span.dataset.program = programCode;
+      span.title = `Open team ${seg.team.teamNumber}`;
+      span.textContent = seg.text;
+      nodes.push(span);
+      endsWithPill = true;
+    }
+  }
+  if (endsWithPill) nodes.push(document.createTextNode(NOTE_ZWSP));
+  el.replaceChildren(...nodes);
+}
+
+// Caret position as a character offset into the plain text (ZWSP excluded).
+function noteCaretOffset(el: HTMLElement): number | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  if (!el.contains(range.startContainer)) return null;
+  const pre = range.cloneRange();
+  pre.selectNodeContents(el);
+  pre.setEnd(range.startContainer, range.startOffset);
+  return pre.toString().replace(/​/g, "").length;
+}
+
+// Restore the caret to a plain-text character offset after a DOM rebuild.
+function setNoteCaret(el: HTMLElement, offset: number) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let remaining = offset;
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const clean = (node.nodeValue ?? "").replace(/​/g, "");
+    if (clean.length === 0) continue; // skip the ZWSP landing node
+    if (remaining <= clean.length) {
+      const parent = node.parentElement;
+      const range = document.createRange();
+      if (parent && parent !== el && parent.getAttribute("contenteditable") === "false") {
+        // Offset lands inside an atomic pill — park the caret just after it.
+        range.setStartAfter(parent);
+      } else {
+        range.setStart(node, remaining);
+      }
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return;
+    }
+    remaining -= clean.length;
+  }
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+// A contentEditable note field that live-pills team numbers. `value` is plain
+// text; `onChange` always receives plain text. `apiRef` exposes insertAtCaret so
+// callers (the video panel) can inject timestamps at the cursor.
+function TeamNoteEditor({
+  value,
+  onChange,
+  placeholder,
+  autoFocus,
+  className,
+  match,
+  eventTeams,
+  apiRef,
+}: {
+  value: string;
+  onChange: (text: string) => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  className?: string;
+  match: Match;
+  eventTeams?: { id: number; number: string }[];
+  apiRef?: { current: { insertAtCaret: (text: string) => void } | null };
+}) {
+  const programCode = useContext(ProgramContext);
+  const quickViewFirst = useQuickViewFirst();
+  const editorRef = useRef<HTMLDivElement>(null);
+  const prevHadPills = useRef(false);
+  const composingRef = useRef(false);
+  const lastLookupKey = useRef(" UNSET");
+
+  // Build a case-insensitive team lookup: match teams win (red/blue), then any
+  // other event team as an accent pill. Mirrors NoteTeamChips' color logic.
+  const lookup = useMemo(() => {
+    const map = new Map<string, NoteTeamInfo>();
+    for (const alliance of match.alliances) {
+      const color: NoteTeamInfo["color"] =
+        alliance.color === "red" ? "red" : alliance.color === "blue" ? "blue" : "accent";
+      for (const entry of alliance.teams) {
+        const num = entry.team?.name;
+        if (num) map.set(num.toUpperCase(), { teamId: entry.team.id, teamNumber: num, color });
+      }
+    }
+    for (const t of eventTeams ?? []) {
+      const key = t.number.toUpperCase();
+      if (!map.has(key)) map.set(key, { teamId: t.id, teamNumber: t.number, color: "accent" });
+    }
+    return (token: string) => map.get(token.toUpperCase()) ?? null;
+  }, [match, eventTeams]);
+
+  // Signature that changes when the roster/colors change, so pills re-render once
+  // team data loads even if the note text is unchanged.
+  const lookupKey = useMemo(() => {
+    const parts: string[] = [];
+    for (const alliance of match.alliances)
+      for (const entry of alliance.teams)
+        if (entry.team?.name) parts.push(`${entry.team.name}:${alliance.color ?? ""}`);
+    for (const t of eventTeams ?? []) parts.push(`${t.number}:x`);
+    return parts.join("|");
+  }, [match, eventTeams]);
+
+  const render = useCallback(
+    (text: string, caret: number | null) => {
+      const el = editorRef.current;
+      if (!el) return;
+      const segs = tokenizeNote(text, lookup);
+      prevHadPills.current = segs.some((s) => s.type === "pill");
+      renderNoteSegs(el, segs, programCode);
+      if (caret != null) setNoteCaret(el, caret);
+    },
+    [lookup, programCode],
+  );
+
+  const commit = useCallback(
+    (text: string, caret: number | null) => {
+      const next = text.slice(0, NOTE_CHAR_LIMIT);
+      onChange(next);
+      render(next, caret == null ? null : Math.min(caret, next.length));
+    },
+    [onChange, render],
+  );
+
+  const insertPlainText = useCallback(
+    (str: string) => {
+      const el = editorRef.current;
+      if (!el) return;
+      el.focus();
+      const domText = (el.textContent ?? "").replace(/​/g, "");
+      const offset = noteCaretOffset(el) ?? domText.length;
+      const next = domText.slice(0, offset) + str + domText.slice(offset);
+      commit(next, offset + str.length);
+    },
+    [commit],
+  );
+
+  // Live pilling on plain typing: skip the DOM rebuild entirely while the text has
+  // no pills (the browser already shows it right), rebuild only when a pill exists
+  // or just dissolved, or when the char limit trims the text.
+  const onInput = useCallback(() => {
+    const el = editorRef.current;
+    if (!el || composingRef.current) return;
+    const rawText = (el.textContent ?? "").replace(/​/g, "");
+    const truncated = rawText.length > NOTE_CHAR_LIMIT;
+    const text = truncated ? rawText.slice(0, NOTE_CHAR_LIMIT) : rawText;
+    onChange(text);
+    const segs = tokenizeNote(text, lookup);
+    const hasPills = segs.some((s) => s.type === "pill");
+    // Fast path for plain typing: the browser already shows the text correctly,
+    // so skip the rebuild. Still rebuild when the field empties, so a stray <br>
+    // left by the browser is cleared and the :empty placeholder can show.
+    if (text !== "" && !hasPills && !prevHadPills.current && !truncated) {
+      prevHadPills.current = false;
+      return;
+    }
+    const offset = Math.min(noteCaretOffset(el) ?? text.length, text.length);
+    prevHadPills.current = hasPills;
+    renderNoteSegs(el, segs, programCode);
+    setNoteCaret(el, offset);
+  }, [lookup, onChange, programCode]);
+
+  const onKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLDivElement>) => {
+      // Keep newlines as real "\n" characters so textContent stays faithful
+      // (contentEditable would otherwise insert <div>/<br> that textContent drops).
+      if (e.key === "Enter") {
+        e.preventDefault();
+        insertPlainText("\n");
+      }
+    },
+    [insertPlainText],
+  );
+
+  const onPaste = useCallback(
+    (e: React.ClipboardEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      insertPlainText(e.clipboardData.getData("text/plain"));
+    },
+    [insertPlainText],
+  );
+
+  const onClick = useCallback(
+    (e: MouseEvent<HTMLDivElement>) => {
+      const el = editorRef.current;
+      const pill = (e.target as HTMLElement).closest?.("[data-team-number]") as HTMLElement | null;
+      if (!pill || !el?.contains(pill)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const teamNumber = pill.dataset.teamNumber!;
+      const teamId = pill.dataset.teamId ? Number(pill.dataset.teamId) : undefined;
+      const program = pill.dataset.program || programCode;
+      if (quickViewFirst && _currentEventId != null) {
+        openQuickView({ teamId, teamNumber, programCode: program, pointerSide: pointerSideFromEvent(e) });
+      } else {
+        navigate(teamSlugPath(program, teamNumber, teamId));
+      }
+    },
+    [programCode, quickViewFirst],
+  );
+
+  // Render on external changes: mount, scope switch, timestamp insert, and roster
+  // load. Skipped when the DOM already matches (our own edits handled inline).
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el || composingRef.current) return;
+    const domText = (el.textContent ?? "").replace(/​/g, "");
+    if (domText === value && lastLookupKey.current === lookupKey) return;
+    lastLookupKey.current = lookupKey;
+    const focused = el.contains(document.activeElement);
+    const caret = focused ? Math.min(noteCaretOffset(el) ?? value.length, value.length) : null;
+    render(value, caret);
+  }, [value, lookupKey, render]);
+
+  // Focus + caret-to-end once when requested (replaces textarea autoFocus).
+  useEffect(() => {
+    if (!autoFocus) return;
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    setNoteCaret(el, (el.textContent ?? "").replace(/​/g, "").length);
+  }, [autoFocus]);
+
+  // Expose imperative insert for callers that inject text at the caret.
+  useEffect(() => {
+    if (!apiRef) return;
+    apiRef.current = { insertAtCaret: insertPlainText };
+    return () => {
+      apiRef.current = null;
+    };
+  }, [apiRef, insertPlainText]);
+
+  return (
+    <div
+      ref={editorRef}
+      className={`note-editor ${className ?? ""}`}
+      contentEditable
+      role="textbox"
+      aria-multiline="true"
+      aria-label={placeholder}
+      data-placeholder={placeholder}
+      spellCheck
+      suppressContentEditableWarning
+      onInput={onInput}
+      onKeyDown={onKeyDown}
+      onPaste={onPaste}
+      onClick={onClick}
+      onCompositionStart={() => {
+        composingRef.current = true;
+      }}
+      onCompositionEnd={() => {
+        composingRef.current = false;
+        onInput();
+      }}
+    />
+  );
+}
+
 // Quick note editor anchored to a match row. Binds the textarea directly to the
 // store (single source of truth shared with the video panel); the rail dot flips
 // live as you type and the debounced cloud write happens in the store.
@@ -10111,12 +10491,14 @@ function MatchNotePopover({
           )}
         </div>
       )}
-      <textarea
+      <TeamNoteEditor
         className="note-popover-input"
         autoFocus
         value={activeBody}
-        onChange={(e) => handleChange(e.target.value)}
+        onChange={handleChange}
         placeholder={scope === "personal" ? "Add a note…" : "Add a team note…"}
+        match={match}
+        eventTeams={eventTeams}
       />
       <NoteTeamChips match={match} body={activeBody} eventTeams={eventTeams} />
       <div className="note-popover-footer">
@@ -10425,6 +10807,13 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(playback.timestamp.timestamp ?? 0);
 
+  // Flag the video modal as open so a quick view launched from its notes renders
+  // as a non-dimmed bottom sheet above this dialog instead of behind it.
+  useEffect(() => {
+    _videoOverlayOpen = true;
+    return () => { _videoOverlayOpen = false; };
+  }, []);
+
   const { red, blue, redScore, blueScore, winner } = matchWinner(playback.match);
   const redTeams = red?.teams.map((t) => t.team.name).join(" ") ?? "";
   const blueTeams = blue?.teams.map((t) => t.team.name).join(" ") ?? "";
@@ -10626,24 +11015,15 @@ function NoteEditorPanel({
   const charsLeft = NOTE_CHAR_LIMIT - charsUsed;
   const showCounter = charsUsed > NOTE_CHAR_LIMIT * 0.8;
 
-  const taRef = useRef<HTMLTextAreaElement>(null);
+  const editorApi = useRef<{ insertAtCaret: (text: string) => void } | null>(null);
   const chips = useMemo(() => parseTimestamps(body), [body]);
 
   const insertTimestamp = () => {
     const t = getTime();
     if (t == null) return;
     const token = `[${formatTimestamp(Math.floor(t))}]`;
-    const ta = taRef.current;
-    const start = ta ? ta.selectionStart : body.length;
-    const end = ta ? ta.selectionEnd : body.length;
-    const next = body.slice(0, start) + token + body.slice(end);
-    handleChange(next);
-    const caret = start + token.length;
-    requestAnimationFrame(() => {
-      if (!taRef.current) return;
-      taRef.current.focus();
-      taRef.current.selectionStart = taRef.current.selectionEnd = caret;
-    });
+    if (editorApi.current) editorApi.current.insertAtCaret(token);
+    else handleChange((body + token).slice(0, NOTE_CHAR_LIMIT));
   };
 
   return (
@@ -10684,12 +11064,13 @@ function NoteEditorPanel({
           )}
         </div>
       )}
-      <textarea
-        ref={taRef}
+      <TeamNoteEditor
         className="video-note-input"
         value={body}
-        onChange={(e) => handleChange(e.target.value)}
+        onChange={handleChange}
         placeholder={scope === "personal" ? "Jot notes while you watch…" : "Team notes…"}
+        match={match}
+        apiRef={editorApi}
       />
       {showCounter && (
         <div className={`note-char-counter-block note-char-counter${charsLeft <= 100 ? " danger" : " warn"}`}>
