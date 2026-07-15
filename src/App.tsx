@@ -7075,6 +7075,107 @@ type TeamRadarAgg = {
   avgWp: number; awp: number; avgRank: number; finalistEventCount: number;
 };
 
+// Rasterize the on-screen radar card into a PNG. The area *around* the card is
+// left transparent; the card itself is painted (white in light mode / near-black
+// in dark mode) with its rounded border, a "[TEAM] PROFILE" title, and the radar.
+// CSS-variable colors and fonts are resolved to concrete values because an SVG
+// loaded through <img> can't see the page's stylesheet.
+async function downloadTeamProfile(card: HTMLElement, teamLabel: string) {
+  const svg = card.querySelector<SVGSVGElement>(".about-radar-chart svg");
+  if (!svg) return;
+
+  const root = getComputedStyle(document.documentElement);
+  const cssVar = (name: string, fallback: string) => root.getPropertyValue(name).trim() || fallback;
+  const surface = getComputedStyle(card).backgroundColor || cssVar("--surface", "#ffffff");
+  const border = cssVar("--border", "#eaeaea");
+  const textFaint = cssVar("--text-faint", "#8f8f8f");
+  const textMuted = cssVar("--text-muted", "#666666");
+  const monoFont = cssVar("--font-geist-mono", "ui-monospace, monospace");
+  const accent = "#337ab7";
+  const sansStack = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+
+  const w = svg.clientWidth || 300;
+  const h = svg.clientHeight || 236;
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute("width", String(w));
+  clone.setAttribute("height", String(h));
+  clone.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  let svgStr = new XMLSerializer().serializeToString(clone);
+  svgStr = svgStr
+    .replaceAll("var(--color-value)", accent)
+    .replaceAll("var(--border)", border)
+    .replaceAll("var(--text-muted)", textMuted)
+    .replaceAll("#ccc", border);
+  // SVG text can't inherit page fonts — inject a sans stack.
+  svgStr = svgStr.replace(/(<svg[^>]*>)/, `$1<style>text{font-family:${sansStack};}</style>`);
+
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error("radar render failed"));
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgStr);
+  });
+  if (document.fonts) { try { await document.fonts.ready; } catch { /* noop */ } }
+
+  const dpr = 2;
+  const W = 900, H = 560;
+  const canvas = document.createElement("canvas");
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.scale(dpr, dpr);
+  // Outer area intentionally left transparent — only the card is painted.
+
+  const m = 18;
+  const cx = m, cy = m, cw = W - 2 * m, ch = H - 2 * m, radius = 22;
+  ctx.beginPath();
+  ctx.moveTo(cx + radius, cy);
+  ctx.arcTo(cx + cw, cy, cx + cw, cy + ch, radius);
+  ctx.arcTo(cx + cw, cy + ch, cx, cy + ch, radius);
+  ctx.arcTo(cx, cy + ch, cx, cy, radius);
+  ctx.arcTo(cx, cy, cx + cw, cy, radius);
+  ctx.closePath();
+  ctx.fillStyle = surface;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = border;
+  ctx.stroke();
+
+  // Title: mono, uppercase, letter-spaced, faint — matching the on-card style.
+  ctx.fillStyle = textFaint;
+  ctx.font = `600 14px ${monoFont}`;
+  ctx.textBaseline = "alphabetic";
+  const spaced = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
+  try { spaced.letterSpacing = "1.4px"; } catch { /* older browsers */ }
+  ctx.fillText(`${teamLabel.toUpperCase()} PROFILE`, cx + 26, cy + 40);
+  try { spaced.letterSpacing = "0px"; } catch { /* noop */ }
+
+  // Radar centered below the title, preserving its aspect ratio.
+  const top = cy + 60;
+  const availW = cw - 48;
+  const availH = ch - 84;
+  const s = Math.min(availW / w, availH / h);
+  const dw = w * s, dh = h * s;
+  ctx.drawImage(img, cx + (cw - dw) / 2, top + (availH - dh) / 2, dw, dh);
+
+  await new Promise<void>((resolve) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${teamLabel}-profile.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+      resolve();
+    }, "image/png");
+  });
+}
+
 function TeamRadar({
   isIq,
   agg,
@@ -7084,6 +7185,7 @@ function TeamRadar({
   sigAwp,
   regularAwp,
   marqueeEvents,
+  teamLabel,
   wsEntry,
   leaderboard,
 }: {
@@ -7091,14 +7193,26 @@ function TeamRadar({
   agg: TeamRadarAgg;
   perEventAvgWp: number[];   // V5: per-event avg WP — consistency source
   perEventQualAvg: number[]; // IQ: per-event avg qual score — consistency source
-  totalQualMatches: number;
+  totalQualMatches: number;  // season qual-match count — AWP-rate denominator
   sigAwp: number;            // AWPs earned at signature/championship/worlds events
   regularAwp: number;        // AWPs earned at all other events
   marqueeEvents: number;     // count of signature/championship/worlds events attended
+  teamLabel: string;         // e.g. team number — used in the export title/filename
   wsEntry: WorldSkillsEntry | null;
   leaderboard: WorldSkillsEntry[] | null;
 }) {
   const config: ChartConfig = { value: { label: "Rating", color: "#337ab7" } };
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [downloading, setDownloading] = useState(false);
+  const handleDownload = async () => {
+    if (!cardRef.current || downloading) return;
+    setDownloading(true);
+    try {
+      await downloadTeamProfile(cardRef.current, teamLabel);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const data = useMemo<RadarAxis[]>(() => {
     const total = leaderboard?.length ?? 0;
@@ -7151,8 +7265,22 @@ function TeamRadar({
   const hasAny = data.some((d) => d.known);
 
   return (
-    <div className="about-radar">
-      <span className="about-radar-title">Team Profile</span>
+    <div className="about-radar" ref={cardRef}>
+      <div className="about-radar-head">
+        <span className="about-radar-title">Team Profile</span>
+        {hasAny && (
+          <button
+            type="button"
+            className="about-radar-dl"
+            onClick={handleDownload}
+            disabled={downloading}
+            title="Download as PNG"
+            aria-label="Download team profile as PNG"
+          >
+            <Download size={13} />
+          </button>
+        )}
+      </div>
       {hasAny ? (
         <ChartContainer config={config} className="about-radar-chart" style={{ aspectRatio: "auto" }}>
           <RadarChart data={data} margin={{ top: 8, right: 30, bottom: 8, left: 30 }} outerRadius="70%">
@@ -7485,6 +7613,7 @@ function TeamAboutTab({
           sigAwp={rankRows.reduce((s, r) => s + (r.marquee ? r.awp : 0), 0)}
           regularAwp={rankRows.reduce((s, r) => s + (r.marquee ? 0 : r.awp), 0)}
           marqueeEvents={rankRows.reduce((s, r) => s + (r.marquee ? 1 : 0), 0)}
+          teamLabel={team.number}
           wsEntry={wsEntry}
           leaderboard={worldSkills.data ?? null}
         />
