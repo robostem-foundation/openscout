@@ -2045,6 +2045,32 @@ main {
   gap: 1px;
 }
 
+/* The picker menu is a shared flyout that can be mounted inside a `.filters`
+   form (e.g. the Teams page nests it in `.team-filters`). Guard its internal
+   controls against the general `.filters label` / `.filters input` rules,
+   which are meant for top-level filter fields and would otherwise stretch the
+   option checkboxes into full-width 34px boxes and flatten the option grid.
+   These resets keep the picker rendering identically wherever it's mounted. */
+.picker-menu-list label,
+.picker-menu-list .region-option-list label {
+  display: grid;
+}
+
+.picker-menu-list input[type="checkbox"] {
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.picker-menu-list .picker-search {
+  height: 32px;
+  padding: 5px 9px;
+  box-shadow: none;
+}
+
 /* Event List search row: a clean search input + a live result count. The
    search live-filters the list below (no results dropdown). */
 .event-quick-search {
