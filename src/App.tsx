@@ -72,7 +72,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, PolarAngleAxis, PolarGrid, Radar, RadarChart, XAxis, YAxis } from "recharts";
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
@@ -6843,6 +6843,171 @@ function AboutProfileRow({ label, children }: { label: string; children: ReactNo
   );
 }
 
+// ---------------------------------------------------------------------------
+// Team radar — a normalized "profile" across a handful of scouting dimensions.
+// Every axis is scaled to 0–100 so the *shape* is comparable regardless of the
+// raw units. World Skills uses a true leaderboard percentile; the score-based
+// axes use fixed reference benchmarks (an elite team ≈ full ring) that are easy
+// to tune below. Raw values are preserved for the tooltip. Match *scores* are
+// deliberately left off — skills, consistency and world standing say more.
+// ---------------------------------------------------------------------------
+
+const clamp100 = (n: number) => Math.max(0, Math.min(100, n));
+
+// Reference points where an axis reads "full" (100). Tune to taste.
+const RADAR_BENCH = {
+  awpRate: 1,   // AWP earned per qual match — max is 1 (auton reliability)
+  avgWp: 3,     // avg WP / match — max is 3: 2 (win) + 1 (AWP) (qual dominance)
+  expScale: 45, // experience saturation constant (see the curve below)
+  iqRank: 24,   // IQ: avg qual rank at/beyond which the axis bottoms out
+};
+
+// Consistency = 100·(1 − coefficient of variation) over a per-event series.
+// Needs ≥2 events with a positive mean; otherwise it's unknown.
+function cvConsistency(values: number[]): number | null {
+  const vals = values.filter((v) => Number.isFinite(v) && v > 0);
+  if (vals.length < 2) return null;
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  if (mean <= 0) return null;
+  const stdev = Math.sqrt(vals.reduce((a, v) => a + (v - mean) ** 2, 0) / vals.length);
+  return clamp100(100 * (1 - stdev / mean));
+}
+
+// Percentile of `value` within `all` (0–100; higher beats more peers).
+function radarPercentile(value: number, all: number[]): number | null {
+  const pool = all.filter((v) => Number.isFinite(v));
+  if (!pool.length) return null;
+  const atOrBelow = pool.filter((v) => v <= value).length;
+  return clamp100((atOrBelow / pool.length) * 100);
+}
+
+// `standalone` tooltips show only `raw` (it already reads as a full phrase);
+// the rest are prefixed with the axis name.
+type RadarAxis = { axis: string; value: number; raw: string; known: boolean; standalone?: boolean };
+
+type TeamRadarAgg = {
+  winRate: number; matches: number; events: number;
+  avgWp: number; awp: number; avgRank: number; finalistEventCount: number;
+};
+
+function TeamRadar({
+  isIq,
+  agg,
+  perEventAvgWp,
+  perEventQualAvg,
+  totalQualMatches,
+  sigAwp,
+  regularAwp,
+  marqueeEvents,
+  wsEntry,
+  leaderboard,
+}: {
+  isIq: boolean;
+  agg: TeamRadarAgg;
+  perEventAvgWp: number[];   // V5: per-event avg WP — consistency source
+  perEventQualAvg: number[]; // IQ: per-event avg qual score — consistency source
+  totalQualMatches: number;
+  sigAwp: number;            // AWPs earned at signature/championship/worlds events
+  regularAwp: number;        // AWPs earned at all other events
+  marqueeEvents: number;     // count of signature/championship/worlds events attended
+  wsEntry: WorldSkillsEntry | null;
+  leaderboard: WorldSkillsEntry[] | null;
+}) {
+  const config: ChartConfig = { value: { label: "Rating", color: "#337ab7" } };
+
+  const data = useMemo<RadarAxis[]>(() => {
+    const total = leaderboard?.length ?? 0;
+    // Global World Skills standing as a percentile (rank 1 ≈ 100).
+    const wsPct = wsEntry && total ? clamp100(100 * (1 - (wsEntry.rank - 1) / total)) : null;
+    const wsRaw = wsEntry
+      ? `#${wsEntry.rank.toLocaleString()}${total ? ` of ${total.toLocaleString()}` : ""}`
+      : "Unranked";
+
+    const consistency = cvConsistency(isIq ? perEventQualAvg : perEventAvgWp);
+
+    if (isIq) {
+      const drivers = (leaderboard ?? []).map((e) => e.scores.driver ?? 0);
+      const progs = (leaderboard ?? []).map((e) => e.scores.programming ?? 0);
+      const myDriver = wsEntry?.scores.driver ?? null;
+      const myProg = wsEntry?.scores.programming ?? null;
+      const driverPct = myDriver != null ? radarPercentile(myDriver, drivers) : null;
+      const progPct = myProg != null ? radarPercentile(myProg, progs) : null;
+      const rankVal = agg.avgRank > 0 ? clamp100(100 * (1 - (agg.avgRank - 1) / RADAR_BENCH.iqRank)) : null;
+      const finalsRate = agg.events > 0 ? clamp100((agg.finalistEventCount / agg.events) * 100) : null;
+      return [
+        { axis: "World Skills", value: wsPct ?? 0, raw: wsRaw, known: wsPct != null },
+        { axis: "Driver", value: driverPct ?? 0, raw: myDriver != null ? `${myDriver} pts` : "—", known: driverPct != null },
+        { axis: "Programming", value: progPct ?? 0, raw: myProg != null ? `${myProg} pts` : "—", known: progPct != null },
+        { axis: "Consistency", value: consistency ?? 0, raw: consistency != null ? `${Math.round(consistency)}%` : "—", known: consistency != null },
+        { axis: "Ranking", value: rankVal ?? 0, raw: agg.avgRank > 0 ? `#${agg.avgRank.toFixed(1)} avg` : "—", known: rankVal != null },
+        { axis: "Finals", value: finalsRate ?? 0, raw: agg.events > 0 ? `${agg.finalistEventCount}/${agg.events} events` : "—", known: finalsRate != null },
+      ];
+    }
+
+    // Signature/championship/worlds AWPs count double toward the auton axis.
+    const weightedAwp = sigAwp * 2 + regularAwp;
+    const awpRate = totalQualMatches > 0 ? weightedAwp / totalQualMatches : null;
+
+    // Experience blends match volume, event breadth, and how far up the event
+    // ladder they climbed (marquee events count for much more), then saturates
+    // on a diminishing-returns curve — so it isn't a flat "N matches = full".
+    const expPoints = agg.matches + agg.events * 3 + marqueeEvents * 6;
+    const expScore = 100 * (1 - Math.exp(-expPoints / RADAR_BENCH.expScale));
+    return [
+      { axis: "Win Rate", value: agg.matches > 0 ? clamp100(agg.winRate * 100) : 0, raw: agg.matches > 0 ? `${Math.round(agg.winRate * 100)}%` : "—", known: agg.matches > 0 },
+      { axis: "Sig AWP", value: awpRate != null ? clamp100((awpRate / RADAR_BENCH.awpRate) * 100) : 0, raw: `${sigAwp} Sig AWP · ${regularAwp} AWP`, known: awpRate != null, standalone: true },
+      { axis: "World Skills", value: wsPct ?? 0, raw: wsRaw, known: wsPct != null },
+      { axis: "Consistency", value: consistency ?? 0, raw: consistency != null ? `${Math.round(consistency)}%` : "—", known: consistency != null },
+      { axis: "Qual WP", value: agg.matches > 0 ? clamp100((agg.avgWp / RADAR_BENCH.avgWp) * 100) : 0, raw: agg.matches > 0 ? `${agg.avgWp.toFixed(1)} WP/match` : "—", known: agg.matches > 0 },
+      { axis: "Experience", value: clamp100(expScore), raw: agg.matches > 0 ? `${agg.matches} matches · ${agg.events} event${agg.events === 1 ? "" : "s"}${marqueeEvents > 0 ? ` · ${marqueeEvents} signature` : ""}` : "—", known: agg.matches > 0 },
+    ];
+  }, [isIq, agg, perEventAvgWp, perEventQualAvg, totalQualMatches, sigAwp, regularAwp, marqueeEvents, wsEntry, leaderboard]);
+
+  const hasAny = data.some((d) => d.known);
+
+  return (
+    <div className="about-radar">
+      <span className="about-radar-title">Team Profile</span>
+      {hasAny ? (
+        <ChartContainer config={config} className="about-radar-chart" style={{ aspectRatio: "auto" }}>
+          <RadarChart data={data} margin={{ top: 8, right: 30, bottom: 8, left: 30 }} outerRadius="70%">
+            <ChartTooltip
+              cursor={false}
+              content={(props) => {
+                const { active, payload } = props as unknown as {
+                  active?: boolean;
+                  payload?: ReadonlyArray<{ payload?: RadarAxis }>;
+                };
+                const row = payload?.[0]?.payload;
+                if (!active || !row) return null;
+                return (
+                  <div className="rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+                    {!row.standalone && <span className="text-muted-foreground">{row.axis} · </span>}
+                    <span className="font-mono font-medium tabular-nums">{row.raw}</span>
+                  </div>
+                );
+              }}
+            />
+            <PolarGrid stroke="var(--border)" />
+            <PolarAngleAxis dataKey="axis" tick={{ fill: "var(--text-muted)", fontSize: 10.5 }} />
+            <Radar
+              dataKey="value"
+              stroke="var(--color-value)"
+              fill="var(--color-value)"
+              fillOpacity={0.28}
+              strokeWidth={1.5}
+              isAnimationActive={false}
+              dot={false}
+            />
+          </RadarChart>
+        </ChartContainer>
+      ) : (
+        <div className="about-radar-empty">Not enough data yet</div>
+      )}
+    </div>
+  );
+}
+
 function TeamAboutTab({
   team,
   isIq,
@@ -7100,6 +7265,7 @@ function TeamAboutTab({
         </AboutProfileRow>
       </dl>
 
+      <div className={compact ? "about-overview about-overview--solo" : "about-overview"}>
       <div className="about-stats">
         <StatCard label="World Skills" accent="blue" icon={<Medal size={14} />} value={wsValue} sub={wsSub} />
         <StatCard
@@ -7123,6 +7289,21 @@ function TeamAboutTab({
             <StatCard label="Autonomous WP" accent="green" icon={<Trophy size={14} />} value={agg.awp} sub={`${agg.avgWp.toFixed(1)} avg WP / match`} />
           </>
         )}
+      </div>
+      {!compact && (
+        <TeamRadar
+          isIq={isIq}
+          agg={agg}
+          perEventAvgWp={rankRows.map((r) => r.avgWp)}
+          perEventQualAvg={rankRows.map((r) => r.allQualAvg)}
+          totalQualMatches={rankRows.reduce((s, r) => s + r.qualMatches, 0)}
+          sigAwp={rankRows.reduce((s, r) => s + (r.marquee ? r.awp : 0), 0)}
+          regularAwp={rankRows.reduce((s, r) => s + (r.marquee ? 0 : r.awp), 0)}
+          marqueeEvents={rankRows.reduce((s, r) => s + (r.marquee ? 1 : 0), 0)}
+          wsEntry={wsEntry}
+          leaderboard={worldSkills.data ?? null}
+        />
+      )}
       </div>
 
       {!hasComp && !hasSkills ? (
