@@ -3040,6 +3040,161 @@ a.team-card-num:hover {
   opacity: 0.45;
 }
 
+/* Subtle detail-page breadcrumb trail. Quiet, monochrome, one line; sits just
+   above the page header. Hidden on mobile (below the nav breakpoint). */
+.breadcrumbs {
+  margin-bottom: 10px;
+  overflow: visible; /* override the global `nav { overflow: auto }` so the "..." dropdown isn't clipped */
+}
+
+.breadcrumbs ol {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.breadcrumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+/* Only the entity crumb (middle) may shrink, and only when the trail would
+   otherwise overflow — it uses the full width available first. */
+.breadcrumbs li:not(:first-child):not(:last-child) {
+  flex: 0 1 auto;
+}
+
+/* Reset the global `nav a { display: inline-flex; min-height: 36px }` (top-bar
+   nav styling) that would otherwise inflate each crumb to 36px and, combined
+   with the middle crumb's block display, push its text to the top of that box.
+   Natural-height blocks keep all three crumbs on one shared baseline. */
+.breadcrumbs a,
+.breadcrumbs span {
+  display: block;
+  min-height: 0;
+  padding: 0; /* override `nav a { padding: 0 12px }` — kept text off the left edge and bloated the gaps */
+  border-radius: 0; /* drop the `nav a` pill radius */
+  background: transparent; /* and its hover pill fill (see :hover below) */
+  line-height: inherit;
+  font-weight: 400; /* uniform weight across crumbs; the current page is distinguished by color only */
+}
+
+.breadcrumbs a {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.12s ease;
+}
+
+.breadcrumbs a:hover {
+  color: var(--text-2);
+  background: transparent; /* suppress the `nav a:hover { background: var(--surface-3) }` pill */
+  text-decoration: none;
+}
+
+.breadcrumbs span {
+  color: var(--text-2);
+}
+
+/* The entity crumb's link fills the space it's given and only ellipsizes when
+   the row actually runs out of room (never prematurely). */
+.breadcrumbs li:not(:first-child):not(:last-child) a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breadcrumb-sep {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+/* The "..." collapse control + its history dropdown. */
+.breadcrumb-collapse {
+  position: relative;
+}
+
+.breadcrumb-more {
+  display: block;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  letter-spacing: 0.06em; /* space the three dots so "..." reads as a control */
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.breadcrumb-more:hover {
+  color: var(--text-2);
+}
+
+.breadcrumb-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 300;
+  min-width: 180px;
+  max-width: 320px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: breadcrumb-menu-in 0.12s ease;
+}
+
+@keyframes breadcrumb-menu-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Scoped under .breadcrumb-menu so these win over the `.breadcrumbs a` reset. */
+.breadcrumb-menu .breadcrumb-menu-item {
+  display: block;
+  min-height: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.breadcrumb-menu .breadcrumb-menu-item:hover {
+  background: var(--surface-3);
+  color: var(--text);
+  text-decoration: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .breadcrumb-menu { animation: none; }
+}
+
+@media (max-width: 560px) {
+  .breadcrumbs {
+    display: none;
+  }
+}
+
 .profile-header {
   position: relative;
   margin-bottom: 15px;
