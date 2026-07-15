@@ -59,6 +59,7 @@ import {
 import { Component, createContext, Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Dispatch, ErrorInfo, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
+import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
 import { Badge } from "@/components/ui/badge";
@@ -458,6 +459,118 @@ function Link({
     >
       {children}
     </a>
+  );
+}
+
+// A subtle history-trail breadcrumb for detail pages. The trail (the actual
+// sequence of trackable pages the user visited) comes from the shared store;
+// the page passes only its current tab, appended as the non-interactive tail.
+// When the trail runs deep, the oldest entries collapse behind a literal "..."
+// that opens a dropdown of that hidden history. Hidden on mobile via CSS.
+
+// Cap a crumb label at 5 words, appending an ellipsis when trimmed. Long entity
+// names (e.g. full event titles) otherwise stretch the trail across the page.
+const BREADCRUMB_MAX_WORDS = 5;
+function truncateCrumb(label: string): string {
+  const words = label.trim().split(/\s+/);
+  return words.length > BREADCRUMB_MAX_WORDS
+    ? `${words.slice(0, BREADCRUMB_MAX_WORDS).join(" ")}…`
+    : label;
+}
+
+// Entries beyond this many collapse into the "..." menu. At the threshold the
+// full trail shows; past it, the leading entries hide and the last two remain.
+const BREADCRUMB_VISIBLE = 3;
+
+function Breadcrumbs({ currentTab }: { currentTab?: string }) {
+  const trail = useSyncExternalStore(subscribeTrail, getTrail, getTrail);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useOutsideClick<HTMLLIElement>(() => setMenuOpen(false));
+
+  // Collapse the menu whenever the trail changes (i.e. on navigation).
+  useEffect(() => { setMenuOpen(false); }, [trail]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
+  if (trail.length === 0) return null;
+
+  const collapse = trail.length > BREADCRUMB_VISIBLE;
+  const hidden = collapse ? trail.slice(0, -2) : [];
+  const visible = collapse ? trail.slice(-2) : trail;
+
+  // Assemble the ordered segments: optional "...", the visible entity crumbs
+  // (each a link to its own page), then the current tab as the aria-current tail.
+  const segments: Array<{ key: string; node: ReactNode; collapse?: boolean }> = [];
+
+  if (collapse) {
+    segments.push({
+      key: "__more__",
+      collapse: true,
+      node: (
+        <>
+          <button
+            type="button"
+            className="breadcrumb-more"
+            aria-haspopup="true"
+            aria-expanded={menuOpen}
+            aria-label="Show earlier pages"
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            ...
+          </button>
+          {menuOpen && (
+            <div className="breadcrumb-menu">
+              {hidden.map((entry) => (
+                <Link
+                  key={entry.path}
+                  href={entry.path}
+                  className="breadcrumb-menu-item"
+                  title={entry.label}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {entry.label}
+                </Link>
+              ))}
+            </div>
+          )}
+        </>
+      ),
+    });
+  }
+
+  visible.forEach((entry) => {
+    const shown = truncateCrumb(entry.label);
+    segments.push({
+      key: entry.path,
+      node: <Link href={entry.path} title={shown === entry.label ? undefined : entry.label}>{shown}</Link>,
+    });
+  });
+
+  if (currentTab) {
+    segments.push({ key: "__tab__", node: <span aria-current="page">{currentTab}</span> });
+  }
+
+  if (segments.length < 2) return null;
+
+  return (
+    <nav aria-label="Breadcrumb" className="breadcrumbs">
+      <ol>
+        {segments.map((seg, index) => (
+          <li
+            key={seg.key}
+            ref={seg.collapse ? menuRef : undefined}
+            className={seg.collapse ? "breadcrumb-collapse" : undefined}
+          >
+            {index > 0 && <ChevronRight size={13} className="breadcrumb-sep" aria-hidden="true" />}
+            {seg.node}
+          </li>
+        ))}
+      </ol>
+    </nav>
   );
 }
 
@@ -5757,6 +5870,26 @@ type EventDetailTab = typeof EVENT_DETAIL_TABS[number];
 const TEAM_DETAIL_TABS = ["about", "events", "rankings", "skills", "awards"] as const;
 type TeamDetailTab = typeof TEAM_DETAIL_TABS[number];
 
+// Clean, count-free labels for the breadcrumb tail (the live tab bars carry
+// counts like "Teams 42" and dynamic text we don't want in a crumb).
+const EVENT_TAB_CRUMB: Record<EventDetailTab, string> = {
+  info: "Info",
+  matches: "Results",
+  rankings: "Rankings",
+  skills: "Skills",
+  awards: "Awards",
+  teams: "Teams",
+  "team-matches": "Team Matches",
+  picklist: "Picklist",
+};
+const TEAM_TAB_CRUMB: Record<TeamDetailTab, string> = {
+  about: "About",
+  events: "Events",
+  rankings: "Rankings",
+  skills: "Skills",
+  awards: "Awards",
+};
+
 function eventInitialTab(hasFocusTeam: boolean): EventDetailTab {
   const fallback: EventDetailTab = hasFocusTeam ? "team-matches" : "matches";
   const hash = hashTab(EVENT_DETAIL_TABS, fallback);
@@ -6000,6 +6133,7 @@ function EventDetail({ param }: { param: string }) {
       sub: [seasonYearLabel(event.season?.name), locationLine(event)].filter(Boolean).join(" · "),
       badge: seasonYearLabel(event.season?.name) ?? "'??",
     });
+    refreshTrailLabel(window.location.pathname, event.name);
   }, [event?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Expose event season + event ID to comparison modal — skips season-derivation
@@ -6040,6 +6174,7 @@ function EventDetail({ param }: { param: string }) {
     <ProgramContext.Provider value={programSlug(event.program)}>
     <TeamSearchContext.Provider value={searchQ}>
     <section className="page">
+      <Breadcrumbs currentTab={EVENT_TAB_CRUMB[tab]} />
       <div className="profile-header">
         <div>
           <div className="eyebrow">
@@ -7364,6 +7499,7 @@ function TeamDetail({ param }: { param: string }) {
       sub: [team.team_name, locationLine(team)].filter(Boolean).join(" · "),
       badge: programSlug(team.program) || team.program?.code || "VEX",
     });
+    refreshTrailLabel(window.location.pathname, team.number ?? String(team.id));
   }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Expose current team to the global C shortcut handler
@@ -7468,6 +7604,7 @@ function TeamDetail({ param }: { param: string }) {
   return (
     <ProgramContext.Provider value={programSlug(team.program)}>
     <section className="page">
+      <Breadcrumbs currentTab={TEAM_TAB_CRUMB[tab]} />
       <div className="profile-header">
         <div>
           <div className="eyebrow">
@@ -13100,6 +13237,10 @@ function OrgWorkspacePage({ orgId }: { orgId: string }) {
 
   useEffect(() => { replaceCurrentHash(tab); }, [tab]);
 
+  useEffect(() => {
+    if (org?.name) refreshTrailLabel(window.location.pathname, org.name);
+  }, [org?.name]);
+
   if (!user) {
     return (
       <section className="page">
@@ -13123,6 +13264,7 @@ function OrgWorkspacePage({ orgId }: { orgId: string }) {
 
   return (
     <section className="page">
+      <Breadcrumbs currentTab={ORG_WORKSPACE_NAV.find((entry) => entry.value === tab)?.label ?? "Dashboard"} />
       <PageTitle icon={<Users />} title={org?.name ?? "Org"} />
       <div style={{ marginBottom: 12 }}>
         <a href="/" className="join-org-back" onClick={(e) => { e.preventDefault(); navigate("/"); }}>← Back to home</a>
@@ -14839,6 +14981,25 @@ function route(path: string) {
   return <NotFound />;
 }
 
+// Feed the breadcrumb history store from route changes. Listing pages start a
+// fresh trail, entity pages append (with a placeholder label refined once the
+// page loads), home clears it, and other pages leave the trail untouched.
+function recordBreadcrumb(path: string) {
+  const p = path.split("?")[0].split("#")[0];
+  if (p === "/") return clearTrail();
+  if (p === "/events") return recordTrail({ path: p, kind: "list", label: "Events" });
+  if (p === "/teams") return recordTrail({ path: p, kind: "list", label: "Teams" });
+  if (p === "/skills") return recordTrail({ path: p, kind: "list", label: "Skills" });
+  const eventMatch = p.match(/^\/events?\/(.+)$/);
+  if (eventMatch) return recordTrail({ path: p, kind: "event", label: decodeURIComponent(eventMatch[1]) });
+  const teamMatch = p.match(/^\/teams?\/(.+)$/);
+  if (teamMatch) return recordTrail({ path: p, kind: "team", label: decodeURIComponent(teamMatch[1].split("/").pop() ?? teamMatch[1]) });
+  const orgMatch = p.match(/^\/org\/([0-9a-f-]+)/i);
+  if (orgMatch) return recordTrail({ path: p, kind: "org", label: "Organization" });
+  // Everything else (settings, insights, my-team, compare, join, legal) is not
+  // part of the breadcrumb hierarchy — leave the trail as it is.
+}
+
 export default function App() {
   const path = useRoute();
   const spotlightOpen = useSyncExternalStore(subscribeSpotlight, getSpotlightOpen, getSpotlightOpen);
@@ -14850,6 +15011,12 @@ export default function App() {
   useEffect(() => {
     loadYouTubeApi();
   }, []);
+
+  // Update the breadcrumb history before paint so the trail is correct on the
+  // first frame of each route (no one-frame flash of the previous trail).
+  useLayoutEffect(() => {
+    recordBreadcrumb(path);
+  }, [path]);
 
   // Global keyboard shortcuts
   useEffect(() => {
