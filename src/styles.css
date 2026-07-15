@@ -5505,17 +5505,76 @@ a.team-card-num:hover {
   gap: 0;
 }
 
-/* Stacked layout: award name (primary) over winning team(s). The event group
-   header stays the organizer, but each row leads with the award + team. */
+/* Row layout: award name + winning team(s) on the left, the qualification it
+   grants on the right. Left/right padding matches the panel header (15px) so
+   the award title lines up under "Awards" and the badge under "Qualifies for". */
 .award-item {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 10px 13px;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 15px;
   border-top: 1px solid var(--border-soft);
 }
 .award-item:first-child {
   border-top: none;
+}
+
+/* Left column: award name (primary) over winning team(s). */
+.award-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Winning team/individual pills — flex with a gap so multiple winners get
+   breathing room instead of sitting shoulder to shoulder. */
+.award-item .winner-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 9px;
+}
+
+/* Right column: what the award qualifies its winner(s) for. */
+.award-item-qual {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+}
+.award-item-qual .award-qual-badge {
+  padding: 2px 9px;
+  font-size: 12px;
+}
+
+/* Header hint sitting above the qualification column, matching the panel title. */
+.award-qual-heading {
+  flex: 0 0 auto;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+@media (max-width: 560px) {
+  .award-item {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .award-item-qual {
+    justify-content: flex-start;
+    padding-top: 0;
+  }
+  /* The header hint has nothing to align to once the badge wraps under the
+     row, so hide it on narrow screens. */
+  .award-qual-heading {
+    display: none;
+  }
 }
 
 /* Line 1: tier icon + award name */

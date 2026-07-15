@@ -9291,6 +9291,19 @@ function awardTopQual(award: Award): { label: string; cls: string } | null {
   }
   return best;
 }
+// Per-award qualification labels for the event Awards list. Reuses the shared
+// `qualTier` mapping (Worlds / Regionals), deduped to distinct tiers with Worlds
+// first. Signature entry is open, so the API never lists it as a qualification.
+function awardEventQuals(award: Award): { label: string; cls: string }[] {
+  const seen = new Map<string, string>();
+  for (const q of award.qualifications ?? []) {
+    const tier = qualTier(q);
+    if (tier && !seen.has(tier.label)) seen.set(tier.label, tier.cls);
+  }
+  return [...seen.entries()]
+    .map(([label, cls]) => ({ label, cls }))
+    .sort((a, b) => (a.label === "Worlds" ? -1 : b.label === "Worlds" ? 1 : 0));
+}
 
 function TeamAwardsByEvent({
   awards,
@@ -11113,26 +11126,42 @@ function AwardsList({ awards }: { awards: Award[] }) {
   const sortedAwards = sortAwards(awards);
   const programCode = useContext(ProgramContext);
 
+  const hasQuals = sortedAwards.some((award) => awardEventQuals(award).length > 0);
+
   return (
-    <Panel title="Awards" icon={<Medal />}>
+    <Panel title="Awards" icon={<Medal />} action={hasQuals ? <span className="award-qual-heading">Qualifies for…</span> : undefined}>
       <div className="award-list">
-        {sortedAwards.map((award) => (
-          <article className="award-item" key={award.id}>
-            <h3>{award.title}</h3>
-            <div className="winner-row">
-              {awardTeamWinners(award).map((winner) => (
-                <TeamQuickLink key={`${award.id}-${winner.team.id}`} teamId={winner.team.id} teamNumber={winner.team.name} programCode={programCode} className="winner-pill">
-                  {winner.team.name}
-                </TeamQuickLink>
-              ))}
-              {awardIndividualWinners(award).map((winner) => (
-                <span key={winner} className="winner-pill">
-                  {winner}
-                </span>
-              ))}
-            </div>
-          </article>
-        ))}
+        {sortedAwards.map((award) => {
+          const quals = awardEventQuals(award);
+          return (
+            <article className="award-item" key={award.id}>
+              <div className="award-item-main">
+                <h3>{award.title}</h3>
+                <div className="winner-row">
+                  {awardTeamWinners(award).map((winner) => (
+                    <TeamQuickLink key={`${award.id}-${winner.team.id}`} teamId={winner.team.id} teamNumber={winner.team.name} programCode={programCode} className="winner-pill">
+                      {winner.team.name}
+                    </TeamQuickLink>
+                  ))}
+                  {awardIndividualWinners(award).map((winner) => (
+                    <span key={winner} className="winner-pill">
+                      {winner}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {quals.length > 0 && (
+                <div className="award-item-qual">
+                  {quals.map((q) => (
+                    <span key={q.label} className={`award-qual-badge ${q.cls}`} title={`Qualifies for ${q.label}`}>
+                      {q.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </article>
+          );
+        })}
         {!sortedAwards.length && <Empty>No awards returned.</Empty>}
       </div>
     </Panel>
