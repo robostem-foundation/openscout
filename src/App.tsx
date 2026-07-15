@@ -4099,11 +4099,13 @@ function EventsPageInner() {
   const [level, setLevel] = useState<string>(() => readEventFilters().level ?? "");
   const [selectedRegionKeys, setSelectedRegionKeys] = useState<string[]>(() => readEventFilters().selectedRegionKeys ?? []);
   const [regionMenuOpen, setRegionMenuOpen] = useState(false);
+  const regionMenuRef = useOutsideClick<HTMLDivElement>(() => setRegionMenuOpen(false));
   const [regionTab, setRegionTab] = useState<RegionOptionKind>("country");
   const [regionSearch, setRegionSearch] = useState("");
   const [eventWindow, setEventWindow] = useState<EventWindow>(() => readEventFilters().eventWindow ?? "near");
   const [sort, setSort] = useState<EventSort>(() => readEventFilters().sort ?? "smart");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const sortMenuRef = useOutsideClick<HTMLDivElement>(() => setSortMenuOpen(false));
   const [filterLayout, setFilterLayout] = useState<EventFilterLayout>(() => readEventFilters().filterLayout ?? "sidebar");
   // Mobile-only: the filter sidebar collapses to a "Filters" toggle so results
   // show first. Has no effect on desktop (the toggle is hidden via CSS).
@@ -4392,7 +4394,7 @@ function EventsPageInner() {
         </div>
         <div className="filter-field">
           <span>Region</span>
-          <div className="picker-menu">
+          <div className="picker-menu" ref={regionMenuRef}>
             <button type="button" onClick={() => { setRegionMenuOpen((open) => !open); setLastOpenedMenu("region"); }} aria-expanded={regionMenuOpen}>
               {regionButtonLabel}
             </button>
@@ -4465,7 +4467,7 @@ function EventsPageInner() {
         </div>
         <div className="filter-field">
           <span>Sort</span>
-          <div className="picker-menu">
+          <div className="picker-menu" ref={sortMenuRef}>
             <button type="button" onClick={() => { setSortMenuOpen((open) => !open); setLastOpenedMenu("sort"); }} aria-expanded={sortMenuOpen}>
               {sortLabel}
             </button>
@@ -4900,6 +4902,7 @@ function TeamsPage() {
   });
   const [selectedRegionKeys, setSelectedRegionKeys] = useState<string[]>([]);
   const [regionMenuOpen, setRegionMenuOpen] = useState(false);
+  const regionMenuRef = useOutsideClick<HTMLDivElement>(() => setRegionMenuOpen(false));
   const [regionTab, setRegionTab] = useState<RegionOptionKind>("country");
   const [regionSearch, setRegionSearch] = useState("");
   const [registered, setRegistered] = useState("true");
@@ -5315,7 +5318,7 @@ function TeamsPage() {
           navigate(teamPath(team));
         }}
         regionControl={
-          <div className="team-region-filter picker-menu">
+          <div className="team-region-filter picker-menu" ref={regionMenuRef}>
             <button type="button" className="team-region-trigger" onClick={() => setRegionMenuOpen((open) => !open)} aria-expanded={regionMenuOpen}>
               <MapPin size={14} />
               <span>{regionButtonLabel}</span>
