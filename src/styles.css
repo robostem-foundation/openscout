@@ -3707,6 +3707,9 @@ a.team-card-num:hover {
   border-radius: var(--radius);
   box-shadow: 0 6px 30px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+  /* Smooths the upward nudge applied inline while a quick-view sheet is open over
+     the video (see the qv-video-sheet effect in TeamQuickView). */
+  transition: transform 0.22s ease;
 }
 
 /* Two-column body: the existing video stack on the left, note panel on the right.
@@ -3852,6 +3855,56 @@ a.team-card-num:hover {
 .note-team-chip.note-team-chip-accent.mentioned:hover {
   background: color-mix(in srgb, var(--accent) 22%, var(--surface));
 }
+
+/* ── contentEditable note editor with inline team pills ── */
+/* Shares sizing with the textareas it replaced (.note-popover-input /
+   .video-note-input carry padding/border/min-height); this adds the wrapping
+   and empty-state placeholder that a <div> needs. */
+.note-editor {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  line-height: 1.5;
+  cursor: text;
+}
+.note-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+/* Inline pill: a team number auto-detected in the note body. Red/blue for teams
+   in this match, accent for any other event team. Clicking opens the team. */
+.note-inline-pill {
+  padding: 0 5px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 0.92em;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, border-color 0.12s;
+}
+.note-inline-pill-red {
+  background: rgba(217, 83, 79, 0.16);
+  border-color: rgba(217, 83, 79, 0.5);
+  color: #c0392b;
+}
+.note-inline-pill-red:hover { background: rgba(217, 83, 79, 0.26); }
+.note-inline-pill-blue {
+  background: rgba(51, 122, 183, 0.16);
+  border-color: rgba(51, 122, 183, 0.5);
+  color: #2c6da3;
+}
+.note-inline-pill-blue:hover { background: rgba(51, 122, 183, 0.26); }
+.note-inline-pill-accent {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
+}
+.note-inline-pill-accent:hover { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
 
 /* ── Char counter ── */
 /* Inline variant — sits inside the popover footer */
@@ -8890,6 +8943,34 @@ a.org-note-row:hover { background: var(--surface-2); }
     flex: none;
     width: 100%;
   }
+}
+
+/* ── Quick view opened from inside the match-video modal ──
+   The video modal is a dialog with a z-[600] darkened backdrop. Lift the quick
+   view above it (z 620) and keep the overlay transparent + non-blocking so the
+   sheet reads as "in front, not dimmed". Force the bottom-sheet layout at every
+   width, overriding the sidebar (desktop) and centered-modal (narrow) rules. */
+.quick-view-overlay.in-video {
+  z-index: 620;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+.quick-view-panel.in-video {
+  top: auto;
+  bottom: 0;
+  left: 50%;
+  right: auto;
+  width: min(1100px, calc(100vw - 32px));
+  max-height: min(360px, 72vh);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  transform: translateX(-50%) translateY(100%);
+}
+.quick-view-panel.in-video.open {
+  transform: translateX(-50%) translateY(0);
 }
 
 /* ── Compare Tray ──────────────────────────────────────────────────────────── */
