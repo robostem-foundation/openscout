@@ -680,17 +680,26 @@ function GlobalSearch({ className = "" }: { className?: string }) {
 
     let live = true;
 
-    setTeamsLoading(true);
-    Promise.all([
-      api.teams({ teamSearch: debounced, per_page: 50 }),
-      /^\d+[a-z]?$/i.test(debounced) ? api.robotEventsTeams({ number: debounced, "program[]": vexProgramIds, per_page: 20 }) : Promise.resolve(null),
-    ])
-      .then(([rseTeams, exactTeams]) => {
-        if (!live) return;
-        setTeams(rankTeamsForSearch(uniqueTeams([...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 5));
-      })
-      .catch(() => { if (live) setTeams([]); })
-      .finally(() => { if (live) setTeamsLoading(false); });
+    // Instant: teams already in the browse cache, ranked for this query.
+    const cachedTeams = rankTeamsForSearch(allCachedTeams(), debounced);
+    if (cachedTeams.length) setTeams(cachedTeams.slice(0, 5));
+
+    if (exactCachedTeamMatch(debounced, cachedTeams)) {
+      // A complete team number already cached is authoritative — skip the network.
+      setTeamsLoading(false);
+    } else {
+      setTeamsLoading(true);
+      Promise.all([
+        api.teams({ teamSearch: debounced, per_page: 50 }),
+        /^\d+[a-z]?$/i.test(debounced) ? api.robotEventsTeams({ number: debounced, "program[]": vexProgramIds, per_page: 20 }) : Promise.resolve(null),
+      ])
+        .then(([rseTeams, exactTeams]) => {
+          if (!live) return;
+          setTeams(rankTeamsForSearch(uniqueTeams([...cachedTeams, ...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 5));
+        })
+        .catch(() => { if (live && !cachedTeams.length) setTeams([]); })
+        .finally(() => { if (live) setTeamsLoading(false); });
+    }
 
     setEventsLoading(true);
     loadGlobalEventSearchEvents()
@@ -1292,6 +1301,26 @@ function uniqueTeams(teams: Team[]) {
     seen.add(team.id);
     return true;
   });
+}
+
+// Every team currently held in the browse cache (any region/program the user has
+// loaded on the Teams tab), deduped by id. The global/spotlight searches use this
+// to render instant results and to short-circuit exact team-number lookups.
+function allCachedTeams(): Team[] {
+  const all: Team[] = [];
+  for (const entry of teamListCache.values()) {
+    if (entry.data?.data) all.push(...entry.data.data);
+  }
+  return uniqueTeams(all);
+}
+
+// A complete team number is digits + one letter (e.g. "10B", "99999P"). When such
+// a query exactly matches a cached team, the cached row is authoritative and no
+// network lookup is needed.
+function exactCachedTeamMatch(query: string, cached: Team[]): boolean {
+  if (!/^\d{1,5}[a-z]$/i.test(query.trim())) return false;
+  const target = normalizedTeamQuery(query);
+  return cached.some((team) => normalizedTeamQuery(team.number) === target);
 }
 
 function gradeCode(grade?: string | null) {
@@ -5102,6 +5131,24 @@ function TeamsPage() {
       };
     }
 
+    // The cached team list already renders instantly via localQuickResults. If the
+    // query is a *complete* team number (e.g. "10B", "99999P") and the cached list
+    // already holds that exact team, that row is authoritative — skip the network
+    // round-trip entirely. Anything else (a general "10", or a complete number not
+    // in cache) still fires teamSearch to fill in the rest.
+    const isCompleteNumber = /^\d{1,5}[a-z]$/i.test(needle);
+    if (isCompleteNumber) {
+      const target = normalizedTeamQuery(needle);
+      const cached = teamListCache.get(cacheKey)?.data?.data ?? [];
+      if (cached.some((team) => normalizedTeamQuery(team.number) === target)) {
+        setQuickData([]);
+        setQuickLoading(false);
+        return () => {
+          live = false;
+        };
+      }
+    }
+
     setQuickLoading(true);
     searchTeamsTabTeams(needle, regionQueries, program)
       .then((result) => {
@@ -5117,7 +5164,7 @@ function TeamsPage() {
     return () => {
       live = false;
     };
-  }, [debouncedQuickSearch, program, regionQueries]);
+  }, [debouncedQuickSearch, program, regionQueries, cacheKey]);
 
   const submitSearch = () => {
     const nextSearch = search.trim();
@@ -13496,18 +13543,26 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 
     let live = true;
 
-    // Teams — same dual-API call as GlobalSearch, capped at 3 in the palette
-    setTeamsLoading(true);
-    Promise.all([
-      api.teams({ teamSearch: debounced, per_page: 50 }),
-      /^\d+[a-z]?$/i.test(debounced) ? api.robotEventsTeams({ number: debounced, "program[]": vexProgramIds, per_page: 20 }) : Promise.resolve(null),
-    ])
-      .then(([rseTeams, exactTeams]) => {
-        if (!live) return;
-        setTeams(rankTeamsForSearch(uniqueTeams([...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 3));
-      })
-      .catch(() => { if (live) setTeams([]); })
-      .finally(() => { if (live) setTeamsLoading(false); });
+    // Teams — cache-first, then the same dual-API call as GlobalSearch, capped at 3.
+    const cachedTeams = rankTeamsForSearch(allCachedTeams(), debounced);
+    if (cachedTeams.length) setTeams(cachedTeams.slice(0, 3));
+
+    if (exactCachedTeamMatch(debounced, cachedTeams)) {
+      // A complete team number already cached is authoritative — skip the network.
+      setTeamsLoading(false);
+    } else {
+      setTeamsLoading(true);
+      Promise.all([
+        api.teams({ teamSearch: debounced, per_page: 50 }),
+        /^\d+[a-z]?$/i.test(debounced) ? api.robotEventsTeams({ number: debounced, "program[]": vexProgramIds, per_page: 20 }) : Promise.resolve(null),
+      ])
+        .then(([rseTeams, exactTeams]) => {
+          if (!live) return;
+          setTeams(rankTeamsForSearch(uniqueTeams([...cachedTeams, ...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 3));
+        })
+        .catch(() => { if (live && !cachedTeams.length) setTeams([]); })
+        .finally(() => { if (live) setTeamsLoading(false); });
+    }
 
     // Events — 3 results, lazily falling back through older seasons:
     //   • Current season results appear immediately when the first fetch resolves.
