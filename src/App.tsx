@@ -10415,7 +10415,11 @@ function formatTimestamp(seconds: number) {
 }
 
 function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onClose: () => void }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  // The iframe lives inside a Radix Dialog portal, so it isn't attached yet on
+  // the commit where a plain-ref effect would first run. Track the node in state
+  // via a callback ref so the player-setup effect re-runs once it actually mounts.
+  const [iframeEl, setIframeEl] = useState<HTMLIFrameElement | null>(null);
+  const setIframeRef = useCallback((node: HTMLIFrameElement | null) => setIframeEl(node), []);
   const playerRef = useRef<{ seekTo: (s: number, b: boolean) => void; pauseVideo: () => void; playVideo: () => void; getCurrentTime: () => number; destroy: () => void } | null>(null);
   const pollRef = useRef<number>(0);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -10440,13 +10444,13 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
   }, [playback.timestamp.videoId, startSeconds]);
 
   useEffect(() => {
-    if (!playback.timestamp.videoId || !iframeRef.current) return;
+    if (!playback.timestamp.videoId || !iframeEl) return;
     let destroyed = false;
 
     onYtApiReady(() => {
-      if (destroyed || !iframeRef.current) return;
+      if (destroyed) return;
       const YT = (window as unknown as Record<string, unknown>).YT as { Player: new (el: HTMLElement, opts: unknown) => unknown };
-      const player = new YT.Player(iframeRef.current, {
+      const player = new YT.Player(iframeEl, {
         events: {
           onReady: () => {
             playerRef.current = player as typeof playerRef.current;
@@ -10467,10 +10471,11 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
     return () => {
       destroyed = true;
       window.clearInterval(pollRef.current);
+      pollRef.current = 0;
       playerRef.current?.destroy();
       playerRef.current = null;
     };
-  }, [playback.timestamp.videoId]);
+  }, [playback.timestamp.videoId, iframeEl]);
 
   const seekBy = (delta: number) => {
     if (!playerRef.current) return;
@@ -10532,7 +10537,7 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
             <div className="video-embed-wrap">
               {playback.timestamp.videoId ? (
                 <iframe
-                  ref={iframeRef}
+                  ref={setIframeRef}
                   src={embedUrl}
                   className="video-player-iframe"
                   allow="autoplay; encrypted-media; fullscreen"
