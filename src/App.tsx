@@ -7124,9 +7124,101 @@ const clamp100 = (n: number) => Math.max(0, Math.min(100, n));
 const RADAR_BENCH = {
   awpRate: 1,   // weighted AWP per qual match for a full ring (regular AWP maxes at 1/match; signature counts 3×)
   avgWp: 3,     // avg WP / match — max is 3: 2 (win) + 1 (AWP) (qual dominance)
-  expScale: 45, // experience saturation constant (see the curve below)
   iqRank: 24,   // IQ: avg qual rank at/beyond which the axis bottoms out
 };
+
+// Experience axis = a competitive-résumé score (0–100) for the selected season.
+// It is NOT a flat sum: each factor saturates independently against its own cap,
+// so maxing one narrow dimension can't peg the axis on its own. Signature titles
+// carry BY FAR the most weight (a big title cap): a season with a stack of
+// signature/championship titles reads near the top even on its own. Each factor's
+// score = cap · (1 − e^(−count/k)): it climbs fast for the first few, then
+// flattens toward `cap`. Caps deliberately sum to >100 (the total is clamped and
+// then lifted by EXP_LENIENCY) so a truly elite résumé fills the ring. Ranked by
+// the user's importance order (titles first, event-count last). Tune to taste.
+type ExpFactor = { cap: number; k: number };
+const EXP_MODEL: Record<"v5" | "iq", Record<string, ExpFactor>> = {
+  v5: {
+    titles:    { cap: 56, k: 1.5 }, // signature/championship titles (worlds counts double) — dominant
+    sigFinals: { cap: 22, k: 1.5 }, // reached finals at a signature/championship event
+    sigSF:     { cap: 9,  k: 1.5 }, // reached semifinals at a signature/championship event
+    sigElims:  { cap: 9,  k: 1.5 }, // reached elims at a signature/championship event
+    sigEvents: { cap: 15, k: 3 },   // signature/championship events attended (+70% weight)
+    seasons:   { cap: 8,  k: 2.5 }, // seasons active (career; longevity)
+    finals:    { cap: 7,  k: 3 },   // events reaching finals in general (any level)
+    elims:     { cap: 5,  k: 4 },   // events reaching elims in general (any level)
+    matches:   { cap: 4,  k: 40 },  // match volume
+    events:    { cap: 2,  k: 6 },   // event count
+  },
+  // IQ is cooperative ("elims IS finals"): no SF/elim tiers. Their weight is
+  // reallocated to titles / finals. Finals = Teamwork-Challenge finals (round-15).
+  iq: {
+    titles:    { cap: 58, k: 1.5 },
+    sigFinals: { cap: 24, k: 1.5 },
+    sigSF:     { cap: 0,  k: 1 },
+    sigElims:  { cap: 0,  k: 1 },
+    sigEvents: { cap: 20, k: 3 }, // +70% weight
+    seasons:   { cap: 10, k: 2.5 },
+    finals:    { cap: 12, k: 3 },
+    elims:     { cap: 0,  k: 1 },
+    matches:   { cap: 5,  k: 40 },
+    events:    { cap: 3,  k: 6 },
+  },
+};
+
+// Global leniency multiplier applied to the summed score (then clamped to 100).
+// 1.2 = "20% less harsh": a World-Champion season reads ~95%. Tune to taste.
+const EXP_LENIENCY = 1.2;
+
+// Award-title matchers for the Experience axis. V5 titles: "Tournament Champions",
+// "World Champions", "Division Champions" (worlds). IQ: "Teamwork Champion Award",
+// "Teamwork Challenge World Champions". Deliberately NOT bare "champion" so
+// "Robot Skills Champion" is excluded. Semifinalist is tested before finalist
+// because "Semifinalists" contains "finalists".
+const EXP_CHAMP_RE = /tournament champions|world champions|division champions|teamwork challenge world champions|teamwork champion/i;
+const EXP_WORLDS_TITLE_RE = /world champions|teamwork challenge world champions/i; // top title — counts double
+const EXP_SF_RE = /semifinalists/i;
+const EXP_FINALIST_RE = /finalists|teamwork 2nd place/i;
+
+// Ready-to-plot inputs for the Experience axis, computed season-scoped in
+// TeamAboutTab (where matches, awards, events and season history are available).
+// These are raw COUNTS; experienceScore() maps them to the 0–100 axis value.
+type ExperienceInputs = {
+  titleUnits: number;    // weighted titles fed to the curve (worlds title = 2)
+  sigTitles: number;     // raw signature/championship titles won (for display)
+  sigFinals: number;     // signature/championship events reaching finals (not won)
+  sigSF: number;         // signature/championship events whose best result was SF
+  sigElims: number;      // signature/championship events whose best result was elims
+  sigEvents: number;     // signature/championship events attended
+  finalsGeneral: number; // events reaching finals (any level)
+  elimsGeneral: number;  // events reaching eliminations (any level; V5 only)
+  seasonsActive: number; // seasons the team has competed in (career)
+  matchCount: number;
+  eventCount: number;
+  known: boolean;
+};
+
+// Map the raw résumé counts to the 0–100 axis value: sum each factor's saturating
+// contribution against its cap. Because caps sum to 100 and each factor flattens,
+// the total only nears 100 when nearly every dimension is maxed simultaneously.
+function experienceScore(exp: ExperienceInputs, isIq: boolean): number {
+  const m = isIq ? EXP_MODEL.iq : EXP_MODEL.v5;
+  const sat = (count: number, f: ExpFactor) => (f.cap <= 0 || count <= 0 ? 0 : f.cap * (1 - Math.exp(-count / f.k)));
+  const total =
+    sat(exp.titleUnits, m.titles) +
+    sat(exp.sigFinals, m.sigFinals) +
+    sat(exp.sigSF, m.sigSF) +
+    sat(exp.sigElims, m.sigElims) +
+    sat(exp.sigEvents, m.sigEvents) +
+    sat(Math.max(0, exp.seasonsActive - 1), m.seasons) + // 1 season contributes 0
+    sat(exp.finalsGeneral, m.finals) +
+    sat(exp.elimsGeneral, m.elims) +
+    sat(exp.matchCount, m.matches) +
+    sat(exp.eventCount, m.events);
+  // Leniency: lift every résumé ~20% (clamped) so the axis reads less harshly —
+  // a World-Champion season lands ~95%, leaving 100% for a stacked multi-title one.
+  return clamp100(total * EXP_LENIENCY);
+}
 
 // Consistency = 100·(1 − coefficient of variation) over a per-event series.
 // Needs ≥2 events with a positive mean; otherwise it's unknown.
@@ -7265,7 +7357,7 @@ function TeamRadar({
   totalQualMatches,
   sigAwp,
   regularAwp,
-  marqueeEvents,
+  experience,
   teamLabel,
   wsEntry,
   leaderboard,
@@ -7277,7 +7369,7 @@ function TeamRadar({
   totalQualMatches: number;  // season qual-match count — AWP-rate denominator
   sigAwp: number;            // AWPs earned at signature/championship/worlds events
   regularAwp: number;        // AWPs earned at all other events
-  marqueeEvents: number;     // count of signature/championship/worlds events attended
+  experience: ExperienceInputs; // pre-computed inputs for the Experience axis
   teamLabel: string;         // e.g. team number — used in the export title/filename
   wsEntry: WorldSkillsEntry | null;
   leaderboard: WorldSkillsEntry[] | null;
@@ -7307,6 +7399,25 @@ function TeamRadar({
 
     const consistency = cvConsistency(isIq ? perEventQualAvg : perEventAvgWp);
 
+    // Experience = a competitive-résumé score (see EXP_MODEL / experienceScore):
+    // titles and deep elim/finals runs at signature events dominate, longevity is
+    // in seasons, volume adds a little. Shared by both radars — on IQ it takes the
+    // slot the old "Finals" rate axis held.
+    const exp = experience;
+    const expScore = experienceScore(exp, isIq);
+    const expParts: string[] = [];
+    if (exp.sigTitles > 0) expParts.push(`${exp.sigTitles} sig title${exp.sigTitles === 1 ? "" : "s"}`);
+    if (exp.finalsGeneral > 0) expParts.push(`${exp.finalsGeneral} final${exp.finalsGeneral === 1 ? "" : "s"}`);
+    if (!isIq && exp.elimsGeneral > 0) expParts.push(`${exp.elimsGeneral} elim${exp.elimsGeneral === 1 ? "" : "s"}`);
+    if (exp.sigEvents > 0) expParts.push(`${exp.sigEvents} sig`);
+    if (exp.seasonsActive > 0) expParts.push(`${exp.seasonsActive} season${exp.seasonsActive === 1 ? "" : "s"}`);
+    const expRaw = expParts.length
+      ? expParts.join(" · ")
+      : exp.matchCount > 0
+        ? `${exp.matchCount} matches · ${exp.eventCount} event${exp.eventCount === 1 ? "" : "s"}`
+        : "—";
+    const expAxis: RadarAxis = { axis: "Experience", value: exp.known ? expScore : 0, raw: expRaw, known: exp.known };
+
     if (isIq) {
       const drivers = (leaderboard ?? []).map((e) => e.scores.driver ?? 0);
       const progs = (leaderboard ?? []).map((e) => e.scores.programming ?? 0);
@@ -7315,14 +7426,13 @@ function TeamRadar({
       const driverPct = myDriver != null ? radarPercentile(myDriver, drivers) : null;
       const progPct = myProg != null ? radarPercentile(myProg, progs) : null;
       const rankVal = agg.avgRank > 0 ? clamp100(100 * (1 - (agg.avgRank - 1) / RADAR_BENCH.iqRank)) : null;
-      const finalsRate = agg.events > 0 ? clamp100((agg.finalistEventCount / agg.events) * 100) : null;
       return [
         { axis: "World Skills", value: wsPct ?? 0, raw: wsRaw, known: wsPct != null },
         { axis: "Driver", value: driverPct ?? 0, raw: myDriver != null ? `${myDriver} pts` : "—", known: driverPct != null },
         { axis: "Programming", value: progPct ?? 0, raw: myProg != null ? `${myProg} pts` : "—", known: progPct != null },
         { axis: "Consistency", value: consistency ?? 0, raw: consistency != null ? `${Math.round(consistency)}%` : "—", known: consistency != null },
         { axis: "Ranking", value: rankVal ?? 0, raw: agg.avgRank > 0 ? `#${agg.avgRank.toFixed(1)} avg` : "—", known: rankVal != null },
-        { axis: "Finals", value: finalsRate ?? 0, raw: agg.events > 0 ? `${agg.finalistEventCount}/${agg.events} events` : "—", known: finalsRate != null },
+        expAxis,
       ];
     }
 
@@ -7332,20 +7442,15 @@ function TeamRadar({
     const weightedAwp = sigAwp * 3 + regularAwp;
     const awpRate = totalQualMatches > 0 ? weightedAwp / totalQualMatches : null;
 
-    // Experience blends match volume, event breadth, and how far up the event
-    // ladder they climbed (marquee events count for much more), then saturates
-    // on a diminishing-returns curve — so it isn't a flat "N matches = full".
-    const expPoints = agg.matches + agg.events * 3 + marqueeEvents * 6;
-    const expScore = 100 * (1 - Math.exp(-expPoints / RADAR_BENCH.expScale));
     return [
       { axis: "Win Rate", value: agg.matches > 0 ? clamp100(agg.winRate * 100) : 0, raw: agg.matches > 0 ? `${Math.round(agg.winRate * 100)}%` : "—", known: agg.matches > 0 },
       { axis: "AWP", value: awpRate != null ? clamp100((awpRate / RADAR_BENCH.awpRate) * 100) : 0, raw: `${sigAwp} Sig AWP · ${regularAwp} AWP`, known: awpRate != null, standalone: true },
       { axis: "World Skills", value: wsPct ?? 0, raw: wsRaw, known: wsPct != null },
       { axis: "Consistency", value: consistency ?? 0, raw: consistency != null ? `${Math.round(consistency)}%` : "—", known: consistency != null },
       { axis: "Qual WP", value: agg.matches > 0 ? clamp100((agg.avgWp / RADAR_BENCH.avgWp) * 100) : 0, raw: agg.matches > 0 ? `${agg.avgWp.toFixed(1)} WP/match` : "—", known: agg.matches > 0 },
-      { axis: "Experience", value: clamp100(expScore), raw: agg.matches > 0 ? `${agg.matches} matches · ${agg.events} event${agg.events === 1 ? "" : "s"}${marqueeEvents > 0 ? ` · ${marqueeEvents} signature` : ""}` : "—", known: agg.matches > 0 },
+      expAxis,
     ];
-  }, [isIq, agg, perEventAvgWp, perEventQualAvg, totalQualMatches, sigAwp, regularAwp, marqueeEvents, wsEntry, leaderboard]);
+  }, [isIq, agg, perEventAvgWp, perEventQualAvg, totalQualMatches, sigAwp, regularAwp, experience, wsEntry, leaderboard]);
 
   const hasAny = data.some((d) => d.known);
 
@@ -7414,7 +7519,9 @@ function TeamAboutTab({
   rankings,
   skills,
   matches,
+  awards,
   allEvents,
+  seasonsActive,
   eventIndex,
   loading,
   compact = false,
@@ -7426,7 +7533,9 @@ function TeamAboutTab({
   rankings: Ranking[];
   skills: Skill[];
   matches: Match[];
+  awards: Award[];
   allEvents: Event[];
+  seasonsActive: number; // number of seasons the team has competed in (career)
   eventIndex: Map<number, Event>;
   loading: boolean;
   // Compact mode (quick-view panel): keep only the two most useful charts.
@@ -7623,6 +7732,93 @@ function TeamAboutTab({
     };
   }, [rankRows, skillRows]);
 
+  // Experience axis inputs — raw season-scoped résumé counts. Titles and deep
+  // elim/finals runs at signature/championship events dominate; volume adds a
+  // little; longevity is measured in seasons. experienceScore() maps these to
+  // the 0–100 axis value against EXP_MODEL's per-factor caps.
+  const experience = useMemo<ExperienceInputs>(() => {
+    // The team's own real (non-practice, non-scrimmage) matches, grouped by event.
+    const matchesByEvent = new Map<number, Match[]>();
+    matches.forEach((m) => {
+      if (/practice/i.test(m.name)) return;
+      if (isScrimmageEvent(eventIndex.get(m.event.id))) return;
+      if (!m.alliances.some((a) => isTeamInAlliance(a, team.id))) return;
+      const list = matchesByEvent.get(m.event.id) ?? [];
+      list.push(m);
+      matchesByEvent.set(m.event.id, list);
+    });
+
+    // Champion / finalist / semifinalist awards this team actually won, by event.
+    // `worldsWonAt` marks the top-tier titles (worlds), which count double.
+    const wonAt = new Set<number>();
+    const worldsWonAt = new Set<number>();
+    const finalistAt = new Set<number>();
+    const sfAt = new Set<number>();
+    awards.forEach((a) => {
+      if (isScrimmageEvent(eventIndex.get(a.event.id))) return;
+      if (!awardTeamWinners(a).some((wnr) => wnr.team.id === team.id)) return;
+      if (EXP_CHAMP_RE.test(a.title)) {
+        wonAt.add(a.event.id);
+        if (EXP_WORLDS_TITLE_RE.test(a.title)) worldsWonAt.add(a.event.id);
+      } else if (EXP_SF_RE.test(a.title)) sfAt.add(a.event.id); // before finalist: "Semifinalists" ⊃ "finalists"
+      else if (EXP_FINALIST_RE.test(a.title)) finalistAt.add(a.event.id);
+    });
+
+    const eventIds = new Set<number>([...matchesByEvent.keys(), ...wonAt, ...finalistAt, ...sfAt]);
+    let titleUnits = 0, sigTitles = 0, sigFinals = 0, sigSF = 0, sigElims = 0;
+    let sigEvents = 0, finalsGeneral = 0, elimsGeneral = 0;
+
+    eventIds.forEach((eid) => {
+      const ev = eventIndex.get(eid);
+      const marquee = isMarqueeEvent(ev);
+      const evMatches = matchesByEvent.get(eid) ?? [];
+
+      // How far the team went at this event (from match names / IQ finals round).
+      let reachedElims = false, reachedSF = false, reachedFinals = false;
+      if (isIq) {
+        reachedFinals = evMatches.some((m) => isIqFinalsMatch(m));
+      } else {
+        for (const m of evMatches) {
+          const key = playoffRoundKey(m);
+          if (key === "r16" || key === "qf" || key === "sf" || key === "f") reachedElims = true;
+          if (key === "sf" || key === "f") reachedSF = true;
+          if (key === "f") reachedFinals = true;
+        }
+      }
+      const champion = wonAt.has(eid);
+      const finalist = finalistAt.has(eid) || reachedFinals; // reached finals but didn't win
+      const semifinal = !isIq && (sfAt.has(eid) || reachedSF);
+
+      // General (any-level) tallies.
+      if (champion || finalist) finalsGeneral += 1;
+      if (!isIq && (champion || semifinal || reachedElims)) elimsGeneral += 1;
+
+      // Signature/championship depth — count each marquee event's single best tier.
+      if (marquee) {
+        sigEvents += 1;
+        if (champion) { sigTitles += 1; titleUnits += worldsWonAt.has(eid) ? 2 : 1; }
+        else if (finalist) sigFinals += 1;
+        else if (semifinal) sigSF += 1;
+        else if (!isIq && reachedElims) sigElims += 1;
+      }
+    });
+
+    return {
+      titleUnits,
+      sigTitles,
+      sigFinals,
+      sigSF,
+      sigElims,
+      sigEvents,
+      finalsGeneral,
+      elimsGeneral,
+      seasonsActive,
+      matchCount: agg.matches,
+      eventCount: agg.events,
+      known: agg.matches > 0 || sigEvents > 0,
+    };
+  }, [isIq, matches, awards, eventIndex, team.id, agg.matches, agg.events, seasonsActive]);
+
   if (loading && !rankRows.length && !skillRows.length) {
     return (
       <div className="about-wrap">
@@ -7697,7 +7893,7 @@ function TeamAboutTab({
           totalQualMatches={rankRows.reduce((s, r) => s + r.qualMatches, 0)}
           sigAwp={rankRows.reduce((s, r) => s + (r.marquee ? r.awp : 0), 0)}
           regularAwp={rankRows.reduce((s, r) => s + (r.marquee ? 0 : r.awp), 0)}
-          marqueeEvents={rankRows.reduce((s, r) => s + (r.marquee ? 1 : 0), 0)}
+          experience={experience}
           teamLabel={team.number}
           wsEntry={wsEntry}
           leaderboard={worldSkills.data ?? null}
@@ -8105,14 +8301,17 @@ function TeamDetail({ param }: { param: string }) {
           rankings={selectedRankings.data}
           skills={selectedSkills.data}
           matches={selectedMatches.data}
+          awards={selectedAwards.data}
           allEvents={teamEvents}
+          seasonsActive={seasonOptions.length}
           eventIndex={eventIndex}
           loading={
             events.loading ||
-            (selectedSeasonId != null && (!rankingsBySeason[selectedSeasonId] || !skillsBySeason[selectedSeasonId])) ||
+            (selectedSeasonId != null && (!rankingsBySeason[selectedSeasonId] || !skillsBySeason[selectedSeasonId] || !awardsBySeason[selectedSeasonId])) ||
             selectedRankings.loading ||
             selectedSkills.loading ||
-            selectedMatches.loading
+            selectedMatches.loading ||
+            selectedAwards.loading
           }
         />
       )}
