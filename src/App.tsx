@@ -816,26 +816,10 @@ function GlobalSearch({ className = "" }: { className?: string }) {
 
     let live = true;
 
-    // Instant: teams already in the browse cache, ranked for this query.
+    // Teams — full team numbers hit the VEX API first, everything else stays
+    // cache-first. See runGlobalTeamSearch.
     const cachedTeams = rankTeamsForSearch(allCachedTeams(), debounced);
-    if (cachedTeams.length) setTeams(cachedTeams.slice(0, 5));
-
-    if (exactCachedTeamMatch(debounced, cachedTeams)) {
-      // A complete team number already cached is authoritative — skip the network.
-      setTeamsLoading(false);
-    } else {
-      setTeamsLoading(true);
-      Promise.all([
-        api.teams({ teamSearch: debounced, per_page: 50 }),
-        /^\d+[a-z]?$/i.test(debounced) ? api.robotEventsTeams({ number: debounced, "program[]": vexProgramIds, per_page: 20 }) : Promise.resolve(null),
-      ])
-        .then(([rseTeams, exactTeams]) => {
-          if (!live) return;
-          setTeams(rankTeamsForSearch(uniqueTeams([...cachedTeams, ...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 5));
-        })
-        .catch(() => { if (live && !cachedTeams.length) setTeams([]); })
-        .finally(() => { if (live) setTeamsLoading(false); });
-    }
+    void runGlobalTeamSearch(debounced, 5, cachedTeams, () => live, setTeams, setTeamsLoading);
 
     setEventsLoading(true);
     loadGlobalEventSearchEvents()
@@ -1454,9 +1438,83 @@ function allCachedTeams(): Team[] {
 // a query exactly matches a cached team, the cached row is authoritative and no
 // network lookup is needed.
 function exactCachedTeamMatch(query: string, cached: Team[]): boolean {
-  if (!/^\d{1,5}[a-z]$/i.test(query.trim())) return false;
+  if (!FULL_TEAM_NUMBER_RE.test(query.trim())) return false;
   const target = normalizedTeamQuery(query);
   return cached.some((team) => normalizedTeamQuery(team.number) === target);
+}
+
+// A complete team number is 1-5 digits + a single letter (e.g. "1A", "10B",
+// "4832E", "99999Z").
+const FULL_TEAM_NUMBER_RE = /^\d{1,5}[a-z]$/i;
+
+// Drives the teams half of the general search bars (header, home page, ⌘K palette).
+// Publishes ranked results (sliced to `limit`) via `onTeams`, possibly more than
+// once as data streams in, and toggles `onLoading`. `isLive` lets the caller cancel
+// on unmount / a newer query.
+//
+// When the query is a *full* team number the VEX (RobotEvents) API is the
+// authoritative, instant source: we fire it and robostem-api's fuzzy teamSearch in
+// parallel, surface the VEX hit the moment it lands, then merge VEX-first (robostem
+// fills in the rest, deduped). The browse cache is skipped here — it's used only as
+// a fallback when the VEX request itself fails (rate-limited / offline), in which
+// case we fall back to cache-first + robostem.
+//
+// For every other query we keep the original cache-first behavior: instant cached
+// results, short-circuit on an exact cached match, otherwise robostem plus a
+// supplementary RobotEvents number lookup.
+async function runGlobalTeamSearch(
+  query: string,
+  limit: number,
+  cachedTeams: Team[],
+  isLive: () => boolean,
+  onTeams: (teams: Team[]) => void,
+  onLoading: (loading: boolean) => void,
+) {
+  const publish = (pool: Team[]) => {
+    if (isLive()) onTeams(rankTeamsForSearch(uniqueTeams(pool), query).slice(0, limit));
+  };
+
+  if (FULL_TEAM_NUMBER_RE.test(query)) {
+    onLoading(true);
+    const vexPromise = api.robotEventsTeams({ number: query, "program[]": vexProgramIds, per_page: 20 });
+    const rsePromise = api.teams({ teamSearch: query, per_page: 50 });
+
+    // Surface VEX hits the instant they land — don't wait for robostem.
+    vexPromise.then((vex) => publish(vex.data)).catch(() => {});
+
+    const [vexResult, rseResult] = await Promise.allSettled([vexPromise, rsePromise]);
+    if (!isLive()) return;
+    const rseTeams = rseResult.status === "fulfilled" ? rseResult.value.data : [];
+    if (vexResult.status === "fulfilled") {
+      publish([...vexResult.value.data, ...rseTeams]); // VEX first, then robostem
+    } else {
+      publish([...cachedTeams, ...rseTeams]); // VEX failed → cache fallback, then robostem
+    }
+    onLoading(false);
+    return;
+  }
+
+  // Instant: teams already in the browse cache, ranked for this query.
+  if (cachedTeams.length) onTeams(cachedTeams.slice(0, limit));
+
+  if (exactCachedTeamMatch(query, cachedTeams)) {
+    // A complete team number already cached is authoritative — skip the network.
+    onLoading(false);
+    return;
+  }
+
+  onLoading(true);
+  try {
+    const [rseTeams, exactTeams] = await Promise.all([
+      api.teams({ teamSearch: query, per_page: 50 }),
+      /^\d+[a-z]?$/i.test(query) ? api.robotEventsTeams({ number: query, "program[]": vexProgramIds, per_page: 20 }) : Promise.resolve(null),
+    ]);
+    publish([...cachedTeams, ...(exactTeams?.data ?? []), ...rseTeams.data]);
+  } catch {
+    if (isLive() && !cachedTeams.length) onTeams([]);
+  } finally {
+    if (isLive()) onLoading(false);
+  }
 }
 
 function gradeCode(grade?: string | null) {
@@ -14236,26 +14294,9 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 
     let live = true;
 
-    // Teams — cache-first, then the same dual-API call as GlobalSearch, capped at 3.
+    // Teams — same logic as GlobalSearch (VEX-first for full team numbers), capped at 3.
     const cachedTeams = rankTeamsForSearch(allCachedTeams(), debounced);
-    if (cachedTeams.length) setTeams(cachedTeams.slice(0, 3));
-
-    if (exactCachedTeamMatch(debounced, cachedTeams)) {
-      // A complete team number already cached is authoritative — skip the network.
-      setTeamsLoading(false);
-    } else {
-      setTeamsLoading(true);
-      Promise.all([
-        api.teams({ teamSearch: debounced, per_page: 50 }),
-        /^\d+[a-z]?$/i.test(debounced) ? api.robotEventsTeams({ number: debounced, "program[]": vexProgramIds, per_page: 20 }) : Promise.resolve(null),
-      ])
-        .then(([rseTeams, exactTeams]) => {
-          if (!live) return;
-          setTeams(rankTeamsForSearch(uniqueTeams([...cachedTeams, ...(exactTeams?.data ?? []), ...rseTeams.data]), debounced).slice(0, 3));
-        })
-        .catch(() => { if (live && !cachedTeams.length) setTeams([]); })
-        .finally(() => { if (live) setTeamsLoading(false); });
-    }
+    void runGlobalTeamSearch(debounced, 3, cachedTeams, () => live, setTeams, setTeamsLoading);
 
     // Events — 3 results, lazily falling back through older seasons:
     //   • Current season results appear immediately when the first fetch resolves.
