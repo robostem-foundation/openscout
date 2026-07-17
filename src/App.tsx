@@ -7123,7 +7123,7 @@ const clamp100 = (n: number) => Math.max(0, Math.min(100, n));
 // Reference points where an axis reads "full" (100). Tune to taste.
 const RADAR_BENCH = {
   awpRate: 1,   // weighted AWP per qual match for a full ring (regular AWP maxes at 1/match; signature counts 3×)
-  avgWp: 3,     // avg WP / match — max is 3: 2 (win) + 1 (AWP) (qual dominance)
+  avgWp: 2.65,  // avg WP / match for a full ring (theoretical max is 3: 2 win + 1 AWP)
   iqRank: 24,   // IQ: avg qual rank at/beyond which the axis bottoms out
 };
 
