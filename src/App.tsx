@@ -77,30 +77,30 @@ import { Area, AreaChart, CartesianGrid, PolarAngleAxis, PolarGrid, Radar, Radar
 import type { Profile } from "./auth";
 import { toggleFavorite, useFavorite, useFavoriteIds, useFavoritesReady } from "./favorites";
 import { setMatchNote, useHasNote, useMatchNote } from "./notes";
-import { useOrgMatchNote, setOrgMatchNote, useHasAnyOrgNote, useOrgNotesList } from "./org-notes";
-import type { OrgNoteListItem } from "./org-notes";
-import { useOrgFavorites, useIsOrgFavorite, toggleOrgFavorite } from "./org-favorites";
-import { useEventNames, useOrgPicklistEvents, loadOrgActivity } from "./org-aggregate";
-import type { ActivityItem } from "./org-aggregate";
-import { loadOrgPicklistEntries } from "./picklist";
-import type { OrgPicklistSummary, PicklistEntry } from "./picklist";
+import { useSharedTeamMatchNote, setSharedTeamMatchNote, useHasAnySharedTeamNote, useSharedTeamNotesList } from "./shared-team-notes";
+import type { SharedTeamNoteListItem } from "./shared-team-notes";
+import { useSharedTeamFavorites, useIsSharedTeamFavorite, toggleSharedTeamFavorite } from "./shared-team-favorites";
+import { useEventNames, useSharedTeamPicklistEvents, loadSharedTeamActivity } from "./shared-team-aggregate";
+import type { ActivityItem } from "./shared-team-aggregate";
+import { loadSharedTeamPicklistEntries } from "./picklist";
+import type { SharedTeamPicklistSummary, PicklistEntry } from "./picklist";
 import {
-  createOrg,
-  deleteOrg,
+  createSharedTeam,
+  deleteSharedTeam,
   generateInvite,
-  getOrgInvites,
-  getOrgMembers,
-  leaveOrg,
+  getSharedTeamInvites,
+  getSharedTeamMembers,
+  leaveSharedTeam,
   removeMember,
-  reloadOrgs,
+  reloadSharedTeams,
   revokeInvite,
   updateMemberRole,
-  updateOrg,
-  useOrg,
-  useOrgs,
-  useOrgsReady,
-} from "./orgs";
-import type { OrgInvite, OrgMember, OrgMembership, OrgRole } from "./orgs";
+  updateSharedTeam,
+  useSharedTeam,
+  useSharedTeams,
+  useSharedTeamsReady,
+} from "./shared-teams";
+import type { SharedTeamInvite, SharedTeamMember, SharedTeamMembership, SharedTeamRole } from "./shared-teams";
 import { supabase } from "./supabase";
 import { setEventsSettings, setQuickViewFirst, setQuickViewMode, setQuickViewSide, useQuickViewFirst, useQuickViewMode, useQuickViewSide, useSettingsEpoch } from "./settings";
 import type { QuickViewMode, QuickViewSide } from "./settings";
@@ -240,7 +240,7 @@ function emptyBucket<T>(): AsyncBucket<T> {
 }
 
 // ── Spotlight open state (module-level so the keyboard handler can call it
-//    directly without React context, consistent with org-favorites pattern) ──
+//    directly without React context, consistent with shared-team-favorites pattern) ──
 let _spotlightOpen = false;
 const _spotlightListeners = new Set<() => void>();
 function _emitSpotlight() { for (const l of _spotlightListeners) l(); }
@@ -1380,7 +1380,7 @@ function compareTeamsForSearch(query: string) {
   return (a: Team, b: Team) => teamSearchRank(a, query) - teamSearchRank(b, query) || compareTeamsNatural(a, b);
 }
 
-// Any kind of match (number, name, org, location) — teamSearchRank 0-4; 5 = nothing matched.
+// Any kind of match (number, name, organization, location) — teamSearchRank 0-4; 5 = nothing matched.
 function teamMatchesQuery(team: Team, query: string): boolean {
   const needle = normalizedTeamQuery(query);
   if (!needle) return true;
@@ -1388,7 +1388,7 @@ function teamMatchesQuery(team: Team, query: string): boolean {
 }
 
 // Number-only match: the team's *number* must match the needle (exact, numeric
-// core, prefix, or substring). Text-field matches (name/org/location) don't count.
+// core, prefix, or substring). Text-field matches (name/organization/location) don't count.
 function teamNumberMatches(team: Team, needle: string): boolean {
   const teamNumber = normalizedTeamQuery(team.number);
   const numeric = /^\d+$/.test(needle);
@@ -1406,7 +1406,7 @@ function rankTeamsForSearch(teams: Team[], query: string) {
   // For number-like queries (e.g. "14141" or "14141X") only keep teams whose
   // number matches — loosely-related rank-5 rows must be dropped, not just sorted
   // last, or the .slice() window can still surface them. For text queries keep
-  // any match (name/org/location) and drop only true non-matches (rank 5).
+  // any match (name/organization/location) and drop only true non-matches (rank 5).
   const isNumberLike = /^\d+[a-z]?$/i.test(needle);
   const pool = isNumberLike
     ? teams.filter((team) => teamNumberMatches(team, needle))
@@ -2369,29 +2369,29 @@ function FavoriteButton({ id, kind }: { id: number | string; kind: "team" | "eve
   );
 }
 
-// ── Org Favorite buttons ─────────────────────────────────────────────────────
+// ── Shared Team Favorite buttons ─────────────────────────────────────────────
 
-/** Inner button for a single org — reads active state and toggles. */
-function OrgFavBtn({
-  orgId,
+/** Inner button for a single shared team — reads active state and toggles. */
+function SharedTeamFavBtn({
+  sharedTeamId,
   kind,
   refId,
   label,
   onToggle,
 }: {
-  orgId: string;
+  sharedTeamId: string;
   kind: "team" | "event";
   refId: string;
   label?: string;
   onToggle?: () => void;
 }) {
-  const active = useIsOrgFavorite(orgId, kind, refId);
+  const active = useIsSharedTeamFavorite(sharedTeamId, kind, refId);
   return (
     <button
-      className={`icon-button${label ? " org-fav-labeled-btn" : ""}${active ? " active" : ""}`}
-      title={active ? `Remove from ${label ?? "org"}` : `Add to ${label ?? "org"}`}
+      className={`icon-button${label ? " shared-team-fav-labeled-btn" : ""}${active ? " active" : ""}`}
+      title={active ? `Remove from ${label ?? "shared team"}` : `Add to ${label ?? "shared team"}`}
       onClick={() => {
-        void toggleOrgFavorite(orgId, kind, refId);
+        void toggleSharedTeamFavorite(sharedTeamId, kind, refId);
         onToggle?.();
       }}
     >
@@ -2408,41 +2408,41 @@ function OrgFavBtn({
 }
 
 /**
- * Org-favorite toggle button for TeamDetail / EventDetail headers.
- * Hidden when signed out or not in any org. Single-org: direct toggle.
- * Multi-org: shows a small popover to choose which org.
+ * Shared-team-favorite toggle button for TeamDetail / EventDetail headers.
+ * Hidden when signed out or not in any shared team. Single: direct toggle.
+ * Multiple: shows a small popover to choose which shared team.
  */
-function OrgFavoriteButton({ kind, refId }: { kind: "team" | "event"; refId: string }) {
+function SharedTeamFavoriteButton({ kind, refId }: { kind: "team" | "event"; refId: string }) {
   const { user } = useAuth();
-  const orgs = useOrgs();
+  const sharedTeams = useSharedTeams();
   const [open, setOpen] = useState(false);
   const popoverRef = useOutsideClick<HTMLDivElement>(() => setOpen(false));
 
-  if (!user || orgs.length === 0) return null;
+  if (!user || sharedTeams.length === 0) return null;
 
-  if (orgs.length === 1) {
-    return <OrgFavBtn orgId={orgs[0].orgId} kind={kind} refId={refId} label="Org Favorite" />;
+  if (sharedTeams.length === 1) {
+    return <SharedTeamFavBtn sharedTeamId={sharedTeams[0].sharedTeamId} kind={kind} refId={refId} label="Shared Team Favorite" />;
   }
 
   return (
     <div style={{ position: "relative" }} ref={popoverRef}>
       <button
-        className="icon-button org-fav-labeled-btn"
-        title="Add to org favorites"
+        className="icon-button shared-team-fav-labeled-btn"
+        title="Add to shared team favorites"
         onClick={() => setOpen((v) => !v)}
       >
         <Users size={14} />
-        <span>Org Favorite</span>
+        <span>Shared Team Favorite</span>
       </button>
       {open && (
-        <div className="org-fav-popover">
-          {orgs.map((org) => (
-            <OrgFavBtn
-              key={org.orgId}
-              orgId={org.orgId}
+        <div className="shared-team-fav-popover">
+          {sharedTeams.map((team) => (
+            <SharedTeamFavBtn
+              key={team.sharedTeamId}
+              sharedTeamId={team.sharedTeamId}
               kind={kind}
               refId={refId}
-              label={org.name}
+              label={team.name}
               onToggle={() => setOpen(false)}
             />
           ))}
@@ -2454,7 +2454,7 @@ function OrgFavoriteButton({ kind, refId }: { kind: "team" | "event"; refId: str
 
 // ── Compare tray buttons ─────────────────────────────────────────────────────
 
-/** Inner button for a single org — reads active state and toggles. */
+/** Inner button for a single shared team — reads active state and toggles. */
 /** Small button for team rows in tables — adds/removes from tray. */
 function CompareRowBtn({ teamId, teamNumber, programCode, teamName }: { teamId: number; teamNumber: string; programCode: string; teamName?: string }) {
   const inTray = useIsInTray(teamId);
@@ -2477,21 +2477,21 @@ function CompareRowBtn({ teamId, teamNumber, programCode, teamName }: { teamId: 
 
 // ── Picklist row button ───────────────────────────────────────────────────────
 
-/** Hover-reveal button in RankingsTable rows — adds/removes a team from the org picklist. */
+/** Hover-reveal button in RankingsTable rows — adds/removes a team from the shared team picklist. */
 function PicklistRowBtn({
-  orgId,
+  sharedTeamId,
   eventId,
   teamId,
   teamNumber,
   teamName,
 }: {
-  orgId: string;
+  sharedTeamId: string;
   eventId: string;
   teamId: string;
   teamNumber: string;
   teamName?: string;
 }) {
-  const inList = useIsInPicklist(orgId, eventId, teamId);
+  const inList = useIsInPicklist(sharedTeamId, eventId, teamId);
   return (
     <button
       type="button"
@@ -2500,9 +2500,9 @@ function PicklistRowBtn({
       onClick={(e) => {
         e.stopPropagation();
         if (inList) {
-          void removeFromPicklist(orgId, eventId, teamId);
+          void removeFromPicklist(sharedTeamId, eventId, teamId);
         } else {
-          void addToPicklist(orgId, eventId, { teamId, teamNumber, teamName });
+          void addToPicklist(sharedTeamId, eventId, { teamId, teamNumber, teamName });
         }
       }}
     >
@@ -2704,8 +2704,8 @@ function AllianceBoard({
 // ── Picklist tab ──────────────────────────────────────────────────────────────
 
 /** Full picklist panel rendered as a tab in EventDetail. */
-function PicklistTab({ event, orgId, rankings = [], isIq = false }: { event: { id: number; name: string }; orgId: string; rankings?: Ranking[]; isIq?: boolean }) {
-  const { entries, ready } = usePicklist(orgId, String(event.id));
+function PicklistTab({ event, sharedTeamId, rankings = [], isIq = false }: { event: { id: number; name: string }; sharedTeamId: string; rankings?: Ranking[]; isIq?: boolean }) {
+  const { entries, ready } = usePicklist(sharedTeamId, String(event.id));
   const [allianceMode, setAllianceMode] = useState(false);
   const [boardMode, setBoardMode] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -2736,7 +2736,7 @@ function PicklistTab({ event, orgId, rankings = [], isIq = false }: { event: { i
     const reordered = [...entries];
     const [moved] = reordered.splice(dragIndex, 1);
     reordered.splice(targetIndex, 0, moved);
-    void reorderPicklist(orgId, eventIdStr, reordered);
+    void reorderPicklist(sharedTeamId, eventIdStr, reordered);
     setDragIndex(null);
     setDragOverIndex(null);
   }
@@ -2757,7 +2757,7 @@ function PicklistTab({ event, orgId, rankings = [], isIq = false }: { event: { i
           <button
             type="button"
             className="button-sm"
-            onClick={() => void clearCrossedOut(orgId, eventIdStr)}
+            onClick={() => void clearCrossedOut(sharedTeamId, eventIdStr)}
           >
             Reset
           </button>
@@ -2824,7 +2824,7 @@ function PicklistTab({ event, orgId, rankings = [], isIq = false }: { event: { i
                   e.stopPropagation();
                   const next = [...entries];
                   [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                  void reorderPicklist(orgId, eventIdStr, next);
+                  void reorderPicklist(sharedTeamId, eventIdStr, next);
                 }}
               ><ChevronUp size={11} /></button>
               <button
@@ -2836,7 +2836,7 @@ function PicklistTab({ event, orgId, rankings = [], isIq = false }: { event: { i
                   e.stopPropagation();
                   const next = [...entries];
                   [next[i], next[i + 1]] = [next[i + 1], next[i]];
-                  void reorderPicklist(orgId, eventIdStr, next);
+                  void reorderPicklist(sharedTeamId, eventIdStr, next);
                 }}
               ><ChevronDown size={11} /></button>
             </span>
@@ -2859,7 +2859,7 @@ function PicklistTab({ event, orgId, rankings = [], isIq = false }: { event: { i
               onChange={(e) =>
                 setLocalNotes((prev) => ({ ...prev, [entry.teamId]: e.target.value }))
               }
-              onBlur={(e) => void updatePicklistNotes(orgId, eventIdStr, entry.teamId, e.target.value)}
+              onBlur={(e) => void updatePicklistNotes(sharedTeamId, eventIdStr, entry.teamId, e.target.value)}
               onClick={(e) => e.stopPropagation()}
             />
             <button
@@ -2868,7 +2868,7 @@ function PicklistTab({ event, orgId, rankings = [], isIq = false }: { event: { i
               title={entry.crossedOut ? "Unmark" : "Mark as picked/crossed out"}
               onClick={(e) => {
                 e.stopPropagation();
-                void toggleCrossedOut(orgId, eventIdStr, entry.teamId);
+                void toggleCrossedOut(sharedTeamId, eventIdStr, entry.teamId);
               }}
             >
               <MinusCircle size={14} />
@@ -2879,7 +2879,7 @@ function PicklistTab({ event, orgId, rankings = [], isIq = false }: { event: { i
               title="Remove from picklist"
               onClick={(e) => {
                 e.stopPropagation();
-                void removeFromPicklist(orgId, eventIdStr, entry.teamId);
+                void removeFromPicklist(sharedTeamId, eventIdStr, entry.teamId);
               }}
             >
               <X size={12} />
@@ -2928,13 +2928,13 @@ function MobileTabBar({ path }: { path: string }) {
 // Slide-in navigation drawer, mobile-only (see .mobile-nav-drawer in CSS).
 // The bottom tab bar handles the 4–5 primary sections; this drawer surfaces the
 // long tail that otherwise only lives behind the desktop account dropdown /
-// footer: full nav (with labels), Settings, your orgs, theme switch, and the
+// footer: full nav (with labels), Settings, your sharedTeams, theme switch, and the
 // legal links + sign-out. Closes on outside-click, Escape, and route change
 // (the effect in Layout resets `open` when `path` changes).
 function MobileNavDrawer({ path, open, onClose }: { path: string; open: boolean; onClose: () => void }) {
   const { user, profile, signOut, updateProfile } = useAuth();
   const theme = useTheme();
-  const orgs = useOrgs();
+  const sharedTeams = useSharedTeams();
   const hasMyTeam = !!(profile?.team_number && profile?.team_program);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -3023,13 +3023,13 @@ function MobileNavDrawer({ path, open, onClose }: { path: string; open: boolean;
               </button>
             ))}
           </div>
-          {orgs.length > 0 && (
+          {sharedTeams.length > 0 && (
             <>
-              <div className="mobile-nav-section-label">Your {orgs.length === 1 ? "org" : "orgs"}</div>
-              {orgs.map((org) => (
-                <button key={org.orgId} type="button" className="mobile-nav-link" onClick={() => go(`/org/${org.orgId}`)}>
-                  <span className="mobile-nav-org-badge">{(org.name || "?").charAt(0).toUpperCase()}</span>
-                  {org.name}
+              <div className="mobile-nav-section-label">Your {sharedTeams.length === 1 ? "shared team" : "shared teams"}</div>
+              {sharedTeams.map((team) => (
+                <button key={team.sharedTeamId} type="button" className="mobile-nav-link" onClick={() => go(`/shared-team/${team.sharedTeamId}`)}>
+                  <span className="mobile-nav-shared-team-badge">{(team.name || "?").charAt(0).toUpperCase()}</span>
+                  {team.name}
                 </button>
               ))}
             </>
@@ -3985,7 +3985,7 @@ function Home() {
           </div>
           <RecentlyViewedPanel />
           <FavoritesPanel />
-          <OrgPanel />
+          <SharedTeamPanel />
 
           <Panel title="VEX Skill Leaderboards" icon={<Trophy />}>
             <div className="skills-leaderboard-list">
@@ -5516,15 +5516,15 @@ function TeamsPage() {
   );
 }
 
-function TeamTable({ teams, loading, localPageSize, eventId, orgId, divisionMap, splitName = false, skills }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number; orgId?: string; divisionMap?: Map<number, string> | null; splitName?: boolean; skills?: { scoreByTeam: Map<number, number>; loading: boolean } }) {
+function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divisionMap, splitName = false, skills }: { teams: Team[]; loading: boolean; localPageSize?: number; eventId?: number; sharedTeamId?: string; divisionMap?: Map<number, string> | null; splitName?: boolean; skills?: { scoreByTeam: Map<number, number>; loading: boolean } }) {
   const [page, setPage] = useState(1);
   const [expandedTeamId, setExpandedTeamId] = useState<number | null>(null);
   const compareMode = useComparePickMode();
   const quickViewFirst = useQuickViewFirst();
   const totalPages = localPageSize ? Math.max(1, Math.ceil(teams.length / localPageSize)) : 1;
   const visibleTeams = localPageSize ? teams.slice((page - 1) * localPageSize, page * localPageSize) : teams;
-  // Picklist action only in the event + org context; hidden in the global /teams directory.
-  const showPicklist = Boolean(orgId && eventId);
+  // Picklist action only in the event + shared team context; hidden in the global /teams directory.
+  const showPicklist = Boolean(sharedTeamId && eventId);
   const colCount = 8 + (splitName ? 1 : 0) + (skills ? 1 : 0) + (showPicklist ? 1 : 0);
 
   useEffect(() => {
@@ -5626,7 +5626,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, orgId, divisionMap,
                     {showPicklist && (
                       <td className="picklist-col" onClick={(e) => e.stopPropagation()}>
                         <PicklistRowBtn
-                          orgId={orgId!}
+                          sharedTeamId={sharedTeamId!}
                           eventId={String(eventId)}
                           teamId={String(team.id)}
                           teamNumber={team.number}
@@ -6053,8 +6053,8 @@ function EventDetail({ param }: { param: string }) {
   const [playback, setPlayback] = useState<MatchPlayback | null>(null);
   const [teamSearch, setTeamSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const orgs = useOrgs();
-  const primaryOrg = orgs[0] ?? null;
+  const sharedTeams = useSharedTeams();
+  const primarySharedTeam = sharedTeams[0] ?? null;
   const lookup = useAsync(async () => {
     if (allDigits(param)) return api.event(param);
     const res = await api.events({ "sku[]": param, per_page: 1 });
@@ -6324,7 +6324,7 @@ function EventDetail({ param }: { param: string }) {
           </div>
         </div>
         <div className="profile-header-actions">
-          <OrgFavoriteButton kind="event" refId={String(event.id)} />
+          <SharedTeamFavoriteButton kind="event" refId={String(event.id)} />
           <FavoriteButton id={event.id} kind="event" />
         </div>
       </div>
@@ -6435,7 +6435,7 @@ function EventDetail({ param }: { param: string }) {
           focusMatchId={focusMatchId}
         />
       )}
-      {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} allMatches={matches.data?.data ?? []} orgId={primaryOrg?.orgId} eventId={String(event.id)} />}
+      {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} allMatches={matches.data?.data ?? []} sharedTeamId={primarySharedTeam?.sharedTeamId} eventId={String(event.id)} />}
       {tab === "skills" && <SkillsTable skills={filteredSkills} />}
       {tab === "awards" && <AwardsList awards={filteredAwards} />}
       {tab === "teams" && divisions.length > 1 && (
@@ -6455,11 +6455,11 @@ function EventDetail({ param }: { param: string }) {
           {teams.data.data.length.toLocaleString()} teams{teamsDivFilter ? ` in ${divisions.find((d) => d.id === teamsDivFilter)?.name ?? "division"}` : ""}.
         </div>
       )}
-      {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} eventId={event.id} orgId={primaryOrg?.orgId} divisionMap={teamDivisionNameMap} />}
+      {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} eventId={event.id} sharedTeamId={primarySharedTeam?.sharedTeamId} divisionMap={teamDivisionNameMap} />}
       {tab === "picklist" && (
-        primaryOrg
-          ? <PicklistTab event={event} orgId={primaryOrg.orgId} rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} />
-          : <div className="picklist-empty"><p>Join or create an org to use shared picklists.</p></div>
+        primarySharedTeam
+          ? <PicklistTab event={event} sharedTeamId={primarySharedTeam.sharedTeamId} rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} />
+          : <div className="picklist-empty"><p>Join or create a shared team to use shared picklists.</p></div>
       )}
       </div>
       </div>
@@ -8264,7 +8264,7 @@ function TeamDetail({ param }: { param: string }) {
           </div>
         </div>
         <div className="profile-header-actions">
-          <OrgFavoriteButton kind="team" refId={String(team.id)} />
+          <SharedTeamFavoriteButton kind="team" refId={String(team.id)} />
           <FavoriteButton id={team.id} kind="team" />
         </div>
       </div>
@@ -8377,17 +8377,17 @@ function TeamDetail({ param }: { param: string }) {
 }
 
 // Picklist action inside the quick-view panel. Split into its own component so
-// the picklist hooks are only mounted (and only run) when there's an org + event
+// the picklist hooks are only mounted (and only run) when there's a shared team + event
 // context — keeping hook calls unconditional within this component.
-function QuickViewPicklistButton({ orgId, eventId, teamId, teamNumber, teamName }: { orgId: string; eventId: string; teamId: string; teamNumber: string; teamName?: string }) {
-  const inList = useIsInPicklist(orgId, eventId, teamId);
+function QuickViewPicklistButton({ sharedTeamId, eventId, teamId, teamNumber, teamName }: { sharedTeamId: string; eventId: string; teamId: string; teamNumber: string; teamName?: string }) {
+  const inList = useIsInPicklist(sharedTeamId, eventId, teamId);
   return (
     <button
       type="button"
       className={`quick-view-action${inList ? " active" : ""}`}
       onClick={() => {
-        if (inList) void removeFromPicklist(orgId, eventId, teamId);
-        else void addToPicklist(orgId, eventId, { teamId, teamNumber, teamName });
+        if (inList) void removeFromPicklist(sharedTeamId, eventId, teamId);
+        else void addToPicklist(sharedTeamId, eventId, { teamId, teamNumber, teamName });
       }}
     >
       {inList ? <Check size={14} /> : <Plus size={14} />}
@@ -8433,8 +8433,8 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
     _quickViewHandle = handle;
     return () => { if (_quickViewHandle === handle) _quickViewHandle = null; };
   }, [state, requestClose]);
-  const orgs = useOrgs();
-  const primaryOrg = orgs[0] ?? null;
+  const sharedTeams = useSharedTeams();
+  const primarySharedTeam = sharedTeams[0] ?? null;
   // Capture the event context once — quick view is opened from an event, and the
   // panel closes on navigation, so these stay valid for its lifetime.
   const contextEventId = useRef(_currentEventId).current;
@@ -8671,9 +8671,9 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
             >
               <Scale size={13} /> {inTray ? "In compare" : "Compare"}
             </button>
-            {primaryOrg && eventIdForPicklist != null && teamId != null && (
+            {primarySharedTeam && eventIdForPicklist != null && teamId != null && (
               <QuickViewPicklistButton
-                orgId={primaryOrg.orgId}
+                sharedTeamId={primarySharedTeam.sharedTeamId}
                 eventId={String(eventIdForPicklist)}
                 teamId={String(teamId)}
                 teamNumber={state.teamNumber}
@@ -10249,8 +10249,8 @@ function NoteRailDot({
   onOpen: (el: HTMLElement) => void;
 }) {
   const hasPersonalNote = useHasNote(matchId);
-  const hasOrgNote = useHasAnyOrgNote(matchId);
-  const hasNote = hasPersonalNote || hasOrgNote;
+  const hasSharedTeamNote = useHasAnySharedTeamNote(matchId);
+  const hasNote = hasPersonalNote || hasSharedTeamNote;
   // The pip (resting dot) and the note icon are both always rendered; CSS cross-
   // fades them by the proximity variable --p (set imperatively during hover), so a
   // dot visibly morphs into a note icon as the cursor approaches. A note that
@@ -10354,7 +10354,7 @@ function NoteTeamChips({ match, body, eventTeams }: { match: Match; body: string
 // (red/blue for teams in this match, accent for any other event team). The editor
 // is a contentEditable surface whose *source of truth is plain text*: on each
 // change we re-tokenize the text and rebuild the DOM, wrapping recognized team
-// numbers in atomic (contentEditable=false) spans. The store, org notes, the
+// numbers in atomic (contentEditable=false) spans. The store, shared team notes, the
 // timestamp jump-bar and search all keep seeing a plain string via textContent —
 // no storage/format change. Clicking a pill honors the quick-view-first setting,
 // exactly like TeamQuickLink.
@@ -10689,16 +10689,16 @@ function MatchNotePopover({
   anchorRect: DOMRect;
   onClose: () => void;
 }) {
-  const orgs = useOrgs();
+  const sharedTeams = useSharedTeams();
   const [scope, setScope] = useState<string>("personal");
   // Always call both hooks (Rules of Hooks — no conditional calls)
   const personalNote = useMatchNote(match.id);
-  const orgNote = useOrgMatchNote(scope !== "personal" ? scope : "__none__", match.id);
-  const activeBody = scope === "personal" ? personalNote.body : orgNote.body;
+  const sharedTeamNote = useSharedTeamMatchNote(scope !== "personal" ? scope : "__none__", match.id);
+  const activeBody = scope === "personal" ? personalNote.body : sharedTeamNote.body;
   const handleChange = (val: string) => {
     const v = val.slice(0, NOTE_CHAR_LIMIT);
     if (scope === "personal") setMatchNote(match.id, eventId ?? null, v);
-    else setOrgMatchNote(scope, match.id, eventId ?? null, v);
+    else setSharedTeamMatchNote(scope, match.id, eventId ?? null, v);
   };
 
   const charsUsed = activeBody.length;
@@ -10716,7 +10716,7 @@ function MatchNotePopover({
   return (
     <div className="note-popover" ref={ref} style={{ top, left }}>
       <div className="note-popover-title">{match.name}</div>
-      {orgs.length > 0 && (
+      {sharedTeams.length > 0 && (
         <div className="note-scope-toggle">
           <button
             type="button"
@@ -10725,14 +10725,14 @@ function MatchNotePopover({
           >
             Personal
           </button>
-          {orgs.length === 1 ? (
+          {sharedTeams.length === 1 ? (
             <button
               type="button"
-              className={`note-scope-btn ${scope === orgs[0].orgId ? "active" : ""}`}
-              onClick={() => setScope(orgs[0].orgId)}
-              title={orgs[0].name}
+              className={`note-scope-btn ${scope === sharedTeams[0].sharedTeamId ? "active" : ""}`}
+              onClick={() => setScope(sharedTeams[0].sharedTeamId)}
+              title={sharedTeams[0].name}
             >
-              {orgs[0].name}
+              {sharedTeams[0].name}
             </button>
           ) : (
             <select
@@ -10740,9 +10740,9 @@ function MatchNotePopover({
               value={scope === "personal" ? "" : scope}
               onChange={(e) => setScope(e.target.value || "personal")}
             >
-              <option value="">Select org…</option>
-              {orgs.map((o) => (
-                <option key={o.orgId} value={o.orgId}>{o.name}</option>
+              <option value="">Select shared team…</option>
+              {sharedTeams.map((t) => (
+                <option key={t.sharedTeamId} value={t.sharedTeamId}>{t.name}</option>
               ))}
             </select>
           )}
@@ -11256,16 +11256,16 @@ function NoteEditorPanel({
   getTime: () => number | null;
   onSeek: (seconds: number) => void;
 }) {
-  const orgs = useOrgs();
+  const sharedTeams = useSharedTeams();
   const [scope, setScope] = useState<string>("personal");
   // Always call both hooks (Rules of Hooks — no conditional calls)
   const personalNote = useMatchNote(match.id);
-  const orgNote = useOrgMatchNote(scope !== "personal" ? scope : "__none__", match.id);
-  const body = scope === "personal" ? personalNote.body : orgNote.body;
+  const sharedTeamNote = useSharedTeamMatchNote(scope !== "personal" ? scope : "__none__", match.id);
+  const body = scope === "personal" ? personalNote.body : sharedTeamNote.body;
   const handleChange = (val: string) => {
     const v = val.slice(0, NOTE_CHAR_LIMIT);
     if (scope === "personal") setMatchNote(match.id, eventId ?? null, v);
-    else setOrgMatchNote(scope, match.id, eventId ?? null, v);
+    else setSharedTeamMatchNote(scope, match.id, eventId ?? null, v);
   };
 
   const charsUsed = body.length;
@@ -11289,7 +11289,7 @@ function NoteEditorPanel({
         <StickyNote size={14} />
         Match notes
       </div>
-      {orgs.length > 0 && (
+      {sharedTeams.length > 0 && (
         <div className="note-scope-toggle">
           <button
             type="button"
@@ -11298,14 +11298,14 @@ function NoteEditorPanel({
           >
             Personal
           </button>
-          {orgs.length === 1 ? (
+          {sharedTeams.length === 1 ? (
             <button
               type="button"
-              className={`note-scope-btn ${scope === orgs[0].orgId ? "active" : ""}`}
-              onClick={() => setScope(orgs[0].orgId)}
-              title={orgs[0].name}
+              className={`note-scope-btn ${scope === sharedTeams[0].sharedTeamId ? "active" : ""}`}
+              onClick={() => setScope(sharedTeams[0].sharedTeamId)}
+              title={sharedTeams[0].name}
             >
-              {orgs[0].name}
+              {sharedTeams[0].name}
             </button>
           ) : (
             <select
@@ -11313,9 +11313,9 @@ function NoteEditorPanel({
               value={scope === "personal" ? "" : scope}
               onChange={(e) => setScope(e.target.value || "personal")}
             >
-              <option value="">Select org…</option>
-              {orgs.map((o) => (
-                <option key={o.orgId} value={o.orgId}>{o.name}</option>
+              <option value="">Select shared team…</option>
+              {sharedTeams.map((t) => (
+                <option key={t.sharedTeamId} value={t.sharedTeamId}>{t.name}</option>
               ))}
             </select>
           )}
@@ -11625,9 +11625,9 @@ function SortableTh({ col, label, sort, onSort, title, className }: { col: strin
   );
 }
 
-function RankingsTable({ rankings, isIq = false, matches = [], allMatches, orgId, eventId }: { rankings: Ranking[]; isIq?: boolean; matches?: Match[]; allMatches?: Match[]; orgId?: string; eventId?: string }) {
+function RankingsTable({ rankings, isIq = false, matches = [], allMatches, sharedTeamId, eventId }: { rankings: Ranking[]; isIq?: boolean; matches?: Match[]; allMatches?: Match[]; sharedTeamId?: string; eventId?: string }) {
   const programCode = useContext(ProgramContext);
-  const showPicklist = !!(orgId && eventId);
+  const showPicklist = !!(sharedTeamId && eventId);
   // Rank ascending is the natural default; clicking a column sorts by it
   // (numeric cols default to descending = best first), re-clicking flips.
   const [sort, setSort] = useState<SortState>({ key: "rank", dir: "asc" });
@@ -11738,7 +11738,7 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, orgId
                   </td>
                   {showPicklist && (
                     <td className="picklist-col" onClick={(e) => e.stopPropagation()}>
-                      <PicklistRowBtn orgId={orgId} eventId={eventId} teamId={String(row.team.id)} teamNumber={row.team.name} />
+                      <PicklistRowBtn sharedTeamId={sharedTeamId} eventId={eventId} teamId={String(row.team.id)} teamNumber={row.team.name} />
                     </td>
                   )}
                 </tr>
@@ -11804,7 +11804,7 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, orgId
               </td>
               {showPicklist && (
                 <td className="picklist-col" onClick={(e) => e.stopPropagation()}>
-                  <PicklistRowBtn orgId={orgId} eventId={eventId} teamId={String(row.team.id)} teamNumber={row.team.name} />
+                  <PicklistRowBtn sharedTeamId={sharedTeamId} eventId={eventId} teamId={String(row.team.id)} teamNumber={row.team.name} />
                 </td>
               )}
             </tr>
@@ -12323,7 +12323,7 @@ function WorldSkillsPageInner() {
           <Search size={14} className="ws-search-icon" />
           <input
             className="ws-search-input"
-            placeholder={isNarrow ? "Search teams…" : "Search team #, name, org, region, country…"}
+            placeholder={isNarrow ? "Search teams…" : "Search team #, name, organization, region, country…"}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -13273,10 +13273,10 @@ function SettingsPage() {
   );
 }
 
-// ── Org components ────────────────────────────────────────────────────────────
+// ── Shared Team components ────────────────────────────────────────────────────
 
-function OrgFavoritesList({ orgId }: { orgId: string }) {
-  const { teams: teamIds, events: eventIds, ready } = useOrgFavorites(orgId);
+function SharedTeamFavoritesList({ sharedTeamId }: { sharedTeamId: string }) {
+  const { teams: teamIds, events: eventIds, ready } = useSharedTeamFavorites(sharedTeamId);
   const resolved = useAsync(async () => {
     if (!ready) return null;
     const [teams, events] = await Promise.all([
@@ -13297,7 +13297,7 @@ function OrgFavoritesList({ orgId }: { orgId: string }) {
     <div className="home-fav-list">
       {loading && <div className="home-fav-empty">Loading…</div>}
       {!loading && !hasAny && (
-        <div className="home-fav-empty">No shared favorites yet — add teams or events to share with the org.</div>
+        <div className="home-fav-empty">No shared favorites yet — add teams or events to share with the shared team.</div>
       )}
       {data?.teams.map((team) => (
         <div key={`t-${team.id}`} className="home-fav-item-row">
@@ -13311,8 +13311,8 @@ function OrgFavoritesList({ orgId }: { orgId: string }) {
           <button
             type="button"
             className="home-fav-remove"
-            title="Remove from org favorites"
-            onClick={() => void toggleOrgFavorite(orgId, "team", String(team.id))}
+            title="Remove from shared team favorites"
+            onClick={() => void toggleSharedTeamFavorite(sharedTeamId, "team", String(team.id))}
           >
             <X size={12} />
           </button>
@@ -13330,8 +13330,8 @@ function OrgFavoritesList({ orgId }: { orgId: string }) {
           <button
             type="button"
             className="home-fav-remove"
-            title="Remove from org favorites"
-            onClick={() => void toggleOrgFavorite(orgId, "event", String(event.id))}
+            title="Remove from shared team favorites"
+            onClick={() => void toggleSharedTeamFavorite(sharedTeamId, "event", String(event.id))}
           >
             <X size={12} />
           </button>
@@ -13341,72 +13341,94 @@ function OrgFavoritesList({ orgId }: { orgId: string }) {
   );
 }
 
-function CreateOrgModal({ onClose }: { onClose: () => void }) {
+function CreateSharedTeamModal({ onClose }: { onClose: () => void }) {
+  const { profile } = useAuth();
+  const myProgram = profile?.team_program ?? "";
+  const myNumber = profile?.team_number ?? "";
+  const hasMyTeam = !!(myProgram && myNumber);
+
   const [name, setName] = useState("");
-  const [program, setProgram] = useState("");
-  const [teamNumber, setTeamNumber] = useState("");
+  const [override, setOverride] = useState(!hasMyTeam); // no My Team ⇒ show fields
+  const [program, setProgram] = useState(myProgram);
+  const [teamNumber, setTeamNumber] = useState(myNumber);
   const [saving, setSaving] = useState(false);
+
+  // When not overriding, the shared team inherits My Team's identity.
+  const effProgram = override ? program : myProgram;
+  const effNumber = override ? teamNumber : myNumber;
 
   const handleCreate = async () => {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      const orgId = await createOrg(name.trim(), program || null, teamNumber.trim() || null);
-      navigate(`/org/${orgId}/settings`);
-    } finally {
-      setSaving(false);
-      onClose();
-    }
+      const id = await createSharedTeam(name.trim(), effProgram || null, effNumber.trim() || null);
+      navigate(`/shared-team/${id}/settings`);
+    } finally { setSaving(false); onClose(); }
   };
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Create an org</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>Create a shared team</DialogTitle></DialogHeader>
         <FieldGroup>
           <Field>
-            <FieldLabel htmlFor="org-name-input">Org name</FieldLabel>
-            <Input
-              id="org-name-input"
-              value={name}
+            <FieldLabel htmlFor="st-name-input">Name</FieldLabel>
+            <Input id="st-name-input" value={name} autoFocus
               onChange={(e) => setName(e.target.value.slice(0, 40))}
-              placeholder="e.g. 169W Scouting Alliance"
-              autoFocus
-              onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }}
-            />
+              placeholder="e.g. 169W Scouting"
+              onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }} />
           </Field>
-          <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel htmlFor="org-program-select">Program</FieldLabel>
-              <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
-                <SelectTrigger id="org-program-select" className="w-full">
-                  <SelectValue placeholder="Any / none" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Any / none</SelectItem>
-                  {AUTH_PROGRAMS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="org-team-input">Team #</FieldLabel>
-              <Input
-                id="org-team-input"
-                value={teamNumber}
-                onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
-                placeholder="e.g. 169W"
-              />
-            </Field>
-          </div>
+
+          {hasMyTeam && !override && (
+            <div className="shared-team-identity-summary">
+              <span>Scouting for: {programLabel(myProgram)} {myNumber}</span>
+              <label className="shared-team-override-toggle">
+                <Checkbox checked={override}
+                  onCheckedChange={(v) => setOverride(v === true)} />
+                This shared team scouts for a different team
+              </label>
+            </div>
+          )}
+
+          {override && (
+            <>
+              {hasMyTeam && (
+                <label className="shared-team-override-toggle">
+                  <Checkbox checked={override}
+                    onCheckedChange={(v) => setOverride(v === true)} />
+                  This shared team scouts for a different team
+                </label>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <Field>
+                  <FieldLabel htmlFor="st-program-select">Program</FieldLabel>
+                  <Select value={program || "none"}
+                    onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
+                    <SelectTrigger id="st-program-select" className="w-full">
+                      <SelectValue placeholder="Any / none" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Any / none</SelectItem>
+                      {AUTH_PROGRAMS.map((p) => (
+                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="st-team-input">Team #</FieldLabel>
+                  <Input id="st-team-input" value={teamNumber}
+                    onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
+                    placeholder="e.g. 169W" />
+                </Field>
+              </div>
+            </>
+          )}
         </FieldGroup>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={() => void handleCreate()} disabled={!name.trim() || saving}>
-            {saving ? "Creating…" : "Create org"}
+            {saving ? "Creating…" : "Create shared team"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -13414,60 +13436,60 @@ function CreateOrgModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function OrgPanel() {
+function SharedTeamPanel() {
   const { user } = useAuth();
-  const orgs = useOrgs();
-  const ready = useOrgsReady();
+  const sharedTeams = useSharedTeams();
+  const ready = useSharedTeamsReady();
   const [createOpen, setCreateOpen] = useState(false);
 
   if (!user) return null; // signed-out: hide entirely
 
   if (!ready) {
     return (
-      <Panel title="Your Org" icon={<Users size={15} />}>
+      <Panel title="Shared Team" icon={<Users size={15} />}>
         <div className="home-fav-empty">Loading…</div>
       </Panel>
     );
   }
 
-  if (orgs.length === 0) {
+  if (sharedTeams.length === 0) {
     return (
       <>
-        <Panel title="Org / Team" icon={<Users size={15} />}>
-          <div className="org-panel-empty">
+        <Panel title="Shared Team" icon={<Users size={15} />}>
+          <div className="shared-team-panel-empty">
             <p>Collaborate with your scouting team.</p>
             <Button variant="outline" size="sm" className="self-start" onClick={() => setCreateOpen(true)}>
-              Create an org
+              Create a shared team
             </Button>
-            <p className="org-panel-hint">Or ask your coach for an invite link.</p>
+            <p className="shared-team-panel-hint">Or ask your coach for an invite link.</p>
           </div>
         </Panel>
-        {createOpen && <CreateOrgModal onClose={() => setCreateOpen(false)} />}
+        {createOpen && <CreateSharedTeamModal onClose={() => setCreateOpen(false)} />}
       </>
     );
   }
 
   return (
     <>
-      {orgs.map((org) => (
+      {sharedTeams.map((team) => (
         <Panel
-          key={org.orgId}
-          title={org.name}
+          key={team.sharedTeamId}
+          title={team.name}
           icon={<Users size={15} />}
-          action={<Link href={`/org/${org.orgId}/settings`}>Manage</Link>}
+          action={<Link href={`/shared-team/${team.sharedTeamId}/settings`}>Manage</Link>}
         >
-          <OrgFavoritesList orgId={org.orgId} />
+          <SharedTeamFavoritesList sharedTeamId={team.sharedTeamId} />
         </Panel>
       ))}
     </>
   );
 }
 
-// ── Join Org Page (/join/:token) ──────────────────────────────────────────────
+// ── Join Shared Team Page (/join/:token) ──────────────────────────────────────
 
-function JoinOrgPage({ token }: { token: string }) {
+function JoinSharedTeamPage({ token }: { token: string }) {
   const { user } = useAuth();
-  type PeekResult = { valid: boolean; org_id?: string; org_name?: string; member_count?: number };
+  type PeekResult = { valid: boolean; shared_team_id?: string; shared_team_name?: string; member_count?: number };
   const peek = useAsync<PeekResult | null>(async () => {
     if (!supabase) return null;
     const { data, error } = await supabase.rpc("peek_invite", { p_invite_id: token });
@@ -13482,16 +13504,16 @@ function JoinOrgPage({ token }: { token: string }) {
     if (!supabase) return;
     setJoining(true);
     try {
-      const { data, error } = await supabase.rpc("join_org_by_invite", { p_invite_id: token });
+      const { data, error } = await supabase.rpc("join_shared_team_by_invite", { p_invite_id: token });
       if (error) {
         setResult({ error: "Something went wrong. Please try again." });
         return;
       }
       const res = data as { ok?: boolean; already_member?: boolean; error?: string };
       if (res.error === "invite_invalid") setResult({ error: "This invite link has expired or already been used." });
-      else if (res.error === "org_full") setResult({ error: "This org is full (20 members max)." });
+      else if (res.error === "shared_team_full") setResult({ error: "This shared team is full (20 members max)." });
       else {
-        await reloadOrgs();
+        await reloadSharedTeams();
         setResult({ ok: true, alreadyMember: res.already_member });
         setTimeout(() => navigate("/"), 1200);
       }
@@ -13512,26 +13534,26 @@ function JoinOrgPage({ token }: { token: string }) {
   const info = peek.data;
 
   return (
-    <section className="page join-org-page">
-      <div className="join-org-card">
+    <section className="page join-shared-team-page">
+      <div className="join-shared-team-card">
         <Users size={36} color="var(--accent)" />
-        {peek.loading && <p className="join-org-meta">Loading…</p>}
+        {peek.loading && <p className="join-shared-team-meta">Loading…</p>}
         {!peek.loading && (!info || !info.valid) && (
-          <p className="join-org-error">This invite link has expired or is no longer valid.</p>
+          <p className="join-shared-team-error">This invite link has expired or is no longer valid.</p>
         )}
         {!peek.loading && info?.valid && (
           <>
-            <h2>Join {info.org_name}</h2>
-            <p className="join-org-meta">{info.member_count ?? 0} member{info.member_count !== 1 ? "s" : ""}</p>
+            <h2>Join {info.shared_team_name}</h2>
+            <p className="join-shared-team-meta">{info.member_count ?? 0} member{info.member_count !== 1 ? "s" : ""}</p>
             {result?.ok && (
-              <p className="join-org-success">
-                {result.alreadyMember ? "You're already a member!" : `Welcome to ${info.org_name}!`} Redirecting…
+              <p className="join-shared-team-success">
+                {result.alreadyMember ? "You're already a member!" : `Welcome to ${info.shared_team_name}!`} Redirecting…
               </p>
             )}
-            {result?.error && <p className="join-org-error">{result.error}</p>}
+            {result?.error && <p className="join-shared-team-error">{result.error}</p>}
             {!result?.ok && !user && (
               <>
-                <p className="join-org-meta">Sign in to join this org.</p>
+                <p className="join-shared-team-meta">Sign in to join this shared team.</p>
                 <div className="auth-buttons" style={{ width: "100%", marginTop: 8 }}>
                   <span className="auth-recommended">Recommended</span>
                   <button type="button" className="auth-btn auth-btn-discord" onClick={() => void signInForJoin("discord")}>
@@ -13551,26 +13573,26 @@ function JoinOrgPage({ token }: { token: string }) {
                 onClick={() => void handleJoin()}
                 disabled={joining}
               >
-                {joining ? "Joining…" : `Join ${info.org_name}`}
+                {joining ? "Joining…" : `Join ${info.shared_team_name}`}
               </Button>
             )}
           </>
         )}
-        <a href="/" className="join-org-back" onClick={(e) => { e.preventDefault(); navigate("/"); }}>← Back to home</a>
+        <a href="/" className="join-shared-team-back" onClick={(e) => { e.preventDefault(); navigate("/"); }}>← Back to home</a>
       </div>
     </section>
   );
 }
 
-// ── Org Settings Page (/org/:id/settings) ─────────────────────────────────────
+// ── Shared Team Settings Page (/shared-team/:id/settings) ─────────────────────
 
-function OrgMemberAvatar({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
+function SharedTeamMemberAvatar({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
   const [failed, setFailed] = useState(false);
   const initial = (name || "?").charAt(0).toUpperCase();
   if (avatarUrl && !failed) {
     return (
       <img
-        className="org-member-avatar"
+        className="shared-team-member-avatar"
         src={avatarUrl}
         width={28}
         height={28}
@@ -13580,29 +13602,29 @@ function OrgMemberAvatar({ name, avatarUrl }: { name: string; avatarUrl: string 
       />
     );
   }
-  return <span className="org-member-avatar">{initial}</span>;
+  return <span className="shared-team-member-avatar">{initial}</span>;
 }
 
-function OrgOverviewTab({ orgId, org }: { orgId: string; org: OrgMembership | undefined }) {
-  const [name, setName] = useState(org?.name ?? "");
-  const [program, setProgram] = useState(org?.teamProgram ?? "");
-  const [teamNumber, setTeamNumber] = useState(org?.teamNumber ?? "");
+function SharedTeamOverviewTab({ sharedTeamId, team }: { sharedTeamId: string; team: SharedTeamMembership | undefined }) {
+  const [name, setName] = useState(team?.name ?? "");
+  const [program, setProgram] = useState(team?.teamProgram ?? "");
+  const [teamNumber, setTeamNumber] = useState(team?.teamNumber ?? "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
-  // Sync local fields if org loads after mount
+  // Sync local fields if the shared team loads after mount
   useEffect(() => {
-    if (org) {
-      setName(org.name);
-      setProgram(org.teamProgram ?? "");
-      setTeamNumber(org.teamNumber ?? "");
+    if (team) {
+      setName(team.name);
+      setProgram(team.teamProgram ?? "");
+      setTeamNumber(team.teamNumber ?? "");
     }
-  }, [org?.orgId]);
+  }, [team?.sharedTeamId]);
 
   const handleSave = async () => {
     setSaving(true);
-    await updateOrg(orgId, { name, teamProgram: program || null, teamNumber: teamNumber.trim() || null });
+    await updateSharedTeam(sharedTeamId, { name, teamProgram: program || null, teamNumber: teamNumber.trim() || null });
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -13610,21 +13632,21 @@ function OrgOverviewTab({ orgId, org }: { orgId: string; org: OrgMembership | un
 
   const handleLeaveOrDelete = async () => {
     if (!confirming) { setConfirming(true); return; }
-    if (org?.role === "owner") {
-      await deleteOrg(orgId);
+    if (team?.role === "owner") {
+      await deleteSharedTeam(sharedTeamId);
     } else {
-      await leaveOrg(orgId);
+      await leaveSharedTeam(sharedTeamId);
     }
     navigate("/");
   };
 
-  if (!org) return <p className="join-org-meta">Org not found or you are not a member.</p>;
+  if (!team) return <p className="join-shared-team-meta">Shared Team not found or you are not a member.</p>;
 
   return (
-    <div className="org-settings-form">
+    <div className="shared-team-settings-form">
       <FieldGroup>
         <Field>
-          <FieldLabel htmlFor="os-name">Org name</FieldLabel>
+          <FieldLabel htmlFor="os-name">Name</FieldLabel>
           <Input
             id="os-name"
             type="text"
@@ -13669,17 +13691,17 @@ function OrgOverviewTab({ orgId, org }: { orgId: string; org: OrgMembership | un
       </Button>
 
       <div className="danger-zone">
-        <h3>{org.role === "owner" ? "Delete org" : "Leave org"}</h3>
+        <h3>{team.role === "owner" ? "Delete shared team" : "Leave shared team"}</h3>
         <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--text-muted)" }}>
-          {org.role === "owner"
-            ? "Permanently deletes the org and all shared data. This cannot be undone."
-            : "You will lose access to this org's shared favorites and notes."}
+          {team.role === "owner"
+            ? "Permanently deletes the shared team and all shared data. This cannot be undone."
+            : "You will lose access to this shared team's shared favorites and notes."}
         </p>
         <div className="flex items-center gap-2">
           <Button variant="destructive" onClick={() => void handleLeaveOrDelete()}>
             {confirming
-              ? (org.role === "owner" ? "Confirm delete" : "Confirm leave")
-              : (org.role === "owner" ? "Delete org" : "Leave org")}
+              ? (team.role === "owner" ? "Confirm delete" : "Confirm leave")
+              : (team.role === "owner" ? "Delete shared team" : "Leave shared team")}
           </Button>
           {confirming && (
             <Button variant="outline" onClick={() => setConfirming(false)}>
@@ -13692,44 +13714,44 @@ function OrgOverviewTab({ orgId, org }: { orgId: string; org: OrgMembership | un
   );
 }
 
-function OrgMembersTab({ orgId, org }: { orgId: string; org: OrgMembership | undefined }) {
+function SharedTeamMembersTab({ sharedTeamId, team }: { sharedTeamId: string; team: SharedTeamMembership | undefined }) {
   const { user } = useAuth();
-  const [members, setMembers] = useState<OrgMember[] | null>(null);
+  const [members, setMembers] = useState<SharedTeamMember[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const canManage = org?.role === "owner" || org?.role === "admin";
+  const canManage = team?.role === "owner" || team?.role === "admin";
 
   const reload = useCallback(async () => {
     setLoading(true);
-    const data = await getOrgMembers(orgId);
+    const data = await getSharedTeamMembers(sharedTeamId);
     setMembers(data);
     setLoading(false);
-  }, [orgId]);
+  }, [sharedTeamId]);
 
   useEffect(() => { void reload(); }, [reload]);
 
   const handleRemove = async (memberId: string) => {
-    await removeMember(orgId, memberId);
+    await removeMember(sharedTeamId, memberId);
     void reload();
   };
 
-  const handleRoleChange = async (memberId: string, newRole: OrgRole) => {
-    await updateMemberRole(orgId, memberId, newRole);
+  const handleRoleChange = async (memberId: string, newRole: SharedTeamRole) => {
+    await updateMemberRole(sharedTeamId, memberId, newRole);
     void reload();
   };
 
-  if (loading) return <p className="join-org-meta">Loading members…</p>;
+  if (loading) return <p className="join-shared-team-meta">Loading members…</p>;
 
   return (
-    <div className="org-member-list">
+    <div className="shared-team-member-list">
       {(members ?? []).map((m) => (
-        <div key={m.userId} className="org-member-item">
-          <OrgMemberAvatar name={m.displayName} avatarUrl={m.avatarUrl} />
-          <span className="org-member-name">{m.displayName}</span>
-          <span className={`org-role-badge ${m.role}`}>{m.role}</span>
+        <div key={m.userId} className="shared-team-member-item">
+          <SharedTeamMemberAvatar name={m.displayName} avatarUrl={m.avatarUrl} />
+          <span className="shared-team-member-name">{m.displayName}</span>
+          <span className={`shared-team-role-badge ${m.role}`}>{m.role}</span>
           {canManage && m.userId !== user?.id && (
             <>
-              {org?.role === "owner" && (
-                <Select value={m.role} onValueChange={(v) => void handleRoleChange(m.userId, v as OrgRole)}>
+              {team?.role === "owner" && (
+                <Select value={m.role} onValueChange={(v) => void handleRoleChange(m.userId, v as SharedTeamRole)}>
                   <SelectTrigger size="sm" className="w-[108px]" aria-label={`Change role for ${m.displayName}`}>
                     <SelectValue />
                   </SelectTrigger>
@@ -13764,8 +13786,8 @@ function toDateInputValue(d: Date): string {
 
 const INVITE_USE_OPTIONS = ["1", "2", "3", "4", "5", "10", "unlimited"] as const;
 
-function OrgInvitesTab({ orgId }: { orgId: string }) {
-  const [invites, setInvites] = useState<OrgInvite[]>([]);
+function SharedTeamInvitesTab({ sharedTeamId }: { sharedTeamId: string }) {
+  const [invites, setInvites] = useState<SharedTeamInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -13778,8 +13800,8 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
   const todayInputValue = toDateInputValue(new Date());
 
   useEffect(() => {
-    getOrgInvites(orgId).then((data) => { setInvites(data); setLoading(false); });
-  }, [orgId]);
+    getSharedTeamInvites(sharedTeamId).then((data) => { setInvites(data); setLoading(false); });
+  }, [sharedTeamId]);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -13787,7 +13809,7 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
     // Expire at the end of the chosen day (local), so "expires Jun 30" stays
     // valid through all of Jun 30.
     const expiresAt = noExpiry ? null : new Date(`${expiryDate}T23:59:59`).toISOString();
-    const invite = await generateInvite(orgId, { maxUses, expiresAt });
+    const invite = await generateInvite(sharedTeamId, { maxUses, expiresAt });
     setInvites((prev) => [invite, ...prev]);
     setGenerating(false);
   };
@@ -13821,18 +13843,18 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
       ? `Expires ${new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
       : "No expiration";
 
-  const formatUses = (invite: OrgInvite) =>
+  const formatUses = (invite: SharedTeamInvite) =>
     invite.maxUses === null
       ? `${invite.useCount} joined · unlimited`
       : `${invite.useCount} / ${invite.maxUses} used`;
 
-  if (loading) return <p className="join-org-meta">Loading…</p>;
+  if (loading) return <p className="join-shared-team-meta">Loading…</p>;
 
   return (
     <div>
-      <div className="org-invite-form">
-        <label className="org-invite-field">
-          <span className="org-invite-field-label">Uses</span>
+      <div className="shared-team-invite-form">
+        <label className="shared-team-invite-field">
+          <span className="shared-team-invite-field-label">Uses</span>
           <Select value={maxUsesValue} onValueChange={setMaxUsesValue}>
             <SelectTrigger size="sm" className="w-[120px]" aria-label="Number of uses">
               <SelectValue />
@@ -13846,8 +13868,8 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
             </SelectContent>
           </Select>
         </label>
-        <label className="org-invite-field">
-          <span className="org-invite-field-label">Expires</span>
+        <label className="shared-team-invite-field">
+          <span className="shared-team-invite-field-label">Expires</span>
           <Input
             type="date"
             className="w-[150px]"
@@ -13858,7 +13880,7 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
             aria-label="Expiration date"
           />
         </label>
-        <label className="org-invite-noexpiry">
+        <label className="shared-team-invite-noexpiry">
           <Checkbox
             checked={noExpiry}
             onCheckedChange={(v) => setNoExpiry(v === true)}
@@ -13879,14 +13901,14 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
       {invites.length === 0 && (
         <p style={{ fontSize: 13, color: "var(--text-muted)" }}>No active invite links.</p>
       )}
-      <div className="org-invite-list">
+      <div className="shared-team-invite-list">
         {invites.map((invite) => {
           const url = `${window.location.origin}/join/${invite.id}`;
           return (
-            <div key={invite.id} className="org-invite-item">
+            <div key={invite.id} className="shared-team-invite-item">
               <Input
                 type="text"
-                className="org-invite-link-input flex-1"
+                className="shared-team-invite-link-input flex-1"
                 value={url}
                 readOnly
                 title={url}
@@ -13901,8 +13923,8 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
               >
                 {copied === invite.id ? <Check size={13} /> : <LinkIcon size={13} />}
               </Button>
-              <span className="org-invite-expiry">{formatUses(invite)}</span>
-              <span className="org-invite-expiry">{formatExpiry(invite.expiresAt)}</span>
+              <span className="shared-team-invite-expiry">{formatUses(invite)}</span>
+              <span className="shared-team-invite-expiry">{formatExpiry(invite.expiresAt)}</span>
               <Button
                 variant="ghost"
                 size="icon"
@@ -13921,11 +13943,11 @@ function OrgInvitesTab({ orgId }: { orgId: string }) {
   );
 }
 
-// ── Org Workspace (/org/:id) ──────────────────────────────────────────────────
+// ── Shared Team Workspace (/shared-team/:id) ──────────────────────────────────
 
-const ORG_WORKSPACE_TABS = ["dashboard", "favorites", "notes", "picklists", "activity", "export", "settings"] as const;
-type OrgWorkspaceTab = typeof ORG_WORKSPACE_TABS[number];
-const ORG_WORKSPACE_NAV: Array<{ value: OrgWorkspaceTab; label: string; icon: ReactNode }> = [
+const SHARED_TEAM_WORKSPACE_TABS = ["dashboard", "favorites", "notes", "picklists", "activity", "export", "settings"] as const;
+type SharedTeamWorkspaceTab = typeof SHARED_TEAM_WORKSPACE_TABS[number];
+const SHARED_TEAM_WORKSPACE_NAV: Array<{ value: SharedTeamWorkspaceTab; label: string; icon: ReactNode }> = [
   { value: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={15} /> },
   { value: "favorites", label: "Favorites", icon: <Star size={15} /> },
   { value: "notes",     label: "Notes",     icon: <StickyNote size={15} /> },
@@ -13935,8 +13957,8 @@ const ORG_WORKSPACE_NAV: Array<{ value: OrgWorkspaceTab; label: string; icon: Re
   { value: "settings",  label: "Settings",  icon: <Settings size={15} /> },
 ];
 
-function orgSlug(name: string) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "org";
+function sharedTeamSlug(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "shared-team";
 }
 
 function activityVerb(item: ActivityItem): string {
@@ -13947,58 +13969,58 @@ function activityVerb(item: ActivityItem): string {
   }
 }
 
-function OrgActivityRow({ item, eventName }: { item: ActivityItem; eventName: string | null }) {
+function SharedTeamActivityRow({ item, eventName }: { item: ActivityItem; eventName: string | null }) {
   const initial = (item.userName || "?").charAt(0).toUpperCase();
   const when = formatRelativeTime(new Date(item.ts).getTime());
   const eventLabel = item.eventId ? (eventName ?? `Event ${item.eventId}`) : null;
   const href = item.eventId ? urlWithHash(`/event/${item.eventId}`, item.kind === "picklist" ? "picklist" : "matches") : null;
   const body = (
     <>
-      <span className="org-member-avatar" aria-hidden>{initial}</span>
-      <span className="org-activity-text">
+      <span className="shared-team-member-avatar" aria-hidden>{initial}</span>
+      <span className="shared-team-activity-text">
         <strong>{item.userName}</strong> {activityVerb(item)}
-        {eventLabel && <> · <span className="org-activity-event">{eventLabel}</span></>}
+        {eventLabel && <> · <span className="shared-team-activity-event">{eventLabel}</span></>}
       </span>
-      <span className="org-activity-time">{when}</span>
+      <span className="shared-team-activity-time">{when}</span>
     </>
   );
   return href
-    ? <Link href={href} className="org-activity-row">{body}</Link>
-    : <div className="org-activity-row">{body}</div>;
+    ? <Link href={href} className="shared-team-activity-row">{body}</Link>
+    : <div className="shared-team-activity-row">{body}</div>;
 }
 
-function OrgFavoritesTab({ orgId }: { orgId: string }) {
+function SharedTeamFavoritesTab({ sharedTeamId }: { sharedTeamId: string }) {
   return (
-    <div className="org-ws-section">
-      <div className="org-ws-block">
-        <div className="org-ws-block-head">
+    <div className="shared-team-ws-section">
+      <div className="shared-team-ws-block">
+        <div className="shared-team-ws-block-head">
           <h3>Shared favorites</h3>
         </div>
-        <OrgFavoritesList orgId={orgId} />
+        <SharedTeamFavoritesList sharedTeamId={sharedTeamId} />
       </div>
     </div>
   );
 }
 
-function OrgDashboardTab({ orgId, onNavigate }: { orgId: string; onNavigate: (tab: OrgWorkspaceTab) => void }) {
-  const favs = useOrgFavorites(orgId);
-  const notes = useOrgNotesList(orgId);
-  const picks = useOrgPicklistEvents(orgId);
+function SharedTeamDashboardTab({ sharedTeamId, onNavigate }: { sharedTeamId: string; onNavigate: (tab: SharedTeamWorkspaceTab) => void }) {
+  const favs = useSharedTeamFavorites(sharedTeamId);
+  const notes = useSharedTeamNotesList(sharedTeamId);
+  const picks = useSharedTeamPicklistEvents(sharedTeamId);
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void getOrgMembers(orgId).then((m) => { if (!cancelled) setMemberCount(m.length); });
-    void loadOrgActivity(orgId, 5).then((a) => { if (!cancelled) setActivity(a); });
+    void getSharedTeamMembers(sharedTeamId).then((m) => { if (!cancelled) setMemberCount(m.length); });
+    void loadSharedTeamActivity(sharedTeamId, 5).then((a) => { if (!cancelled) setActivity(a); });
     return () => { cancelled = true; };
-  }, [orgId]);
+  }, [sharedTeamId]);
 
   const names = useEventNames((activity ?? []).map((a) => a.eventId));
   const nameOf = (id: string | null) => { const ev = id ? names.get(id) : null; return ev?.name ?? null; };
   const favCount = favs.teams.length + favs.events.length;
 
-  const tiles: Array<{ label: string; value: number | string; icon: ReactNode; tab?: OrgWorkspaceTab }> = [
+  const tiles: Array<{ label: string; value: number | string; icon: ReactNode; tab?: SharedTeamWorkspaceTab }> = [
     { label: "Notes",            value: notes.length,                            icon: <StickyNote size={16} />,  tab: "notes" },
     { label: "Active picklists", value: picks.loading ? "…" : picks.data.length, icon: <ListOrdered size={16} />, tab: "picklists" },
     { label: "Shared favorites", value: favCount,                                icon: <Star size={16} />,       tab: "favorites" },
@@ -14006,38 +14028,38 @@ function OrgDashboardTab({ orgId, onNavigate }: { orgId: string; onNavigate: (ta
   ];
 
   return (
-    <div className="org-ws-section">
-      <div className="org-ws-stats">
+    <div className="shared-team-ws-section">
+      <div className="shared-team-ws-stats">
         {tiles.map((t) => {
           const inner = (
             <>
-              <span className="org-ws-stat-top">{t.icon}<span className="org-ws-stat-value">{t.value}</span></span>
-              <span className="org-ws-stat-label">{t.label}</span>
+              <span className="shared-team-ws-stat-top">{t.icon}<span className="shared-team-ws-stat-value">{t.value}</span></span>
+              <span className="shared-team-ws-stat-label">{t.label}</span>
             </>
           );
           return t.tab
-            ? <button key={t.label} type="button" className="org-ws-stat org-ws-stat--btn" onClick={() => onNavigate(t.tab as OrgWorkspaceTab)}>{inner}</button>
-            : <div key={t.label} className="org-ws-stat">{inner}</div>;
+            ? <button key={t.label} type="button" className="shared-team-ws-stat shared-team-ws-stat--btn" onClick={() => onNavigate(t.tab as SharedTeamWorkspaceTab)}>{inner}</button>
+            : <div key={t.label} className="shared-team-ws-stat">{inner}</div>;
         })}
       </div>
 
-      <div className="org-ws-block">
-        <div className="org-ws-block-head">
+      <div className="shared-team-ws-block">
+        <div className="shared-team-ws-block-head">
           <h3>Recent activity</h3>
           <button type="button" className="panel-action-link" onClick={() => onNavigate("activity")}>View all</button>
         </div>
         {activity === null
           ? <Skeleton className="h-24 w-full" />
           : activity.length === 0
-            ? <p className="org-ws-empty">No shared activity yet.</p>
-            : <div className="org-activity-list">{activity.map((a, i) => <OrgActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>}
+            ? <p className="shared-team-ws-empty">No shared activity yet.</p>
+            : <div className="shared-team-activity-list">{activity.map((a, i) => <SharedTeamActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>}
       </div>
     </div>
   );
 }
 
-function OrgNotesHubTab({ orgId }: { orgId: string }) {
-  const notes = useOrgNotesList(orgId);
+function SharedTeamNotesHubTab({ sharedTeamId }: { sharedTeamId: string }) {
+  const notes = useSharedTeamNotesList(sharedTeamId);
   const [query, setQuery] = useState("");
   const [eventFilter, setEventFilter] = useState("all");
   const names = useEventNames(notes.map((n) => n.eventId));
@@ -14056,7 +14078,7 @@ function OrgNotesHubTab({ orgId }: { orgId: string }) {
   });
 
   const groups = useMemo(() => {
-    const m = new Map<string, OrgNoteListItem[]>();
+    const m = new Map<string, SharedTeamNoteListItem[]>();
     for (const n of filtered) {
       const k = n.eventId ?? "none";
       const arr = m.get(k) ?? []; arr.push(n); m.set(k, arr);
@@ -14065,13 +14087,13 @@ function OrgNotesHubTab({ orgId }: { orgId: string }) {
   }, [filtered]);
 
   if (notes.length === 0) {
-    return <p className="org-ws-empty">No shared notes yet. Add a note from any match's note button and switch it to your org to share it here.</p>;
+    return <p className="shared-team-ws-empty">No shared notes yet. Add a note from any match's note button and switch it to your shared team to share it here.</p>;
   }
 
   return (
-    <div className="org-ws-section">
-      <div className="org-ws-toolbar">
-        <Input placeholder="Search notes…" value={query} onChange={(e) => setQuery(e.target.value)} className="org-ws-search" />
+    <div className="shared-team-ws-section">
+      <div className="shared-team-ws-toolbar">
+        <Input placeholder="Search notes…" value={query} onChange={(e) => setQuery(e.target.value)} className="shared-team-ws-search" />
         <Select value={eventFilter} onValueChange={setEventFilter}>
           <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -14084,12 +14106,12 @@ function OrgNotesHubTab({ orgId }: { orgId: string }) {
       </div>
 
       {groups.length === 0
-        ? <p className="org-ws-empty">No notes match your search.</p>
+        ? <p className="shared-team-ws-empty">No notes match your search.</p>
         : groups.map(([eid, items]) => (
-          <div key={eid} className="org-notes-group">
-            <div className="org-notes-group-head">
-              <span className="org-notes-group-name">{eid === "none" ? "No event" : nameOf(eid)}</span>
-              <span className="org-ws-badge">{items.length}</span>
+          <div key={eid} className="shared-team-notes-group">
+            <div className="shared-team-notes-group-head">
+              <span className="shared-team-notes-group-name">{eid === "none" ? "No event" : nameOf(eid)}</span>
+              <span className="shared-team-ws-badge">{items.length}</span>
             </div>
             {items.map((n) => {
               // Carry the match id in the query string (hash is reserved for the
@@ -14097,10 +14119,10 @@ function OrgNotesHubTab({ orgId }: { orgId: string }) {
               const href = n.eventId
                 ? `/event/${n.eventId}?match=${encodeURIComponent(n.matchId)}#matches`
                 : null;
-              const inner = <span className="org-note-body">{n.body}</span>;
+              const inner = <span className="shared-team-note-body">{n.body}</span>;
               return href
-                ? <Link key={n.matchId} href={href} className="org-note-row">{inner}<ChevronRight size={14} className="org-note-go" /></Link>
-                : <div key={n.matchId} className="org-note-row">{inner}</div>;
+                ? <Link key={n.matchId} href={href} className="shared-team-note-row">{inner}<ChevronRight size={14} className="shared-team-note-go" /></Link>
+                : <div key={n.matchId} className="shared-team-note-row">{inner}</div>;
             })}
           </div>
         ))}
@@ -14108,64 +14130,64 @@ function OrgNotesHubTab({ orgId }: { orgId: string }) {
   );
 }
 
-function OrgPicklistRow({ summary, eventName, eventSku }: { summary: OrgPicklistSummary; eventName: string | null; eventSku: string | null }) {
+function SharedTeamPicklistRow({ summary, eventName, eventSku }: { summary: SharedTeamPicklistSummary; eventName: string | null; eventSku: string | null }) {
   const name = eventName ?? `Event ${summary.eventId}`;
   const href = urlWithHash(`/event/${eventSku || summary.eventId}`, "picklist");
   return (
-    <Link href={href} className="org-picklist-card">
-      <div className="org-picklist-card-head">
-        <span className="org-picklist-name">{name}</span>
-        <span className="org-ws-badge">{summary.teamCount} team{summary.teamCount !== 1 ? "s" : ""}</span>
+    <Link href={href} className="shared-team-picklist-card">
+      <div className="shared-team-picklist-card-head">
+        <span className="shared-team-picklist-name">{name}</span>
+        <span className="shared-team-ws-badge">{summary.teamCount} team{summary.teamCount !== 1 ? "s" : ""}</span>
       </div>
-      <div className="org-picklist-preview">
+      <div className="shared-team-picklist-preview">
         {summary.topTeams.map((t, i) => (
-          <span key={t.teamNumber} className="org-picklist-team"><span className="org-picklist-rank">{i + 1}</span>{t.teamNumber}</span>
+          <span key={t.teamNumber} className="shared-team-picklist-team"><span className="shared-team-picklist-rank">{i + 1}</span>{t.teamNumber}</span>
         ))}
         {summary.teamCount > summary.topTeams.length && (
-          <span className="org-picklist-more">+{summary.teamCount - summary.topTeams.length} more</span>
+          <span className="shared-team-picklist-more">+{summary.teamCount - summary.topTeams.length} more</span>
         )}
       </div>
     </Link>
   );
 }
 
-function OrgPicklistsTab({ orgId }: { orgId: string }) {
-  const { data, loading } = useOrgPicklistEvents(orgId);
+function SharedTeamPicklistsTab({ sharedTeamId }: { sharedTeamId: string }) {
+  const { data, loading } = useSharedTeamPicklistEvents(sharedTeamId);
   const names = useEventNames(data.map((d) => d.eventId));
   if (loading) return <Skeleton className="h-28 w-full" />;
-  if (data.length === 0) return <p className="org-ws-empty">No picklists yet. Build one from an event's Picklist tab and it will show up here.</p>;
+  if (data.length === 0) return <p className="shared-team-ws-empty">No picklists yet. Build one from an event's Picklist tab and it will show up here.</p>;
   return (
-    <div className="org-picklist-grid">
+    <div className="shared-team-picklist-grid">
       {data.map((s) => {
         const ev = names.get(s.eventId);
-        return <OrgPicklistRow key={s.eventId} summary={s} eventName={ev?.name ?? null} eventSku={ev?.sku ?? null} />;
+        return <SharedTeamPicklistRow key={s.eventId} summary={s} eventName={ev?.name ?? null} eventSku={ev?.sku ?? null} />;
       })}
     </div>
   );
 }
 
-function OrgActivityTab({ orgId }: { orgId: string }) {
+function SharedTeamActivityTab({ sharedTeamId }: { sharedTeamId: string }) {
   const [items, setItems] = useState<ActivityItem[] | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void loadOrgActivity(orgId, 60).then((a) => { if (!cancelled) setItems(a); });
+    void loadSharedTeamActivity(sharedTeamId, 60).then((a) => { if (!cancelled) setItems(a); });
     return () => { cancelled = true; };
-  }, [orgId]);
+  }, [sharedTeamId]);
   const names = useEventNames((items ?? []).map((a) => a.eventId));
   const nameOf = (id: string | null) => { const ev = id ? names.get(id) : null; return ev?.name ?? null; };
   if (items === null) return <Skeleton className="h-40 w-full" />;
-  if (items.length === 0) return <p className="org-ws-empty">No shared activity yet.</p>;
-  return <div className="org-activity-list">{items.map((a, i) => <OrgActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>;
+  if (items.length === 0) return <p className="shared-team-ws-empty">No shared activity yet.</p>;
+  return <div className="shared-team-activity-list">{items.map((a, i) => <SharedTeamActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>;
 }
 
-function OrgExportTab({ orgId, orgName }: { orgId: string; orgName: string }) {
-  const notes = useOrgNotesList(orgId);
+function SharedTeamExportTab({ sharedTeamId, sharedTeamName }: { sharedTeamId: string; sharedTeamName: string }) {
+  const notes = useSharedTeamNotesList(sharedTeamId);
   const [picklists, setPicklists] = useState<Array<{ eventId: string; entries: PicklistEntry[] }> | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void loadOrgPicklistEntries(orgId).then((p) => { if (!cancelled) setPicklists(p); });
+    void loadSharedTeamPicklistEntries(sharedTeamId).then((p) => { if (!cancelled) setPicklists(p); });
     return () => { cancelled = true; };
-  }, [orgId]);
+  }, [sharedTeamId]);
 
   const eventIds = [...new Set([...notes.map((n) => n.eventId), ...(picklists ?? []).map((p) => p.eventId)])];
   const names = useEventNames(eventIds);
@@ -14185,21 +14207,21 @@ function OrgExportTab({ orgId, orgName }: { orgId: string; orgName: string }) {
     for (const p of picklists ?? []) {
       p.entries.forEach((e, i) => rows.push([nameOf(p.eventId), i + 1, e.teamNumber, e.teamName ?? "", e.crossedOut ? "yes" : "", e.notes]));
     }
-    downloadCsv(`${orgSlug(orgName)}-picklists.csv`, rows);
+    downloadCsv(`${sharedTeamSlug(sharedTeamName)}-picklists.csv`, rows);
   };
 
   const exportNotes = () => {
     const rows: (string | number)[][] = [["Event", "Match ID", "Note", "Updated"]];
     for (const n of notes) rows.push([nameOf(n.eventId), n.matchId, n.body, n.updatedAt]);
-    downloadCsv(`${orgSlug(orgName)}-notes.csv`, rows);
+    downloadCsv(`${sharedTeamSlug(sharedTeamName)}-notes.csv`, rows);
   };
 
   const hasPicklists = (picklists ?? []).some((p) => p.entries.length > 0);
 
   return (
-    <div className="org-ws-section">
-      <p className="org-ws-help">Download your org's shared data as CSV, or print a clean copy for the competition table.</p>
-      <div className="org-ws-export-actions">
+    <div className="shared-team-ws-section">
+      <p className="shared-team-ws-help">Download your shared team's shared data as CSV, or print a clean copy for the competition table.</p>
+      <div className="shared-team-ws-export-actions">
         <Button variant="outline" onClick={exportPicklists} disabled={!hasPicklists}>
           <Download data-icon="inline-start" />Picklists CSV
         </Button>
@@ -14212,12 +14234,12 @@ function OrgExportTab({ orgId, orgName }: { orgId: string; orgName: string }) {
       </div>
 
       {/* Print-only formatted view — hidden on screen, isolated for print */}
-      <div className="org-print-root">
-        <h1>{orgName}</h1>
-        <section className="org-print-section">
+      <div className="shared-team-print-root">
+        <h1>{sharedTeamName}</h1>
+        <section className="shared-team-print-section">
           <h2>Picklists</h2>
           {!hasPicklists ? <p>No picklists.</p> : (picklists ?? []).filter((p) => p.entries.length > 0).map((p) => (
-            <div key={p.eventId} className="org-print-block">
+            <div key={p.eventId} className="shared-team-print-block">
               <h3>{nameOf(p.eventId)}</h3>
               <ol>
                 {p.entries.map((e) => (
@@ -14229,10 +14251,10 @@ function OrgExportTab({ orgId, orgName }: { orgId: string; orgName: string }) {
             </div>
           ))}
         </section>
-        <section className="org-print-section">
+        <section className="shared-team-print-section">
           <h2>Notes</h2>
           {notes.length === 0 ? <p>No notes.</p> : notes.map((n) => (
-            <div key={n.matchId} className="org-print-note">
+            <div key={n.matchId} className="shared-team-print-note">
               <strong>{nameOf(n.eventId)}</strong>
               <p>{n.body}</p>
             </div>
@@ -14243,30 +14265,30 @@ function OrgExportTab({ orgId, orgName }: { orgId: string; orgName: string }) {
   );
 }
 
-function OrgSettingsSection({ orgId, org }: { orgId: string; org: OrgMembership | undefined }) {
+function SharedTeamSettingsSection({ sharedTeamId, team }: { sharedTeamId: string; team: SharedTeamMembership | undefined }) {
   return (
-    <div className="org-ws-section">
-      <OrgOverviewTab orgId={orgId} org={org} />
-      <div className="org-ws-subsection">
-        <h3 className="org-ws-subhead">Members</h3>
-        <OrgMembersTab orgId={orgId} org={org} />
+    <div className="shared-team-ws-section">
+      <SharedTeamOverviewTab sharedTeamId={sharedTeamId} team={team} />
+      <div className="shared-team-ws-subsection">
+        <h3 className="shared-team-ws-subhead">Members</h3>
+        <SharedTeamMembersTab sharedTeamId={sharedTeamId} team={team} />
       </div>
-      <div className="org-ws-subsection">
-        <h3 className="org-ws-subhead">Invites</h3>
-        <OrgInvitesTab orgId={orgId} />
+      <div className="shared-team-ws-subsection">
+        <h3 className="shared-team-ws-subhead">Invites</h3>
+        <SharedTeamInvitesTab sharedTeamId={sharedTeamId} />
       </div>
     </div>
   );
 }
 
-function OrgWorkspacePage({ orgId }: { orgId: string }) {
-  const org = useOrg(orgId);
-  const ready = useOrgsReady();
+function SharedTeamWorkspacePage({ sharedTeamId }: { sharedTeamId: string }) {
+  const team = useSharedTeam(sharedTeamId);
+  const ready = useSharedTeamsReady();
   const { user } = useAuth();
-  const [tab, setTab] = useState<OrgWorkspaceTab>(() => hashTab(ORG_WORKSPACE_TABS, "dashboard"));
+  const [tab, setTab] = useState<SharedTeamWorkspaceTab>(() => hashTab(SHARED_TEAM_WORKSPACE_TABS, "dashboard"));
 
   useEffect(() => {
-    const handler = () => setTab(hashTab(ORG_WORKSPACE_TABS, "dashboard"));
+    const handler = () => setTab(hashTab(SHARED_TEAM_WORKSPACE_TABS, "dashboard"));
     window.addEventListener("hashchange", handler);
     return () => window.removeEventListener("hashchange", handler);
   }, []);
@@ -14274,24 +14296,24 @@ function OrgWorkspacePage({ orgId }: { orgId: string }) {
   useEffect(() => { replaceCurrentHash(tab); }, [tab]);
 
   useEffect(() => {
-    if (org?.name) refreshTrailLabel(window.location.pathname, org.name);
-  }, [org?.name]);
+    if (team?.name) refreshTrailLabel(window.location.pathname, team.name);
+  }, [team?.name]);
 
   if (!user) {
     return (
       <section className="page">
         <div style={{ padding: "40px 20px", textAlign: "center" }}>
-          <p style={{ color: "var(--text-muted)" }}>Sign in to view this org.</p>
+          <p style={{ color: "var(--text-muted)" }}>Sign in to view this shared team.</p>
         </div>
       </section>
     );
   }
 
-  if (ready && !org) {
+  if (ready && !team) {
     return (
       <section className="page">
         <div style={{ padding: "40px 20px", textAlign: "center" }}>
-          <p style={{ color: "var(--text-muted)" }}>Org not found or you are not a member.</p>
+          <p style={{ color: "var(--text-muted)" }}>Shared Team not found or you are not a member.</p>
           <Link href="/">← Back to home</Link>
         </div>
       </section>
@@ -14300,14 +14322,14 @@ function OrgWorkspacePage({ orgId }: { orgId: string }) {
 
   return (
     <section className="page">
-      <Breadcrumbs currentTab={ORG_WORKSPACE_NAV.find((entry) => entry.value === tab)?.label ?? "Dashboard"} />
-      <PageTitle icon={<Users />} title={org?.name ?? "Org"} />
+      <Breadcrumbs currentTab={SHARED_TEAM_WORKSPACE_NAV.find((entry) => entry.value === tab)?.label ?? "Dashboard"} />
+      <PageTitle icon={<Users />} title={team?.name ?? "Shared Team"} />
       <div style={{ marginBottom: 12 }}>
-        <a href="/" className="join-org-back" onClick={(e) => { e.preventDefault(); navigate("/"); }}>← Back to home</a>
+        <a href="/" className="join-shared-team-back" onClick={(e) => { e.preventDefault(); navigate("/"); }}>← Back to home</a>
       </div>
       <div className="settings-layout">
-        <nav className="settings-tabs" aria-label="Org sections">
-          {ORG_WORKSPACE_NAV.map((t) => (
+        <nav className="settings-tabs" aria-label="Shared team sections">
+          {SHARED_TEAM_WORKSPACE_NAV.map((t) => (
             <button
               key={t.value}
               type="button"
@@ -14320,13 +14342,13 @@ function OrgWorkspacePage({ orgId }: { orgId: string }) {
           ))}
         </nav>
         <div className="settings-content">
-          {tab === "dashboard" && <OrgDashboardTab orgId={orgId} onNavigate={setTab} />}
-          {tab === "favorites" && <OrgFavoritesTab orgId={orgId} />}
-          {tab === "notes"     && <OrgNotesHubTab orgId={orgId} />}
-          {tab === "picklists" && <OrgPicklistsTab orgId={orgId} />}
-          {tab === "activity"  && <OrgActivityTab orgId={orgId} />}
-          {tab === "export"    && <OrgExportTab orgId={orgId} orgName={org?.name ?? "org"} />}
-          {tab === "settings"  && <OrgSettingsSection orgId={orgId} org={org} />}
+          {tab === "dashboard" && <SharedTeamDashboardTab sharedTeamId={sharedTeamId} onNavigate={setTab} />}
+          {tab === "favorites" && <SharedTeamFavoritesTab sharedTeamId={sharedTeamId} />}
+          {tab === "notes"     && <SharedTeamNotesHubTab sharedTeamId={sharedTeamId} />}
+          {tab === "picklists" && <SharedTeamPicklistsTab sharedTeamId={sharedTeamId} />}
+          {tab === "activity"  && <SharedTeamActivityTab sharedTeamId={sharedTeamId} />}
+          {tab === "export"    && <SharedTeamExportTab sharedTeamId={sharedTeamId} sharedTeamName={team?.name ?? "Shared Team"} />}
+          {tab === "settings"  && <SharedTeamSettingsSection sharedTeamId={sharedTeamId} team={team} />}
         </div>
       </div>
     </section>
@@ -15996,9 +16018,12 @@ function route(path: string) {
   if (path === "/terms") return <TermsPage />;
   if (path === "/privacy") return <PrivacyPage />;
   const joinMatch = path.match(/^\/join\/([0-9a-f-]+)$/i);
-  if (joinMatch) return <JoinOrgPage token={joinMatch[1]} />;
-  const orgMatch = path.match(/^\/org\/([0-9a-f-]+)(?:\/settings)?$/i);
-  if (orgMatch) return <OrgWorkspacePage orgId={orgMatch[1]} />;
+  if (joinMatch) return <JoinSharedTeamPage token={joinMatch[1]} />;
+  // Redirect legacy /org/:id[/settings] → /shared-team/:id[/settings]
+  const legacyOrg = path.match(/^\/org\/([0-9a-f-]+)((?:\/settings)?)$/i);
+  if (legacyOrg) { navigate(`/shared-team/${legacyOrg[1]}${legacyOrg[2]}`); return null; }
+  const stMatch = path.match(/^\/shared-team\/([0-9a-f-]+)(?:\/settings)?$/i);
+  if (stMatch) return <SharedTeamWorkspacePage sharedTeamId={stMatch[1]} />;
   const compareMatch = path.match(/^\/compare\/(.+)$/);
   if (compareMatch) return <CompareFromUrl param={compareMatch[1]} />;
   const eventMatch = path.match(/^\/events?\/(.+)$/);
@@ -16021,8 +16046,8 @@ function recordBreadcrumb(path: string) {
   if (eventMatch) return recordTrail({ path: p, kind: "event", label: decodeURIComponent(eventMatch[1]) });
   const teamMatch = p.match(/^\/teams?\/(.+)$/);
   if (teamMatch) return recordTrail({ path: p, kind: "team", label: decodeURIComponent(teamMatch[1].split("/").pop() ?? teamMatch[1]) });
-  const orgMatch = p.match(/^\/org\/([0-9a-f-]+)/i);
-  if (orgMatch) return recordTrail({ path: p, kind: "org", label: "Organization" });
+  const stMatch = p.match(/^\/shared-team\/([0-9a-f-]+)/i);
+  if (stMatch) return recordTrail({ path: p, kind: "shared-team", label: "Shared Team" });
   // Everything else (settings, insights, my-team, compare, join, legal) is not
   // part of the breadcrumb hierarchy — leave the trail as it is.
 }

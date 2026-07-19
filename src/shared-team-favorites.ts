@@ -1,29 +1,29 @@
 import { useSyncExternalStore } from "react";
 import { supabase } from "./supabase";
 
-// Per-org shared favorites store.
+// Per-shared-team shared favorites store.
 // Lazy-loaded: fetches from Supabase the first time a component subscribes to
-// a given orgId. Cached in a module-level Map until sign-out.
+// a given sharedTeamId. Cached in a module-level Map until sign-out.
 // Optimistic toggle: update Map entry immediately, fire upsert/delete in
 // background, revert on error — same pattern as favorites.ts.
 
-export type OrgFavoriteKind = "team" | "event";
+export type SharedTeamFavoriteKind = "team" | "event";
 
-type OrgFavState = {
+type SharedTeamFavState = {
   teams: string[];
   events: string[];
   ready: boolean;
 };
 
-// Module-level Map: orgId → state for that org
-const cache = new Map<string, OrgFavState>();
-// Track which orgIds are currently being fetched (avoid duplicate requests)
+// Module-level Map: sharedTeamId → state for that shared team
+const cache = new Map<string, SharedTeamFavState>();
+// Track which sharedTeamIds are currently being fetched (avoid duplicate requests)
 const loading = new Set<string>();
 
 // Stable sentinel so useSyncExternalStore sees the same reference every render
 // when there is no cache entry yet — prevents the "getSnapshot result must be
 // cached" infinite-loop warning (React compares snapshots by reference).
-const EMPTY_FAV_STATE: OrgFavState = { teams: [], events: [], ready: false };
+const EMPTY_FAV_STATE: SharedTeamFavState = { teams: [], events: [], ready: false };
 
 const listeners = new Set<() => void>();
 
@@ -36,13 +36,13 @@ function subscribe(listener: () => void) {
   return () => { listeners.delete(listener); };
 }
 
-function getForOrg(orgId: string): OrgFavState {
-  return cache.get(orgId) ?? EMPTY_FAV_STATE;
+function getForSharedTeam(sharedTeamId: string): SharedTeamFavState {
+  return cache.get(sharedTeamId) ?? EMPTY_FAV_STATE;
 }
 
-function setForOrg(orgId: string, patch: Partial<OrgFavState>) {
-  const prev = cache.get(orgId) ?? EMPTY_FAV_STATE;
-  cache.set(orgId, { ...prev, ...patch });
+function setForSharedTeam(sharedTeamId: string, patch: Partial<SharedTeamFavState>) {
+  const prev = cache.get(sharedTeamId) ?? EMPTY_FAV_STATE;
+  cache.set(sharedTeamId, { ...prev, ...patch });
   emit();
 }
 
@@ -59,15 +59,15 @@ function setForOrg(orgId: string, patch: Partial<OrgFavState>) {
   });
 })();
 
-async function loadForOrg(orgId: string): Promise<void> {
+async function loadForSharedTeam(sharedTeamId: string): Promise<void> {
   const sb = supabase;
-  if (!sb || loading.has(orgId)) return;
-  loading.add(orgId);
+  if (!sb || loading.has(sharedTeamId)) return;
+  loading.add(sharedTeamId);
 
   const { data } = await sb
-    .from("org_favorites")
+    .from("shared_team_favorites")
     .select("kind, ref_id")
-    .eq("org_id", orgId);
+    .eq("shared_team_id", sharedTeamId);
 
   const teams: string[] = [];
   const events: string[] = [];
@@ -76,43 +76,43 @@ async function loadForOrg(orgId: string): Promise<void> {
     else if (row.kind === "event") events.push(row.ref_id);
   }
 
-  setForOrg(orgId, { teams, events, ready: true });
-  loading.delete(orgId);
+  setForSharedTeam(sharedTeamId, { teams, events, ready: true });
+  loading.delete(sharedTeamId);
 }
 
 // ── Public actions ────────────────────────────────────────────────────────────
 
 /**
- * Toggle an org favorite. Optimistic: updates immediately, reverts on error.
+ * Toggle a shared-team favorite. Optimistic: updates immediately, reverts on error.
  */
-export async function toggleOrgFavorite(
-  orgId: string,
-  kind: OrgFavoriteKind,
+export async function toggleSharedTeamFavorite(
+  sharedTeamId: string,
+  kind: SharedTeamFavoriteKind,
   refId: string,
 ): Promise<void> {
   const sb = supabase;
   if (!sb) return;
 
-  const prev = getForOrg(orgId);
+  const prev = getForSharedTeam(sharedTeamId);
   const arr = kind === "team" ? prev.teams : prev.events;
   const has = arr.includes(refId);
 
   // Optimistic update
   if (has) {
-    setForOrg(orgId, { [kind === "team" ? "teams" : "events"]: arr.filter((id) => id !== refId) });
+    setForSharedTeam(sharedTeamId, { [kind === "team" ? "teams" : "events"]: arr.filter((id) => id !== refId) });
   } else {
-    setForOrg(orgId, { [kind === "team" ? "teams" : "events"]: [...arr, refId] });
+    setForSharedTeam(sharedTeamId, { [kind === "team" ? "teams" : "events"]: [...arr, refId] });
   }
 
   const revert = () => {
-    setForOrg(orgId, { [kind === "team" ? "teams" : "events"]: arr });
+    setForSharedTeam(sharedTeamId, { [kind === "team" ? "teams" : "events"]: arr });
   };
 
   if (has) {
     const { error } = await sb
-      .from("org_favorites")
+      .from("shared_team_favorites")
       .delete()
-      .eq("org_id", orgId)
+      .eq("shared_team_id", sharedTeamId)
       .eq("kind", kind)
       .eq("ref_id", refId);
     if (error) revert();
@@ -120,8 +120,8 @@ export async function toggleOrgFavorite(
     const { data: session } = await sb.auth.getSession();
     const uid = session.session?.user?.id ?? null;
     const { error } = await sb
-      .from("org_favorites")
-      .upsert({ org_id: orgId, kind, ref_id: refId, added_by: uid }, { onConflict: "org_id,kind,ref_id" });
+      .from("shared_team_favorites")
+      .upsert({ shared_team_id: sharedTeamId, kind, ref_id: refId, added_by: uid }, { onConflict: "shared_team_id,kind,ref_id" });
     if (error) revert();
   }
 }
@@ -129,24 +129,24 @@ export async function toggleOrgFavorite(
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 
 /**
- * Returns the shared favorites for an org. Triggers a lazy fetch on first call
- * for each orgId.
+ * Returns the shared favorites for a shared team. Triggers a lazy fetch on first
+ * call for each sharedTeamId.
  */
-export function useOrgFavorites(orgId: string): OrgFavState {
+export function useSharedTeamFavorites(sharedTeamId: string): SharedTeamFavState {
   // Trigger load if not yet started
-  const current = cache.get(orgId);
-  if (!current && !loading.has(orgId)) {
-    void loadForOrg(orgId);
+  const current = cache.get(sharedTeamId);
+  if (!current && !loading.has(sharedTeamId)) {
+    void loadForSharedTeam(sharedTeamId);
   }
 
-  const getSnapshot = () => getForOrg(orgId);
+  const getSnapshot = () => getForSharedTeam(sharedTeamId);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 /**
- * Boolean: is this (kind, refId) an org favorite for the given org?
+ * Boolean: is this (kind, refId) a favorite for the given shared team?
  */
-export function useIsOrgFavorite(orgId: string, kind: OrgFavoriteKind, refId: string): boolean {
-  const favs = useOrgFavorites(orgId);
+export function useIsSharedTeamFavorite(sharedTeamId: string, kind: SharedTeamFavoriteKind, refId: string): boolean {
+  const favs = useSharedTeamFavorites(sharedTeamId);
   return (kind === "team" ? favs.teams : favs.events).includes(refId);
 }

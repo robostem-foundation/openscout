@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 // Recently-viewed teams and events — localStorage-backed, no cloud sync.
-// Same useSyncExternalStore pattern as favorites.ts / org-favorites.ts.
+// Same useSyncExternalStore pattern as favorites.ts / shared-team-favorites.ts.
 // Entries are stored with their display data (label, sub, badge) so we can
 // render them instantly without a re-fetch.
 
@@ -17,7 +17,7 @@ const STORAGE_KEY = "vex-recently-viewed";
 const MAX_ENTRIES = 20;
 
 // Stable sentinel — prevents useSyncExternalStore infinite-loop on empty state
-// (same pattern as EMPTY_FAV_STATE in org-favorites.ts).
+// (same pattern as EMPTY_FAV_STATE in shared-team-favorites.ts).
 const EMPTY: RecentEntry[] = [];
 
 let entries: RecentEntry[] = (() => {

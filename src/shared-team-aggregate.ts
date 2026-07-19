@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { api } from "./api";
-import { getOrgMembers } from "./orgs";
-import { listOrgPicklistEvents } from "./picklist";
-import type { OrgPicklistSummary } from "./picklist";
+import { getSharedTeamMembers } from "./shared-teams";
+import { listSharedTeamPicklistEvents } from "./picklist";
+import type { SharedTeamPicklistSummary } from "./picklist";
 import type { Event } from "./types";
 
-// Shared org-workspace queries that don't belong to a single-purpose store:
+// Shared shared-team-workspace queries that don't belong to a single-purpose store:
 //  - useEventNames: batch-resolve RobotEvents event names (one request, cached)
-//  - loadOrgActivity: a recent-activity feed derived from existing tables
-//  - useOrgPicklistEvents: thin reactive wrapper over listOrgPicklistEvents
+//  - loadSharedTeamActivity: a recent-activity feed derived from existing tables
+//  - useSharedTeamPicklistEvents: thin reactive wrapper over listSharedTeamPicklistEvents
 
 // ── Event-name resolution (shared batch + module cache) ──────────────────────
 
@@ -80,7 +80,7 @@ export type ActivityItem = {
   kind: ActivityKind;
   ts: string;               // ISO timestamp
   userId: string | null;
-  userName: string;         // resolved via getOrgMembers
+  userName: string;         // resolved via getSharedTeamMembers
   eventId: string | null;   // for click-through, when known
   matchId?: string;
   teamNumber?: string;
@@ -89,26 +89,26 @@ export type ActivityItem = {
 };
 
 /**
- * Builds a recent-activity feed by merging the newest rows from org_match_notes,
- * org_picklists, and org_favorites. This is "recent state", not an audit log:
+ * Builds a recent-activity feed by merging the newest rows from shared_team_match_notes,
+ * shared_team_picklists, and shared_team_favorites. This is "recent state", not an audit log:
  * deletes leave no trace and notes only carry updated_at. No new table needed —
- * every select rides the existing is_org_member RLS policy.
+ * every select rides the existing is_shared_team_member RLS policy.
  */
-export async function loadOrgActivity(orgId: string, limit = 50): Promise<ActivityItem[]> {
+export async function loadSharedTeamActivity(sharedTeamId: string, limit = 50): Promise<ActivityItem[]> {
   const sb = supabase;
   if (!sb) return [];
 
   const [notesRes, picksRes, favsRes, members] = await Promise.all([
-    sb.from("org_match_notes")
+    sb.from("shared_team_match_notes")
       .select("match_id, event_id, updated_at, last_edited_by")
-      .eq("org_id", orgId).order("updated_at", { ascending: false }).limit(limit),
-    sb.from("org_picklists")
+      .eq("shared_team_id", sharedTeamId).order("updated_at", { ascending: false }).limit(limit),
+    sb.from("shared_team_picklists")
       .select("event_id, team_number, added_by, created_at")
-      .eq("org_id", orgId).order("created_at", { ascending: false }).limit(limit),
-    sb.from("org_favorites")
+      .eq("shared_team_id", sharedTeamId).order("created_at", { ascending: false }).limit(limit),
+    sb.from("shared_team_favorites")
       .select("kind, ref_id, added_by, created_at")
-      .eq("org_id", orgId).order("created_at", { ascending: false }).limit(limit),
-    getOrgMembers(orgId),
+      .eq("shared_team_id", sharedTeamId).order("created_at", { ascending: false }).limit(limit),
+    getSharedTeamMembers(sharedTeamId),
   ]);
 
   const nameById = new Map<string, string>();
@@ -137,19 +137,19 @@ export async function loadOrgActivity(orgId: string, limit = 50): Promise<Activi
 
 // ── Picklist enumeration hook ────────────────────────────────────────────────
 
-/** Reactive wrapper over listOrgPicklistEvents. Re-runs when orgId changes. */
-export function useOrgPicklistEvents(orgId: string): { data: OrgPicklistSummary[]; loading: boolean } {
-  const [data, setData] = useState<OrgPicklistSummary[]>([]);
+/** Reactive wrapper over listSharedTeamPicklistEvents. Re-runs when sharedTeamId changes. */
+export function useSharedTeamPicklistEvents(sharedTeamId: string): { data: SharedTeamPicklistSummary[]; loading: boolean } {
+  const [data, setData] = useState<SharedTeamPicklistSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void listOrgPicklistEvents(orgId).then((res) => {
+    void listSharedTeamPicklistEvents(sharedTeamId).then((res) => {
       if (!cancelled) { setData(res); setLoading(false); }
     });
     return () => { cancelled = true; };
-  }, [orgId]);
+  }, [sharedTeamId]);
 
   return { data, loading };
 }
