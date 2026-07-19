@@ -15931,7 +15931,7 @@ function MyTeamPage() {
       <div className="myteam-tl-scroll">
         <div className="myteam-timeline">
           {timeline.map((row) => (
-            <div key={row.event.id} className={`myteam-node ${row.state}`}>{timelineNode(row)}</div>
+            <Link key={row.event.id} href={eventPath(row.event)} className={`myteam-node ${row.state}`}>{timelineNode(row)}</Link>
           ))}
         </div>
       </div>
@@ -15947,7 +15947,7 @@ function MyTeamPage() {
       <div className="myteam-timeline2">
         {timeline.map((row, i) => (
           <div key={row.event.id} className={`myteam-tnode ${i % 2 ? "right" : "left"} ${row.state} ${row.isNext ? "next" : ""}`}>
-            <div className="myteam-tcard">{timelineNode(row)}</div>
+            <Link href={eventPath(row.event)} className="myteam-tcard">{timelineNode(row)}</Link>
           </div>
         ))}
         {!timeline.length && <div className="myteam-upnext-empty">No events this season yet.</div>}
