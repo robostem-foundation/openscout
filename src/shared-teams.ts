@@ -1,24 +1,24 @@
 import { useSyncExternalStore } from "react";
 import { supabase } from "./supabase";
 
-// Org membership store — cloud-only (no localStorage fallback).
-// When signed out: orgs=[], ready=true.
-// When signed in: fetches the user's org memberships once and caches in module state.
+// Shared team membership store — cloud-only (no localStorage fallback).
+// When signed out: sharedTeams=[], ready=true.
+// When signed in: fetches the user's shared team memberships once and caches in module state.
 // Mirrors the useSyncExternalStore pattern from favorites.ts / notes.ts.
 
-export type OrgRole = "owner" | "admin" | "member";
+export type SharedTeamRole = "owner" | "admin" | "member";
 
-export type OrgMembership = {
-  orgId: string;
+export type SharedTeamMembership = {
+  sharedTeamId: string;
   name: string;
-  role: OrgRole;
+  role: SharedTeamRole;
   teamProgram: string | null;
   teamNumber: string | null;
 };
 
-export type OrgInvite = {
+export type SharedTeamInvite = {
   id: string;
-  orgId: string;
+  sharedTeamId: string;
   createdBy: string | null;
   usedBy: string | null;
   /** Max number of joins allowed; null = unlimited. */
@@ -30,20 +30,20 @@ export type OrgInvite = {
   createdAt: string;
 };
 
-export type OrgMember = {
+export type SharedTeamMember = {
   userId: string;
   displayName: string;
   avatarUrl: string | null;
-  role: OrgRole;
+  role: SharedTeamRole;
 };
 
 type State = {
-  orgs: OrgMembership[];
+  sharedTeams: SharedTeamMembership[];
   ready: boolean;
   signedIn: boolean;
 };
 
-let state: State = { orgs: [], ready: false, signedIn: false };
+let state: State = { sharedTeams: [], ready: false, signedIn: false };
 
 const listeners = new Set<() => void>();
 
@@ -74,29 +74,29 @@ async function loadCloud(uid: string) {
   if (!sb) return;
   userId = uid;
 
-  // Fetch memberships with org details in one round-trip
+  // Fetch memberships with shared team details in one round-trip
   const { data } = await sb
-    .from("org_members")
-    .select("role, orgs(id, name, team_program, team_number)")
+    .from("shared_team_members")
+    .select("role, shared_teams(id, name, team_program, team_number)")
     .eq("user_id", uid);
 
-  const orgs: OrgMembership[] = [];
+  const sharedTeams: SharedTeamMembership[] = [];
   type MemberRow = {
     role: string;
-    orgs: { id: string; name: string; team_program: string | null; team_number: string | null } | null;
+    shared_teams: { id: string; name: string; team_program: string | null; team_number: string | null } | null;
   };
   for (const row of (data ?? []) as unknown as MemberRow[]) {
-    if (!row.orgs) continue;
-    orgs.push({
-      orgId: row.orgs.id,
-      name: row.orgs.name,
-      role: row.role as OrgRole,
-      teamProgram: row.orgs.team_program,
-      teamNumber: row.orgs.team_number,
+    if (!row.shared_teams) continue;
+    sharedTeams.push({
+      sharedTeamId: row.shared_teams.id,
+      name: row.shared_teams.name,
+      role: row.role as SharedTeamRole,
+      teamProgram: row.shared_teams.team_program,
+      teamNumber: row.shared_teams.team_number,
     });
   }
 
-  setState({ orgs, ready: true, signedIn: true });
+  setState({ sharedTeams, ready: true, signedIn: true });
 }
 
 // ── Auth wiring ─────────────────────────────────────────────────────────────
@@ -110,14 +110,14 @@ function applyAuth(uid: string | null) {
     void loadCloud(uid);
   } else {
     userId = null;
-    setState({ orgs: [], ready: true, signedIn: false });
+    setState({ sharedTeams: [], ready: true, signedIn: false });
   }
 }
 
 (function init() {
   const sb = supabase;
   if (!sb) {
-    setState({ orgs: [], ready: true, signedIn: false });
+    setState({ sharedTeams: [], ready: true, signedIn: false });
     return;
   }
   void sb.auth.getSession().then(({ data }) => applyAuth(data.session?.user?.id ?? null));
@@ -126,8 +126,8 @@ function applyAuth(uid: string | null) {
 
 // ── Exported actions ─────────────────────────────────────────────────────────
 
-/** Create an org. Returns the new org's UUID. */
-export async function createOrg(
+/** Create a shared team. Returns the new shared team's UUID. */
+export async function createSharedTeam(
   name: string,
   teamProgram?: string | null,
   teamNumber?: string | null,
@@ -135,33 +135,33 @@ export async function createOrg(
   const sb = supabase;
   if (!sb || !userId) throw new Error("Not signed in");
 
-  // Insert org (owner_id set to current user)
-  const { data: orgData, error: orgError } = await sb
-    .from("orgs")
+  // Insert shared team (owner_id set to current user)
+  const { data: sharedTeamData, error: sharedTeamError } = await sb
+    .from("shared_teams")
     .insert({ name: name.trim(), owner_id: userId, team_program: teamProgram ?? null, team_number: teamNumber ?? null })
     .select("id")
     .single();
 
-  if (orgError || !orgData) throw orgError ?? new Error("Failed to create org");
-  const orgId = orgData.id as string;
+  if (sharedTeamError || !sharedTeamData) throw sharedTeamError ?? new Error("Failed to create shared team");
+  const sharedTeamId = sharedTeamData.id as string;
 
   // Add owner as member
-  await sb.from("org_members").insert({ org_id: orgId, user_id: userId, role: "owner" });
+  await sb.from("shared_team_members").insert({ shared_team_id: sharedTeamId, user_id: userId, role: "owner" });
 
   // Optimistic update
   setState({
-    orgs: [
-      ...state.orgs,
-      { orgId, name: name.trim(), role: "owner", teamProgram: teamProgram ?? null, teamNumber: teamNumber ?? null },
+    sharedTeams: [
+      ...state.sharedTeams,
+      { sharedTeamId, name: name.trim(), role: "owner", teamProgram: teamProgram ?? null, teamNumber: teamNumber ?? null },
     ],
   });
 
-  return orgId;
+  return sharedTeamId;
 }
 
-/** Update org name / team info. */
-export async function updateOrg(
-  orgId: string,
+/** Update shared team name / team info. */
+export async function updateSharedTeam(
+  sharedTeamId: string,
   patch: { name?: string; teamProgram?: string | null; teamNumber?: string | null },
 ): Promise<void> {
   const sb = supabase;
@@ -172,11 +172,11 @@ export async function updateOrg(
   if (patch.teamProgram !== undefined) update["team_program"] = patch.teamProgram;
   if (patch.teamNumber !== undefined) update["team_number"] = patch.teamNumber;
 
-  await sb.from("orgs").update(update).eq("id", orgId);
+  await sb.from("shared_teams").update(update).eq("id", sharedTeamId);
 
   setState({
-    orgs: state.orgs.map((o) =>
-      o.orgId !== orgId
+    sharedTeams: state.sharedTeams.map((o) =>
+      o.sharedTeamId !== sharedTeamId
         ? o
         : {
             ...o,
@@ -188,25 +188,25 @@ export async function updateOrg(
   });
 }
 
-/** Leave the org (remove self from org_members). */
-export async function leaveOrg(orgId: string): Promise<void> {
+/** Leave the shared team (remove self from shared_team_members). */
+export async function leaveSharedTeam(sharedTeamId: string): Promise<void> {
   const sb = supabase;
   if (!sb || !userId) return;
-  await sb.from("org_members").delete().eq("org_id", orgId).eq("user_id", userId);
-  setState({ orgs: state.orgs.filter((o) => o.orgId !== orgId) });
+  await sb.from("shared_team_members").delete().eq("shared_team_id", sharedTeamId).eq("user_id", userId);
+  setState({ sharedTeams: state.sharedTeams.filter((o) => o.sharedTeamId !== sharedTeamId) });
 }
 
-/** Delete the org entirely (owner only). */
-export async function deleteOrg(orgId: string): Promise<void> {
+/** Delete the shared team entirely (owner only). */
+export async function deleteSharedTeam(sharedTeamId: string): Promise<void> {
   const sb = supabase;
   if (!sb) return;
-  await sb.from("orgs").delete().eq("id", orgId);
-  setState({ orgs: state.orgs.filter((o) => o.orgId !== orgId) });
+  await sb.from("shared_teams").delete().eq("id", sharedTeamId);
+  setState({ sharedTeams: state.sharedTeams.filter((o) => o.sharedTeamId !== sharedTeamId) });
 }
 
-type OrgInviteRow = {
+type SharedTeamInviteRow = {
   id: string;
-  org_id: string;
+  shared_team_id: string;
   created_by: string | null;
   used_by: string | null;
   max_uses: number | null;
@@ -215,10 +215,10 @@ type OrgInviteRow = {
   created_at: string;
 };
 
-function mapInvite(row: OrgInviteRow): OrgInvite {
+function mapInvite(row: SharedTeamInviteRow): SharedTeamInvite {
   return {
     id: row.id,
-    orgId: row.org_id,
+    sharedTeamId: row.shared_team_id,
     createdBy: row.created_by,
     usedBy: row.used_by,
     maxUses: row.max_uses,
@@ -229,67 +229,67 @@ function mapInvite(row: OrgInviteRow): OrgInvite {
 }
 
 /**
- * Generate a new invite link for the org.
+ * Generate a new invite link for the shared team.
  * @param maxUses  number of allowed joins, or null for unlimited
  * @param expiresAt ISO timestamp the link expires, or null to never expire
  */
 export async function generateInvite(
-  orgId: string,
+  sharedTeamId: string,
   { maxUses, expiresAt }: { maxUses: number | null; expiresAt: string | null },
-): Promise<OrgInvite> {
+): Promise<SharedTeamInvite> {
   const sb = supabase;
   if (!sb || !userId) throw new Error("Not signed in");
   const { data, error } = await sb
-    .from("org_invites")
-    .insert({ org_id: orgId, created_by: userId, max_uses: maxUses, expires_at: expiresAt })
+    .from("shared_team_invites")
+    .insert({ shared_team_id: sharedTeamId, created_by: userId, max_uses: maxUses, expires_at: expiresAt })
     .select()
     .single();
   if (error || !data) throw error ?? new Error("Failed to generate invite");
-  return mapInvite(data as OrgInviteRow);
+  return mapInvite(data as SharedTeamInviteRow);
 }
 
 /** Revoke (delete) an invite by its UUID. */
 export async function revokeInvite(inviteId: string): Promise<void> {
   const sb = supabase;
   if (!sb) return;
-  await sb.from("org_invites").delete().eq("id", inviteId);
+  await sb.from("shared_team_invites").delete().eq("id", inviteId);
 }
 
-/** Fetch active (non-expired, non-exhausted) invites for an org. */
-export async function getOrgInvites(orgId: string): Promise<OrgInvite[]> {
+/** Fetch active (non-expired, non-exhausted) invites for a shared team. */
+export async function getSharedTeamInvites(sharedTeamId: string): Promise<SharedTeamInvite[]> {
   const sb = supabase;
   if (!sb) return [];
   const nowIso = new Date().toISOString();
   const { data } = await sb
-    .from("org_invites")
-    .select("id, org_id, created_by, used_by, max_uses, use_count, expires_at, created_at")
-    .eq("org_id", orgId)
+    .from("shared_team_invites")
+    .select("id, shared_team_id, created_by, used_by, max_uses, use_count, expires_at, created_at")
+    .eq("shared_team_id", sharedTeamId)
     // Keep links that never expire OR have not yet expired.
     .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order("created_at", { ascending: false });
   return (data ?? [])
-    .map((row) => mapInvite(row as OrgInviteRow))
+    .map((row) => mapInvite(row as SharedTeamInviteRow))
     // Drop exhausted links (capped invites whose uses are all consumed).
     .filter((invite) => invite.maxUses === null || invite.useCount < invite.maxUses);
 }
 
-/** Fetch members of an org, joined to their profile info. */
-export async function getOrgMembers(orgId: string): Promise<OrgMember[]> {
+/** Fetch members of a shared team, joined to their profile info. */
+export async function getSharedTeamMembers(sharedTeamId: string): Promise<SharedTeamMember[]> {
   const sb = supabase;
   if (!sb) return [];
 
   // Two queries instead of a PostgREST join:
-  //   • org_members.user_id references auth.users (not profiles), so PostgREST
+  //   • shared_team_members.user_id references auth.users (not profiles), so PostgREST
   //     cannot resolve .select("profiles(...)") automatically.
   //   • profiles RLS is self-only by default; 0004_orgs_fix.sql adds a
-  //     supplementary "org peers read profiles" SELECT policy so members can
+  //     supplementary "shared_team peers read profiles" SELECT policy so members can
   //     read each other's display_name + avatar_url.
 
   // Step 1: get user IDs + roles in join order
   const { data: memberData } = await sb
-    .from("org_members")
+    .from("shared_team_members")
     .select("user_id, role")
-    .eq("org_id", orgId)
+    .eq("shared_team_id", sharedTeamId)
     .order("joined_at", { ascending: true });
 
   if (!memberData || memberData.length === 0) return [];
@@ -309,44 +309,44 @@ export async function getOrgMembers(orgId: string): Promise<OrgMember[]> {
 
   return memberRows.map((row) => ({
     userId: row.user_id,
-    role: row.role as OrgRole,
+    role: row.role as SharedTeamRole,
     displayName: profileMap.get(row.user_id)?.display_name ?? "Unknown",
     avatarUrl: profileMap.get(row.user_id)?.avatar_url ?? null,
   }));
 }
 
-/** Remove a member from an org (owner/admin only). */
-export async function removeMember(orgId: string, memberId: string): Promise<void> {
+/** Remove a member from a shared team (owner/admin only). */
+export async function removeMember(sharedTeamId: string, memberId: string): Promise<void> {
   const sb = supabase;
   if (!sb) return;
-  await sb.from("org_members").delete().eq("org_id", orgId).eq("user_id", memberId);
+  await sb.from("shared_team_members").delete().eq("shared_team_id", sharedTeamId).eq("user_id", memberId);
 }
 
 /** Change a member's role (owner only). */
-export async function updateMemberRole(orgId: string, memberId: string, role: OrgRole): Promise<void> {
+export async function updateMemberRole(sharedTeamId: string, memberId: string, role: SharedTeamRole): Promise<void> {
   const sb = supabase;
   if (!sb) return;
-  await sb.from("org_members").update({ role }).eq("org_id", orgId).eq("user_id", memberId);
+  await sb.from("shared_team_members").update({ role }).eq("shared_team_id", sharedTeamId).eq("user_id", memberId);
 }
 
-/** Reload orgs from cloud (call after joining via invite). */
-export async function reloadOrgs(): Promise<void> {
+/** Reload shared teams from cloud (call after joining via invite). */
+export async function reloadSharedTeams(): Promise<void> {
   if (userId) await loadCloud(userId);
 }
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
 
-export function useOrgs(): OrgMembership[] {
+export function useSharedTeams(): SharedTeamMembership[] {
   const snapshot = useSyncExternalStore(subscribe, getState, getState);
-  return snapshot.orgs;
+  return snapshot.sharedTeams;
 }
 
-export function useOrg(orgId: string): OrgMembership | undefined {
+export function useSharedTeam(sharedTeamId: string): SharedTeamMembership | undefined {
   const snapshot = useSyncExternalStore(subscribe, getState, getState);
-  return snapshot.orgs.find((o) => o.orgId === orgId);
+  return snapshot.sharedTeams.find((o) => o.sharedTeamId === sharedTeamId);
 }
 
-export function useOrgsReady(): boolean {
+export function useSharedTeamsReady(): boolean {
   const snapshot = useSyncExternalStore(subscribe, getState, getState);
   return snapshot.ready;
 }

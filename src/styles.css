@@ -7199,7 +7199,7 @@ td.quick-look-col {
 }
 
 /* Org preview list in the account menu */
-.auth-menu-orgs {
+.auth-menu-shared-teams {
   margin: 4px 0 6px;
   padding-top: 8px;
   border-top: 1px solid var(--border-soft);
@@ -7212,8 +7212,8 @@ td.quick-look-col {
   text-transform: uppercase;
   color: var(--text-faint);
 }
-.auth-menu-org { gap: 9px; }
-.auth-menu-org-badge {
+.auth-menu-shared-team { gap: 9px; }
+.auth-menu-shared-team-badge {
   flex-shrink: 0;
   width: 26px;
   height: 26px;
@@ -7227,14 +7227,14 @@ td.quick-look-col {
   font-weight: 600;
   color: var(--text-2);
 }
-.auth-menu-org-id {
+.auth-menu-shared-team-id {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   line-height: 1.25;
 }
-.auth-menu-org-name {
+.auth-menu-shared-team-name {
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
@@ -7242,12 +7242,12 @@ td.quick-look-col {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.auth-menu-org-role {
+.auth-menu-shared-team-role {
   font-size: 11px;
   color: var(--text-muted);
   text-transform: capitalize;
 }
-.auth-menu-org-go { flex-shrink: 0; color: var(--text-faint); }
+.auth-menu-shared-team-go { flex-shrink: 0; color: var(--text-faint); }
 
 /* Home sign-in card */
 .auth-card-body {
@@ -7824,7 +7824,7 @@ td.quick-look-col {
 /* ── Phase E: Organizations ──────────────────────────────────────────────────── */
 
 /* Org Panel (home sidebar) */
-.org-panel-empty {
+.shared-team-panel-empty {
   padding: 14px 15px;
   display: flex;
   flex-direction: column;
@@ -7833,12 +7833,12 @@ td.quick-look-col {
   color: var(--text-muted);
   font-size: 13px;
 }
-.org-panel-empty p { margin: 0; }
-.org-panel-empty .button-link { margin-top: 4px; }
-.org-panel-hint { color: var(--text-faint); font-size: 12px; margin: 0; }
+.shared-team-panel-empty p { margin: 0; }
+.shared-team-panel-empty .button-link { margin-top: 4px; }
+.shared-team-panel-hint { color: var(--text-faint); font-size: 12px; margin: 0; }
 
 /* Create Org Modal */
-.org-create-modal {
+.shared-team-create-modal {
   max-width: 380px;
   width: 100%;
   padding: 28px 28px 22px;
@@ -7849,20 +7849,20 @@ td.quick-look-col {
   flex-direction: column;
   gap: 14px;
 }
-.org-create-modal h2 {
+.shared-team-create-modal h2 {
   margin: 0 0 2px;
   font-size: 18px;
   font-weight: 600;
 }
-.org-create-field label {
+.shared-team-create-field label {
   display: block;
   font-size: 13px;
   color: var(--text-2);
   margin-bottom: 4px;
   font-weight: 500;
 }
-.org-create-field input,
-.org-create-field select {
+.shared-team-create-field input,
+.shared-team-create-field select {
   width: 100%;
   height: 34px;
   padding: 6px 10px;
@@ -7873,31 +7873,47 @@ td.quick-look-col {
   font-size: 14px;
   box-sizing: border-box;
 }
-.org-create-field input:focus,
-.org-create-field select:focus {
+.shared-team-create-field input:focus,
+.shared-team-create-field select:focus {
   outline: none;
   border-color: var(--accent);
 }
-.org-create-row {
+.shared-team-create-row {
   display: flex;
   gap: 10px;
 }
-.org-create-row .org-create-field { flex: 1; min-width: 0; }
-.org-create-footer {
+.shared-team-create-row .shared-team-create-field { flex: 1; min-width: 0; }
+.shared-team-create-footer {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
   margin-top: 4px;
 }
 
+/* Create Shared Team modal — team identity summary + override toggle */
+.shared-team-identity-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.shared-team-override-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 14px;
+  color: var(--text);
+}
+
 /* Join Org Page */
-.join-org-page {
+.join-shared-team-page {
   display: flex;
   justify-content: center;
   align-items: flex-start;
   padding: 60px 16px;
 }
-.join-org-card {
+.join-shared-team-card {
   max-width: 400px;
   width: 100%;
   padding: 36px 32px;
@@ -7911,15 +7927,15 @@ td.quick-look-col {
   align-items: center;
   gap: 12px;
 }
-.join-org-card h2 { margin: 0; font-size: 20px; }
-.join-org-meta { color: var(--text-muted); font-size: 13px; margin: 0; }
-.join-org-error { color: var(--danger); font-size: 13px; margin: 0; }
-.join-org-success { color: var(--success); font-size: 13px; margin: 0; }
-.join-org-back { font-size: 13px; color: var(--text-muted); text-decoration: none; margin-top: 4px; }
-.join-org-back:hover { color: var(--link); text-decoration: underline; }
+.join-shared-team-card h2 { margin: 0; font-size: 20px; }
+.join-shared-team-meta { color: var(--text-muted); font-size: 13px; margin: 0; }
+.join-shared-team-error { color: var(--danger); font-size: 13px; margin: 0; }
+.join-shared-team-success { color: var(--success); font-size: 13px; margin: 0; }
+.join-shared-team-back { font-size: 13px; color: var(--text-muted); text-decoration: none; margin-top: 4px; }
+.join-shared-team-back:hover { color: var(--link); text-decoration: underline; }
 
 /* Org Settings Page (reuses .settings-layout / .settings-tabs / .settings-content) */
-.org-settings-form {
+.shared-team-settings-form {
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -7940,20 +7956,20 @@ td.quick-look-col {
 }
 
 /* Org Members list */
-.org-member-list {
+.shared-team-member-list {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
-.org-member-item {
+.shared-team-member-item {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 0;
   border-bottom: 1px solid var(--border-soft);
 }
-.org-member-item:last-child { border-bottom: none; }
-.org-member-avatar {
+.shared-team-member-item:last-child { border-bottom: none; }
+.shared-team-member-avatar {
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -7970,7 +7986,7 @@ td.quick-look-col {
   overflow: hidden;
   text-decoration: none;
 }
-.org-member-name {
+.shared-team-member-name {
   flex: 1;
   font-size: 13px;
   color: var(--text);
@@ -7979,32 +7995,32 @@ td.quick-look-col {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.org-role-badge {
+.shared-team-role-badge {
   font-size: 11px;
   padding: 2px 7px;
   border-radius: 10px;
   font-weight: 500;
   flex-shrink: 0;
 }
-.org-role-badge.owner  { background: var(--accent);    color: var(--accent-ink); }
-.org-role-badge.admin  { background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border-strong); }
-.org-role-badge.member { background: transparent;      color: var(--text-faint); border: 1px solid var(--border); }
+.shared-team-role-badge.owner  { background: var(--accent);    color: var(--accent-ink); }
+.shared-team-role-badge.admin  { background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border-strong); }
+.shared-team-role-badge.member { background: transparent;      color: var(--text-faint); border: 1px solid var(--border); }
 
 /* Org Invites */
-.org-invite-form {
+.shared-team-invite-form {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 12px;
   margin-bottom: 16px;
 }
-.org-invite-field { display: flex; flex-direction: column; gap: 4px; }
-.org-invite-field-label {
+.shared-team-invite-field { display: flex; flex-direction: column; gap: 4px; }
+.shared-team-invite-field-label {
   font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
 }
-.org-invite-noexpiry {
+.shared-team-invite-noexpiry {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -8013,9 +8029,9 @@ td.quick-look-col {
   height: 32px;
   cursor: pointer;
 }
-.org-invite-list { display: flex; flex-direction: column; gap: 10px; }
-.org-invite-item { display: flex; align-items: center; gap: 6px; }
-.org-invite-link-input {
+.shared-team-invite-list { display: flex; flex-direction: column; gap: 10px; }
+.shared-team-invite-item { display: flex; align-items: center; gap: 6px; }
+.shared-team-invite-link-input {
   flex: 1;
   min-width: 0;
   height: 32px;
@@ -8030,26 +8046,26 @@ td.quick-look-col {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.org-invite-expiry {
+.shared-team-invite-expiry {
   font-size: 11px;
   color: var(--text-faint);
   white-space: nowrap;
 }
 
 /* ── Org Workspace (dashboard / notes / picklists / activity / export) ─────── */
-.org-ws-section {
+.shared-team-ws-section {
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
 /* Dashboard stat tiles — flat cards, no shadow, tabular figures */
-.org-ws-stats {
+.shared-team-ws-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
 }
-.org-ws-stat {
+.shared-team-ws-stat {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -8059,22 +8075,22 @@ td.quick-look-col {
   background: var(--surface);
   text-align: left;
 }
-.org-ws-stat--btn {
+.shared-team-ws-stat--btn {
   cursor: pointer;
   font: inherit;
   transition: border-color 0.15s, background 0.15s;
 }
-.org-ws-stat--btn:hover {
+.shared-team-ws-stat--btn:hover {
   border-color: var(--border-strong);
   background: var(--surface-2);
 }
-.org-ws-stat-top {
+.shared-team-ws-stat-top {
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--text-muted);
 }
-.org-ws-stat-value {
+.shared-team-ws-stat-value {
   font-size: 24px;
   font-weight: 600;
   line-height: 1;
@@ -8083,19 +8099,19 @@ td.quick-look-col {
   font-variant-numeric: tabular-nums;
   margin-left: auto;
 }
-.org-ws-stat-label {
+.shared-team-ws-stat-label {
   font-size: 12.5px;
   color: var(--text-muted);
 }
 
 /* Generic block (e.g. recent-activity card on the dashboard) */
-.org-ws-block {
+.shared-team-ws-block {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   padding: 4px 16px 8px;
 }
-.org-ws-block-head {
+.shared-team-ws-block-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -8103,30 +8119,30 @@ td.quick-look-col {
   border-bottom: 1px solid var(--border-soft);
   margin-bottom: 4px;
 }
-.org-ws-block-head h3 {
+.shared-team-ws-block-head h3 {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
 }
 
-.org-ws-empty,
-.org-ws-help {
+.shared-team-ws-empty,
+.shared-team-ws-help {
   font-size: 13px;
   color: var(--text-muted);
   margin: 0;
 }
 
-.org-ws-toolbar {
+.shared-team-ws-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
-.org-ws-search { flex: 1; min-width: 180px; }
+.shared-team-ws-search { flex: 1; min-width: 180px; }
 
 /* Flat count badge (not a pill) */
-.org-ws-badge {
+.shared-team-ws-badge {
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 500;
@@ -8139,8 +8155,8 @@ td.quick-look-col {
 }
 
 /* Activity feed */
-.org-activity-list { display: flex; flex-direction: column; }
-.org-activity-row {
+.shared-team-activity-list { display: flex; flex-direction: column; }
+.shared-team-activity-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -8149,10 +8165,10 @@ td.quick-look-col {
   color: var(--text);
   text-decoration: none;
 }
-.org-activity-row:last-child { border-bottom: none; }
-a.org-activity-row:hover { color: var(--text); }
-a.org-activity-row:hover .org-activity-text { color: var(--accent); }
-.org-activity-text {
+.shared-team-activity-row:last-child { border-bottom: none; }
+a.shared-team-activity-row:hover { color: var(--text); }
+a.shared-team-activity-row:hover .shared-team-activity-text { color: var(--accent); }
+.shared-team-activity-text {
   flex: 1;
   min-width: 0;
   font-size: 13px;
@@ -8161,9 +8177,9 @@ a.org-activity-row:hover .org-activity-text { color: var(--accent); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.org-activity-text strong { color: var(--text); font-weight: 600; }
-.org-activity-event { color: var(--text-muted); }
-.org-activity-time {
+.shared-team-activity-text strong { color: var(--text); font-weight: 600; }
+.shared-team-activity-event { color: var(--text-muted); }
+.shared-team-activity-time {
   flex-shrink: 0;
   font-size: 11px;
   color: var(--text-faint);
@@ -8171,9 +8187,9 @@ a.org-activity-row:hover .org-activity-text { color: var(--accent); }
 }
 
 /* Notes hub — grouped by event */
-.org-notes-group { display: flex; flex-direction: column; }
-.org-notes-group + .org-notes-group { margin-top: 8px; }
-.org-notes-group-head {
+.shared-team-notes-group { display: flex; flex-direction: column; }
+.shared-team-notes-group + .shared-team-notes-group { margin-top: 8px; }
+.shared-team-notes-group-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -8183,7 +8199,7 @@ a.org-activity-row:hover .org-activity-text { color: var(--accent); }
   border: 1px solid var(--border);
   border-radius: var(--radius) var(--radius) 0 0;
 }
-.org-notes-group-name {
+.shared-team-notes-group-name {
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text);
@@ -8191,7 +8207,7 @@ a.org-activity-row:hover .org-activity-text { color: var(--accent); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.org-note-row {
+.shared-team-note-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -8201,9 +8217,9 @@ a.org-activity-row:hover .org-activity-text { color: var(--accent); }
   color: var(--text-2);
   text-decoration: none;
 }
-.org-note-row:last-child { border-radius: 0 0 var(--radius) var(--radius); }
-a.org-note-row:hover { background: var(--surface-2); }
-.org-note-body {
+.shared-team-note-row:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+a.shared-team-note-row:hover { background: var(--surface-2); }
+.shared-team-note-body {
   flex: 1;
   min-width: 0;
   font-size: 13px;
@@ -8211,15 +8227,15 @@ a.org-note-row:hover { background: var(--surface-2); }
   white-space: pre-wrap;
   word-break: break-word;
 }
-.org-note-go { flex-shrink: 0; color: var(--text-faint); }
+.shared-team-note-go { flex-shrink: 0; color: var(--text-faint); }
 
 /* Picklists overview */
-.org-picklist-grid {
+.shared-team-picklist-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 12px;
 }
-.org-picklist-card {
+.shared-team-picklist-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -8230,14 +8246,14 @@ a.org-note-row:hover { background: var(--surface-2); }
   text-decoration: none;
   transition: border-color 0.15s, background 0.15s;
 }
-.org-picklist-card:hover { border-color: var(--border-strong); background: var(--surface-2); }
-.org-picklist-card-head {
+.shared-team-picklist-card:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.shared-team-picklist-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
-.org-picklist-name {
+.shared-team-picklist-name {
   font-size: 13.5px;
   font-weight: 600;
   color: var(--text);
@@ -8245,12 +8261,12 @@ a.org-note-row:hover { background: var(--surface-2); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.org-picklist-preview {
+.shared-team-picklist-preview {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-.org-picklist-team {
+.shared-team-picklist-team {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -8258,7 +8274,7 @@ a.org-note-row:hover { background: var(--surface-2); }
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
-.org-picklist-rank {
+.shared-team-picklist-rank {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8271,14 +8287,14 @@ a.org-note-row:hover { background: var(--surface-2); }
   background: var(--surface-3);
   border-radius: var(--radius);
 }
-.org-picklist-more { font-size: 11.5px; color: var(--text-faint); align-self: center; }
+.shared-team-picklist-more { font-size: 11.5px; color: var(--text-faint); align-self: center; }
 
 /* Settings section (stacked Overview / Members / Invites) */
-.org-ws-subsection {
+.shared-team-ws-subsection {
   padding-top: 18px;
   border-top: 1px solid var(--border-soft);
 }
-.org-ws-subhead {
+.shared-team-ws-subhead {
   margin: 0 0 12px;
   font-size: 13px;
   font-weight: 600;
@@ -8286,14 +8302,14 @@ a.org-note-row:hover { background: var(--surface-2); }
 }
 
 /* Export actions */
-.org-ws-export-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.shared-team-ws-export-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* Print-only export view — hidden on screen, isolated for print */
-.org-print-root { display: none; }
+.shared-team-print-root { display: none; }
 @media print {
   body * { visibility: hidden; }
-  .org-print-root, .org-print-root * { visibility: visible; }
-  .org-print-root {
+  .shared-team-print-root, .shared-team-print-root * { visibility: visible; }
+  .shared-team-print-root {
     display: block;
     position: absolute;
     inset: 0;
@@ -8301,13 +8317,13 @@ a.org-note-row:hover { background: var(--surface-2); }
     color: #000;
     font-size: 12px;
   }
-  .org-print-root h1 { font-size: 20px; margin: 0 0 12px; }
-  .org-print-root h2 { font-size: 15px; margin: 16px 0 8px; }
-  .org-print-root h3 { font-size: 13px; margin: 10px 0 4px; }
-  .org-print-section { break-inside: avoid; }
-  .org-print-block, .org-print-note { break-inside: avoid; margin-bottom: 8px; }
-  .org-print-block ol { margin: 0; padding-left: 20px; }
-  .org-print-note p { margin: 2px 0 0; }
+  .shared-team-print-root h1 { font-size: 20px; margin: 0 0 12px; }
+  .shared-team-print-root h2 { font-size: 15px; margin: 16px 0 8px; }
+  .shared-team-print-root h3 { font-size: 13px; margin: 10px 0 4px; }
+  .shared-team-print-section { break-inside: avoid; }
+  .shared-team-print-block, .shared-team-print-note { break-inside: avoid; margin-bottom: 8px; }
+  .shared-team-print-block ol { margin: 0; padding-left: 20px; }
+  .shared-team-print-note p { margin: 2px 0 0; }
 }
 
 /* Note scope toggle (popover + video panel) */
@@ -9334,7 +9350,7 @@ a.org-note-row:hover { background: var(--surface-2); }
 
 /* ── Org Favorites Popover ────────────────────────────────────────────────── */
 
-.org-fav-labeled-btn {
+.shared-team-fav-labeled-btn {
   width: auto;
   min-width: max-content;
   gap: 6px;
@@ -9344,7 +9360,7 @@ a.org-note-row:hover { background: var(--surface-2); }
   white-space: nowrap;
 }
 
-.org-fav-popover {
+.shared-team-fav-popover {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
@@ -9356,7 +9372,7 @@ a.org-note-row:hover { background: var(--surface-2); }
   min-width: 140px;
   padding: 4px 0;
 }
-.org-fav-popover .icon-button {
+.shared-team-fav-popover .icon-button {
   position: static;
   width: 100%;
   text-align: left;
@@ -9368,7 +9384,7 @@ a.org-note-row:hover { background: var(--surface-2); }
   align-items: center;
   justify-content: flex-start;
 }
-.org-fav-popover .icon-button:hover {
+.shared-team-fav-popover .icon-button:hover {
   background: var(--surface-2);
 }
 
@@ -10752,7 +10768,7 @@ a.org-note-row:hover { background: var(--surface-2); }
   }
   .mobile-nav-link svg { flex-shrink: 0; }
 
-  .mobile-nav-org-badge {
+  .mobile-nav-shared-team-badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;

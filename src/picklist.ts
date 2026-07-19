@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { supabase } from "./supabase";
 
-// Per-org, per-event shared picklist store.
+// Per-shared-team, per-event shared picklist store.
 // localStorage is the primary store — changes are instant and persist across
 // refreshes regardless of Supabase status. Supabase is a sync layer for
 // cross-device sharing; failures are logged silently and never revert local state.
@@ -18,7 +18,7 @@ export type PicklistEntry = {
 
 type PicklistState = { entries: PicklistEntry[]; ready: boolean };
 
-// Cache key: "${orgId}|${eventId}"
+// Cache key: "${sharedTeamId}|${eventId}"
 const cache = new Map<string, PicklistState>();
 const loading = new Set<string>();
 const EMPTY: PicklistState = { entries: [], ready: false };
@@ -34,45 +34,45 @@ function subscribe(listener: () => void) {
   return () => { listeners.delete(listener); };
 }
 
-function cacheKey(orgId: string, eventId: string) {
-  return `${orgId}|${eventId}`;
+function cacheKey(sharedTeamId: string, eventId: string) {
+  return `${sharedTeamId}|${eventId}`;
 }
 
-function getState(orgId: string, eventId: string): PicklistState {
-  return cache.get(cacheKey(orgId, eventId)) ?? EMPTY;
+function getState(sharedTeamId: string, eventId: string): PicklistState {
+  return cache.get(cacheKey(sharedTeamId, eventId)) ?? EMPTY;
 }
 
 // ── localStorage helpers ────────────────────────────────────────────────────
 
-function lsKey(orgId: string, eventId: string) {
-  return `picklist:${orgId}:${eventId}`;
+function lsKey(sharedTeamId: string, eventId: string) {
+  return `picklist:${sharedTeamId}:${eventId}`;
 }
 
-function readLS(orgId: string, eventId: string): PicklistEntry[] {
+function readLS(sharedTeamId: string, eventId: string): PicklistEntry[] {
   try {
-    const raw = localStorage.getItem(lsKey(orgId, eventId));
+    const raw = localStorage.getItem(lsKey(sharedTeamId, eventId));
     return raw ? (JSON.parse(raw) as PicklistEntry[]) : [];
   } catch {
     return [];
   }
 }
 
-function writeLS(orgId: string, eventId: string, entries: PicklistEntry[]) {
+function writeLS(sharedTeamId: string, eventId: string, entries: PicklistEntry[]) {
   try {
-    localStorage.setItem(lsKey(orgId, eventId), JSON.stringify(entries));
+    localStorage.setItem(lsKey(sharedTeamId, eventId), JSON.stringify(entries));
   } catch { /* ignore quota errors */ }
 }
 
 // ── Internal state ──────────────────────────────────────────────────────────
 
-function setState(orgId: string, eventId: string, patch: Partial<PicklistState>) {
-  const key = cacheKey(orgId, eventId);
+function setState(sharedTeamId: string, eventId: string, patch: Partial<PicklistState>) {
+  const key = cacheKey(sharedTeamId, eventId);
   const prev = cache.get(key) ?? EMPTY;
   const next = { ...prev, ...patch };
   cache.set(key, next);
   // Persist entries to localStorage whenever they change
   if ("entries" in patch) {
-    writeLS(orgId, eventId, next.entries);
+    writeLS(sharedTeamId, eventId, next.entries);
   }
   emit();
 }
@@ -90,23 +90,23 @@ function setState(orgId: string, eventId: string, patch: Partial<PicklistState>)
   });
 })();
 
-async function loadForKey(orgId: string, eventId: string): Promise<void> {
-  const key = cacheKey(orgId, eventId);
+async function loadForKey(sharedTeamId: string, eventId: string): Promise<void> {
+  const key = cacheKey(sharedTeamId, eventId);
   if (loading.has(key)) return;
   loading.add(key);
 
   // 1. Initialize from localStorage immediately so the UI is ready right away
-  const lsEntries = readLS(orgId, eventId);
-  setState(orgId, eventId, { entries: lsEntries, ready: true });
+  const lsEntries = readLS(sharedTeamId, eventId);
+  setState(sharedTeamId, eventId, { entries: lsEntries, ready: true });
 
   // 2. Try to sync from Supabase (best-effort — may be unavailable)
   const sb = supabase;
   if (sb) {
     try {
       const { data, error } = await sb
-        .from("org_picklists")
+        .from("shared_team_picklists")
         .select("id, team_id, team_number, team_name, sort_order, notes, crossed_out")
-        .eq("org_id", orgId)
+        .eq("shared_team_id", sharedTeamId)
         .eq("event_id", eventId)
         .order("sort_order", { ascending: true });
 
@@ -136,7 +136,7 @@ async function loadForKey(orgId: string, eventId: string): Promise<void> {
           for (const e of lsEntries) merged.set(e.teamId, e);
           for (const e of sbEntries) merged.set(e.teamId, e);
           const mergedArr = [...merged.values()].sort((a, b) => a.sortOrder - b.sortOrder);
-          setState(orgId, eventId, { entries: mergedArr, ready: true });
+          setState(sharedTeamId, eventId, { entries: mergedArr, ready: true });
         }
         // If Supabase returns empty, keep localStorage data — don't clear it
         // (could be an RLS policy returning empty instead of an error)
@@ -153,11 +153,11 @@ async function loadForKey(orgId: string, eventId: string): Promise<void> {
 
 /** Add a team to the picklist. No-op if already present. */
 export async function addToPicklist(
-  orgId: string,
+  sharedTeamId: string,
   eventId: string,
   team: { teamId: string; teamNumber: string; teamName?: string },
 ): Promise<void> {
-  const prev = getState(orgId, eventId);
+  const prev = getState(sharedTeamId, eventId);
   if (prev.entries.some((e) => e.teamId === team.teamId)) return;
 
   const newSortOrder = prev.entries.length > 0
@@ -175,7 +175,7 @@ export async function addToPicklist(
   };
 
   // Optimistic update — persisted to localStorage immediately
-  setState(orgId, eventId, { entries: [...prev.entries, tempEntry] });
+  setState(sharedTeamId, eventId, { entries: [...prev.entries, tempEntry] });
 
   // Try to sync to Supabase in background
   const sb = supabase;
@@ -185,9 +185,9 @@ export async function addToPicklist(
     const uid = session.session?.user?.id ?? null;
 
     const { data, error } = await sb
-      .from("org_picklists")
+      .from("shared_team_picklists")
       .upsert({
-        org_id: orgId,
+        shared_team_id: sharedTeamId,
         event_id: eventId,
         team_id: team.teamId,
         team_number: team.teamNumber,
@@ -196,14 +196,14 @@ export async function addToPicklist(
         notes: "",
         crossed_out: false,
         added_by: uid,
-      }, { onConflict: "org_id,event_id,team_id" })
+      }, { onConflict: "shared_team_id,event_id,team_id" })
       .select("id")
       .single();
 
     if (!error && data) {
       // Replace temp id with real UUID
-      const current = getState(orgId, eventId);
-      setState(orgId, eventId, {
+      const current = getState(sharedTeamId, eventId);
+      setState(sharedTeamId, eventId, {
         entries: current.entries.map((e) =>
           e.id === tempEntry.id ? { ...e, id: data.id } : e,
         ),
@@ -218,21 +218,21 @@ export async function addToPicklist(
 
 /** Remove a team from the picklist. */
 export async function removeFromPicklist(
-  orgId: string,
+  sharedTeamId: string,
   eventId: string,
   teamId: string,
 ): Promise<void> {
-  const prev = getState(orgId, eventId);
+  const prev = getState(sharedTeamId, eventId);
   // Remove immediately — localStorage updated via setState
-  setState(orgId, eventId, { entries: prev.entries.filter((e) => e.teamId !== teamId) });
+  setState(sharedTeamId, eventId, { entries: prev.entries.filter((e) => e.teamId !== teamId) });
 
   const sb = supabase;
   if (!sb) return;
   try {
     const { error } = await sb
-      .from("org_picklists")
+      .from("shared_team_picklists")
       .delete()
-      .eq("org_id", orgId)
+      .eq("shared_team_id", sharedTeamId)
       .eq("event_id", eventId)
       .eq("team_id", teamId);
     if (error) console.warn("[picklist] Supabase remove failed (local state kept):", error.message);
@@ -244,20 +244,20 @@ export async function removeFromPicklist(
 /** Reorder the picklist. newOrder is the full desired order;
  *  assigns sort_order = (index + 1) * 1000 and bulk-upserts. */
 export async function reorderPicklist(
-  orgId: string,
+  sharedTeamId: string,
   eventId: string,
   newOrder: PicklistEntry[],
 ): Promise<void> {
   const updated = newOrder.map((e, i) => ({ ...e, sortOrder: (i + 1) * 1000 }));
   // Apply immediately — localStorage updated via setState
-  setState(orgId, eventId, { entries: updated });
+  setState(sharedTeamId, eventId, { entries: updated });
 
   const sb = supabase;
   if (!sb) return;
   try {
     const rows = updated.map((e) => ({
       id: e.id,
-      org_id: orgId,
+      shared_team_id: sharedTeamId,
       event_id: eventId,
       team_id: e.teamId,
       team_number: e.teamNumber,
@@ -267,8 +267,8 @@ export async function reorderPicklist(
       crossed_out: e.crossedOut,
     }));
     const { error } = await sb
-      .from("org_picklists")
-      .upsert(rows, { onConflict: "org_id,event_id,team_id" });
+      .from("shared_team_picklists")
+      .upsert(rows, { onConflict: "shared_team_id,event_id,team_id" });
     if (error) console.warn("[picklist] Supabase reorder failed (local state kept):", error.message);
   } catch (err) {
     console.warn("[picklist] Supabase reorder error (local state kept):", err);
@@ -277,13 +277,13 @@ export async function reorderPicklist(
 
 /** Save inline notes for a team. */
 export async function updatePicklistNotes(
-  orgId: string,
+  sharedTeamId: string,
   eventId: string,
   teamId: string,
   notes: string,
 ): Promise<void> {
-  const prev = getState(orgId, eventId);
-  setState(orgId, eventId, {
+  const prev = getState(sharedTeamId, eventId);
+  setState(sharedTeamId, eventId, {
     entries: prev.entries.map((e) => e.teamId === teamId ? { ...e, notes } : e),
   });
 
@@ -291,9 +291,9 @@ export async function updatePicklistNotes(
   if (!sb) return;
   try {
     const { error } = await sb
-      .from("org_picklists")
+      .from("shared_team_picklists")
       .update({ notes })
-      .eq("org_id", orgId)
+      .eq("shared_team_id", sharedTeamId)
       .eq("event_id", eventId)
       .eq("team_id", teamId);
     if (error) console.warn("[picklist] Supabase notes update failed:", error.message);
@@ -304,16 +304,16 @@ export async function updatePicklistNotes(
 
 /** Toggle the crossed-out state for a team. */
 export async function toggleCrossedOut(
-  orgId: string,
+  sharedTeamId: string,
   eventId: string,
   teamId: string,
 ): Promise<void> {
-  const prev = getState(orgId, eventId);
+  const prev = getState(sharedTeamId, eventId);
   const entry = prev.entries.find((e) => e.teamId === teamId);
   if (!entry) return;
 
   const newVal = !entry.crossedOut;
-  setState(orgId, eventId, {
+  setState(sharedTeamId, eventId, {
     entries: prev.entries.map((e) => e.teamId === teamId ? { ...e, crossedOut: newVal } : e),
   });
 
@@ -321,9 +321,9 @@ export async function toggleCrossedOut(
   if (!sb) return;
   try {
     const { error } = await sb
-      .from("org_picklists")
+      .from("shared_team_picklists")
       .update({ crossed_out: newVal })
-      .eq("org_id", orgId)
+      .eq("shared_team_id", sharedTeamId)
       .eq("event_id", eventId)
       .eq("team_id", teamId);
     if (error) console.warn("[picklist] Supabase crossedOut update failed:", error.message);
@@ -333,9 +333,9 @@ export async function toggleCrossedOut(
 }
 
 /** Clear all crossed-out states for an event picklist. */
-export async function clearCrossedOut(orgId: string, eventId: string): Promise<void> {
-  const prev = getState(orgId, eventId);
-  setState(orgId, eventId, {
+export async function clearCrossedOut(sharedTeamId: string, eventId: string): Promise<void> {
+  const prev = getState(sharedTeamId, eventId);
+  setState(sharedTeamId, eventId, {
     entries: prev.entries.map((e) => ({ ...e, crossedOut: false })),
   });
 
@@ -343,9 +343,9 @@ export async function clearCrossedOut(orgId: string, eventId: string): Promise<v
   if (!sb) return;
   try {
     const { error } = await sb
-      .from("org_picklists")
+      .from("shared_team_picklists")
       .update({ crossed_out: false })
-      .eq("org_id", orgId)
+      .eq("shared_team_id", sharedTeamId)
       .eq("event_id", eventId);
     if (error) console.warn("[picklist] Supabase clearCrossedOut failed:", error.message);
   } catch (err) {
@@ -353,21 +353,22 @@ export async function clearCrossedOut(orgId: string, eventId: string): Promise<v
   }
 }
 
-// ── Org-wide enumeration ────────────────────────────────────────────────────
+// ── Shared-team-wide enumeration ────────────────────────────────────────────
 
-export type OrgPicklistSummary = {
+export type SharedTeamPicklistSummary = {
   eventId: string;
   teamCount: number;
   topTeams: { teamNumber: string; teamName?: string }[];
 };
 
 /**
- * Enumerate every event this org has a picklist for, with a top-team preview.
- * Unions Supabase rows (cross-device) with localStorage (offline / signed-out),
- * deduping by (eventId, teamNumber). Used by the org workspace overview — there
- * is no per-(org,event) cache to read from here, so this queries directly.
+ * Enumerate every event this shared team has a picklist for, with a top-team
+ * preview. Unions Supabase rows (cross-device) with localStorage (offline /
+ * signed-out), deduping by (eventId, teamNumber). Used by the shared team
+ * workspace overview — there is no per-(sharedTeam,event) cache to read from
+ * here, so this queries directly.
  */
-export async function listOrgPicklistEvents(orgId: string, topN = 3): Promise<OrgPicklistSummary[]> {
+export async function listSharedTeamPicklistEvents(sharedTeamId: string, topN = 3): Promise<SharedTeamPicklistSummary[]> {
   type Row = { teamNumber: string; teamName?: string; sortOrder: number };
   const byEvent = new Map<string, Row[]>();
 
@@ -379,12 +380,12 @@ export async function listOrgPicklistEvents(orgId: string, topN = 3): Promise<Or
 
   // 1. localStorage scan — primary store, always present for offline/signed-out
   try {
-    const prefix = `picklist:${orgId}:`;
+    const prefix = `picklist:${sharedTeamId}:`;
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key || !key.startsWith(prefix)) continue;
       const eventId = key.slice(prefix.length);
-      for (const e of readLS(orgId, eventId)) {
+      for (const e of readLS(sharedTeamId, eventId)) {
         add(eventId, { teamNumber: e.teamNumber, teamName: e.teamName, sortOrder: e.sortOrder });
       }
     }
@@ -395,9 +396,9 @@ export async function listOrgPicklistEvents(orgId: string, topN = 3): Promise<Or
   if (sb) {
     try {
       const { data, error } = await sb
-        .from("org_picklists")
+        .from("shared_team_picklists")
         .select("event_id, team_number, team_name, sort_order")
-        .eq("org_id", orgId)
+        .eq("shared_team_id", sharedTeamId)
         .order("sort_order", { ascending: true });
       if (!error && data) {
         for (const row of data as Array<{ event_id: string; team_number: string; team_name: string | null; sort_order: number }>) {
@@ -405,11 +406,11 @@ export async function listOrgPicklistEvents(orgId: string, topN = 3): Promise<Or
         }
       }
     } catch (err) {
-      console.warn("[picklist] listOrgPicklistEvents sync failed (localStorage only):", err);
+      console.warn("[picklist] listSharedTeamPicklistEvents sync failed (localStorage only):", err);
     }
   }
 
-  const out: OrgPicklistSummary[] = [];
+  const out: SharedTeamPicklistSummary[] = [];
   for (const [eventId, rows] of byEvent) {
     const sorted = [...rows].sort((a, b) => a.sortOrder - b.sortOrder);
     out.push({
@@ -423,12 +424,12 @@ export async function listOrgPicklistEvents(orgId: string, topN = 3): Promise<Or
 }
 
 /**
- * Full picklist entries for every event the org has a picklist for, grouped by
+ * Full picklist entries for every event the shared team has a picklist for, grouped by
  * event. Unions localStorage + Supabase (deduped by teamId, Supabase fields win).
  * Used by the workspace Export tab where the complete rows (notes, crossedOut)
  * are needed, not just a preview.
  */
-export async function loadOrgPicklistEntries(orgId: string): Promise<Array<{ eventId: string; entries: PicklistEntry[] }>> {
+export async function loadSharedTeamPicklistEntries(sharedTeamId: string): Promise<Array<{ eventId: string; entries: PicklistEntry[] }>> {
   const byEvent = new Map<string, Map<string, PicklistEntry>>();
   const slot = (eventId: string) => {
     let m = byEvent.get(eventId);
@@ -438,13 +439,13 @@ export async function loadOrgPicklistEntries(orgId: string): Promise<Array<{ eve
 
   // 1. localStorage (primary)
   try {
-    const prefix = `picklist:${orgId}:`;
+    const prefix = `picklist:${sharedTeamId}:`;
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key || !key.startsWith(prefix)) continue;
       const eventId = key.slice(prefix.length);
       const m = slot(eventId);
-      for (const e of readLS(orgId, eventId)) m.set(e.teamId, e);
+      for (const e of readLS(sharedTeamId, eventId)) m.set(e.teamId, e);
     }
   } catch { /* ignore */ }
 
@@ -453,9 +454,9 @@ export async function loadOrgPicklistEntries(orgId: string): Promise<Array<{ eve
   if (sb) {
     try {
       const { data, error } = await sb
-        .from("org_picklists")
+        .from("shared_team_picklists")
         .select("id, event_id, team_id, team_number, team_name, sort_order, notes, crossed_out")
-        .eq("org_id", orgId)
+        .eq("shared_team_id", sharedTeamId)
         .order("sort_order", { ascending: true });
       if (!error && data) {
         for (const row of data as Array<{ id: string; event_id: string; team_id: string; team_number: string; team_name: string | null; sort_order: number; notes: string | null; crossed_out: boolean }>) {
@@ -471,7 +472,7 @@ export async function loadOrgPicklistEntries(orgId: string): Promise<Array<{ eve
         }
       }
     } catch (err) {
-      console.warn("[picklist] loadOrgPicklistEntries sync failed (localStorage only):", err);
+      console.warn("[picklist] loadSharedTeamPicklistEntries sync failed (localStorage only):", err);
     }
   }
 
@@ -483,20 +484,20 @@ export async function loadOrgPicklistEntries(orgId: string): Promise<Array<{ eve
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 
-/** Returns the picklist state for an org+event. Triggers lazy load on first call. */
-export function usePicklist(orgId: string, eventId: string): PicklistState {
-  const key = cacheKey(orgId, eventId);
+/** Returns the picklist state for a sharedTeam+event. Triggers lazy load on first call. */
+export function usePicklist(sharedTeamId: string, eventId: string): PicklistState {
+  const key = cacheKey(sharedTeamId, eventId);
   const current = cache.get(key);
   if (!current && !loading.has(key)) {
-    void loadForKey(orgId, eventId);
+    void loadForKey(sharedTeamId, eventId);
   }
 
-  const getSnapshot = () => getState(orgId, eventId);
+  const getSnapshot = () => getState(sharedTeamId, eventId);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-/** Boolean: is this teamId in the picklist for the given org+event? */
-export function useIsInPicklist(orgId: string, eventId: string, teamId: string): boolean {
-  const { entries } = usePicklist(orgId, eventId);
+/** Boolean: is this teamId in the picklist for the given sharedTeam+event? */
+export function useIsInPicklist(sharedTeamId: string, eventId: string, teamId: string): boolean {
+  const { entries } = usePicklist(sharedTeamId, eventId);
   return entries.some((e) => e.teamId === teamId);
 }

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { ChevronRight, LogOut, Settings, User as UserIcon } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./supabase";
-import { useOrgs } from "./orgs";
+import { useSharedTeams } from "./shared-teams";
 import { setTheme, useTheme } from "./theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -320,7 +320,7 @@ export function useOutsideClick<T extends HTMLElement>(onClose: () => void) {
 export function AuthSlot() {
   const { ready, configured, user, profile, signOut, updateProfile } = useAuth();
   const theme = useTheme();
-  const orgs = useOrgs();
+  const sharedTeams = useSharedTeams();
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(() => setOpen(false));
 
@@ -396,24 +396,24 @@ export function AuthSlot() {
               </button>
             ))}
           </div>
-          {orgs.length > 0 && (
-            <div className="auth-menu-orgs">
-              <div className="auth-menu-section-label">Your {orgs.length === 1 ? "org" : "orgs"}</div>
-              {orgs.map((org) => (
+          {sharedTeams.length > 0 && (
+            <div className="auth-menu-shared-teams">
+              <div className="auth-menu-section-label">Your {sharedTeams.length === 1 ? "team" : "teams"}</div>
+              {sharedTeams.map((t) => (
                 <button
-                  key={org.orgId}
+                  key={t.sharedTeamId}
                   type="button"
-                  className="auth-menu-item auth-menu-org"
-                  onClick={() => goTo(`/org/${org.orgId}`)}
+                  className="auth-menu-item auth-menu-shared-team"
+                  onClick={() => goTo(`/shared-team/${t.sharedTeamId}`)}
                 >
-                  <span className="auth-menu-org-badge">{(org.name || "?").charAt(0).toUpperCase()}</span>
-                  <span className="auth-menu-org-id">
-                    <span className="auth-menu-org-name">{org.name}</span>
-                    <span className="auth-menu-org-role">
-                      {org.role}{org.teamNumber ? ` · ${programLabel(org.teamProgram)} ${org.teamNumber}`.trimEnd() : ""}
+                  <span className="auth-menu-shared-team-badge">{(t.name || "?").charAt(0).toUpperCase()}</span>
+                  <span className="auth-menu-shared-team-id">
+                    <span className="auth-menu-shared-team-name">{t.name}</span>
+                    <span className="auth-menu-shared-team-role">
+                      {t.role}{t.teamNumber ? ` · ${programLabel(t.teamProgram)} ${t.teamNumber}`.trimEnd() : ""}
                     </span>
                   </span>
-                  <ChevronRight size={14} className="auth-menu-org-go" />
+                  <ChevronRight size={14} className="auth-menu-shared-team-go" />
                 </button>
               ))}
             </div>

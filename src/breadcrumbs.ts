@@ -10,7 +10,7 @@
 // seeded from the current page. Accumulation happens across in-app (SPA)
 // navigations, which keep this module alive.
 
-export type CrumbKind = "list" | "event" | "team" | "org";
+export type CrumbKind = "list" | "event" | "team" | "shared-team";
 export type TrailEntry = { path: string; kind: CrumbKind; label: string };
 
 let trail: TrailEntry[] = [];
@@ -36,7 +36,7 @@ export function getTrail(): TrailEntry[] {
 const parentListFor = (kind: CrumbKind): TrailEntry | null => {
   if (kind === "event") return { path: "/events", kind: "list", label: "Events" };
   if (kind === "team") return { path: "/teams", kind: "list", label: "Teams" };
-  return null; // org has no parent listing page
+  return null; // shared-team has no parent listing page
 };
 
 // Record arrival at a trackable page. Rules:

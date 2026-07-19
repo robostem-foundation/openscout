@@ -3,7 +3,7 @@ import { useSyncExternalStore } from "react";
 // Compare tray store — holds up to 3 teams for side-by-side comparison.
 // Persisted to sessionStorage so it survives page refreshes within the same tab.
 // _modalOpen is NOT persisted — the modal always opens fresh.
-// Same epoch-based useSyncExternalStore pattern as org-notes.ts.
+// Same epoch-based useSyncExternalStore pattern as shared-team-notes.ts.
 
 export type TrayEntry = {
   teamId: number;
@@ -130,7 +130,7 @@ export function getTrayEntries(): TrayEntry[] {
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 // Epoch pattern: getSnapshot returns a primitive so useSyncExternalStore never
 // sees a phantom reference change. Derived values are computed in the hook body,
-// not inside getSnapshot — same fix as org-notes.ts.
+// not inside getSnapshot — same fix as shared-team-notes.ts.
 
 export function useCompareTray(): TrayEntry[] {
   useSyncExternalStore(subscribe, getEpoch, getEpoch);
