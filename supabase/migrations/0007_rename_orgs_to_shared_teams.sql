@@ -1,26 +1,57 @@
 -- 0007: Rename Org → Shared Team (in-place, no data loss).
 -- Run manually in the Supabase SQL editor (or Management API) in one transaction.
+--
+-- NOTE: This migration is defensive about org_picklists. In some environments
+-- 0005_picklist.sql was never applied, so org_picklists may not exist. The DO
+-- block below renames it when present, or creates shared_team_picklists fresh
+-- when absent — so the client's shared_team_picklists expectations always hold.
 begin;
 
--- ── 1. Tables ────────────────────────────────────────────────────────────────
+-- ── 1. Tables (these always exist from 0003) ─────────────────────────────────
 alter table public.orgs            rename to shared_teams;
 alter table public.org_members     rename to shared_team_members;
 alter table public.org_invites     rename to shared_team_invites;
 alter table public.org_favorites   rename to shared_team_favorites;
 alter table public.org_match_notes rename to shared_team_match_notes;
-alter table public.org_picklists   rename to shared_team_picklists;
 
--- ── 2. Columns (org_id → shared_team_id on every child table) ────────────────
+-- ── 2. Columns (org_id → shared_team_id on child tables that exist) ───────────
 alter table public.shared_team_members     rename column org_id to shared_team_id;
 alter table public.shared_team_invites     rename column org_id to shared_team_id;
 alter table public.shared_team_favorites   rename column org_id to shared_team_id;
 alter table public.shared_team_match_notes rename column org_id to shared_team_id;
-alter table public.shared_team_picklists   rename column org_id to shared_team_id;
 
--- ── 3. Index rename (from 0004) ──────────────────────────────────────────────
+-- ── 3. Picklists: rename if present, else create fresh ───────────────────────
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'org_picklists'
+  ) then
+    alter table public.org_picklists rename to shared_team_picklists;
+    alter table public.shared_team_picklists rename column org_id to shared_team_id;
+  else
+    create table public.shared_team_picklists (
+      id             uuid primary key default gen_random_uuid(),
+      shared_team_id uuid not null references public.shared_teams on delete cascade,
+      event_id       text not null,
+      team_id        text not null,
+      team_number    text not null,
+      team_name      text,
+      sort_order     float not null default 0,
+      notes          text,
+      crossed_out    boolean not null default false,
+      added_by       uuid references auth.users,
+      created_at     timestamptz not null default now(),
+      unique (shared_team_id, event_id, team_id)
+    );
+    alter table public.shared_team_picklists enable row level security;
+  end if;
+end $$;
+
+-- ── 4. Index rename (from 0004) ──────────────────────────────────────────────
 alter index if exists org_members_user_id_idx rename to shared_team_members_user_id_idx;
 
--- ── 4. Helper fn: is_shared_team_member ──────────────────────────────────────
+-- ── 5. Helper fn: is_shared_team_member ──────────────────────────────────────
 create or replace function public.is_shared_team_member(p_shared_team_id uuid)
 returns boolean language sql security definer stable as $$
   select exists (
@@ -30,7 +61,7 @@ returns boolean language sql security definer stable as $$
   )
 $$;
 
--- ── 5. Drop old policies (names referenced old fn/tables) ─────────────────────
+-- ── 6. Drop old policies (names referenced old fn/tables) ─────────────────────
 drop policy if exists "org members read"            on public.shared_teams;
 drop policy if exists "authenticated create org"    on public.shared_teams;
 drop policy if exists "org owner update"            on public.shared_teams;
@@ -45,7 +76,7 @@ drop policy if exists "org members manage notes"    on public.shared_team_match_
 drop policy if exists "org members manage picklist" on public.shared_team_picklists;
 drop policy if exists "org peers read profiles"     on public.profiles;
 
--- ── 6. Recreate policies against renamed tables/columns/fn ────────────────────
+-- ── 7. Recreate policies against renamed tables/columns/fn ────────────────────
 create policy "shared_team members read" on public.shared_teams
   for select using (public.is_shared_team_member(id) or owner_id = auth.uid());
 create policy "shared_team authenticated create" on public.shared_teams
@@ -97,7 +128,7 @@ create policy "shared_team peers read profiles" on public.profiles
       where m1.user_id = auth.uid() and m2.user_id = profiles.id)
   );
 
--- ── 7. RPCs: peek_invite (kept name) + join_shared_team_by_invite ────────────
+-- ── 8. RPCs: peek_invite (kept name) + join_shared_team_by_invite ────────────
 create or replace function public.peek_invite(p_invite_id uuid)
 returns jsonb language plpgsql security definer stable as $$
 declare v_id uuid; v_name text; v_count int;
