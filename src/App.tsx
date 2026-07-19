@@ -2899,13 +2899,14 @@ function PicklistTab({ event, sharedTeamId, rankings = [], isIq = false }: { eve
 // aria-label/title since there's no visible text.
 function MobileTabBar({ path }: { path: string }) {
   const { profile } = useAuth();
+  const sharedTeams = useSharedTeams();
   const hasMyTeam = !!(profile?.team_number && profile?.team_program);
   const tabs: Array<{ href: string; label: string; Icon: typeof House; active: boolean }> = [
     { href: "/", label: "Home", Icon: House, active: path === "/" },
     { href: "/events", label: "Events", Icon: CalendarDays, active: path === "/events" || path.startsWith("/event") },
     { href: "/teams", label: "Teams", Icon: Users, active: path === "/teams" || path.startsWith("/team") },
     { href: "/skills", label: "Skills", Icon: Trophy, active: path === "/skills" },
-    ...(hasMyTeam ? [{ href: "/my-team", label: "My Team", Icon: Star, active: path === "/my-team" }] : []),
+    ...((hasMyTeam || sharedTeams.length > 0) ? [{ href: "/my-team", label: "My Team", Icon: Star, active: path === "/my-team" || path.startsWith("/my-team/") }] : []),
   ];
   return (
     <nav className="mobile-tabbar" aria-label="Primary">
@@ -2964,7 +2965,7 @@ function MobileNavDrawer({ path, open, onClose }: { path: string; open: boolean;
     { href: "/events", label: "Events", Icon: CalendarDays, active: path === "/events" || path.startsWith("/event") },
     { href: "/teams", label: "Teams", Icon: Users, active: path === "/teams" || path.startsWith("/team") },
     { href: "/skills", label: "Skills", Icon: Trophy, active: path === "/skills" },
-    ...(hasMyTeam ? [{ href: "/my-team", label: "My Team", Icon: Star, active: path === "/my-team" }] : []),
+    ...((hasMyTeam || sharedTeams.length > 0) ? [{ href: "/my-team", label: "My Team", Icon: Star, active: path === "/my-team" || path.startsWith("/my-team/") }] : []),
   ];
   const name = profile?.display_name || suggestedName(user) || "Account";
   const team = profile?.team_number ? `${programLabel(profile.team_program)} ${profile.team_number}`.trim() : null;
@@ -3027,7 +3028,7 @@ function MobileNavDrawer({ path, open, onClose }: { path: string; open: boolean;
             <>
               <div className="mobile-nav-section-label">Your {sharedTeams.length === 1 ? "shared team" : "shared teams"}</div>
               {sharedTeams.map((team) => (
-                <button key={team.sharedTeamId} type="button" className="mobile-nav-link" onClick={() => go(`/shared-team/${team.sharedTeamId}`)}>
+                <button key={team.sharedTeamId} type="button" className="mobile-nav-link" onClick={() => go(`/my-team/${team.sharedTeamId}`)}>
                   <span className="mobile-nav-shared-team-badge">{(team.name || "?").charAt(0).toUpperCase()}</span>
                   {team.name}
                 </button>
@@ -3115,6 +3116,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
   // (synced filters/preferences) also get the subtle fade.
   const settingsEpoch = useSettingsEpoch();
   const { profile } = useAuth();
+  const sharedTeams = useSharedTeams();
   const hasMyTeam = !!(profile?.team_number && profile?.team_program);
   const routeKey = `${path.split("?")[0].split("#")[0]}:${settingsEpoch}`;
   const [navOpen, setNavOpen] = useState(false);
@@ -3126,7 +3128,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
     ["/events", "Events"],
     ["/teams", "Teams"],
     ["/skills", "Skills"],
-    ...(hasMyTeam ? [["/my-team", "My Team"]] : []),
+    ...((hasMyTeam || sharedTeams.length > 0) ? [["/my-team", "My Team"]] : []),
   ];
 
   return (
@@ -13362,7 +13364,7 @@ function CreateSharedTeamModal({ onClose }: { onClose: () => void }) {
     setSaving(true);
     try {
       const id = await createSharedTeam(name.trim(), effProgram || null, effNumber.trim() || null);
-      navigate(`/shared-team/${id}/settings`);
+      navigate(`/my-team/${id}#settings`);
     } finally { setSaving(false); onClose(); }
   };
 
@@ -13476,7 +13478,7 @@ function SharedTeamPanel() {
           key={team.sharedTeamId}
           title={team.name}
           icon={<Users size={15} />}
-          action={<Link href={`/shared-team/${team.sharedTeamId}/settings`}>Manage</Link>}
+          action={<Link href={`/my-team/${team.sharedTeamId}#settings`}>Manage</Link>}
         >
           <SharedTeamFavoritesList sharedTeamId={team.sharedTeamId} />
         </Panel>
@@ -13943,7 +13945,7 @@ function SharedTeamInvitesTab({ sharedTeamId }: { sharedTeamId: string }) {
   );
 }
 
-// ── Shared Team Workspace (/shared-team/:id) ──────────────────────────────────
+// ── Shared Team Workspace (embedded in /my-team/:id) ──────────────────────────
 
 const SHARED_TEAM_WORKSPACE_TABS = ["dashboard", "favorites", "notes", "picklists", "activity", "export", "settings"] as const;
 type SharedTeamWorkspaceTab = typeof SHARED_TEAM_WORKSPACE_TABS[number];
@@ -14281,7 +14283,7 @@ function SharedTeamSettingsSection({ sharedTeamId, team }: { sharedTeamId: strin
   );
 }
 
-function SharedTeamWorkspacePage({ sharedTeamId }: { sharedTeamId: string }) {
+function SharedTeamWorkspace({ sharedTeamId }: { sharedTeamId: string }) {
   const team = useSharedTeam(sharedTeamId);
   const ready = useSharedTeamsReady();
   const { user } = useAuth();
@@ -14300,34 +14302,15 @@ function SharedTeamWorkspacePage({ sharedTeamId }: { sharedTeamId: string }) {
   }, [team?.name]);
 
   if (!user) {
-    return (
-      <section className="page">
-        <div style={{ padding: "40px 20px", textAlign: "center" }}>
-          <p style={{ color: "var(--text-muted)" }}>Sign in to view this shared team.</p>
-        </div>
-      </section>
-    );
+    return <div className="myteam-state"><p style={{ color: "var(--text-muted)" }}>Sign in to view this shared team.</p></div>;
   }
 
   if (ready && !team) {
-    return (
-      <section className="page">
-        <div style={{ padding: "40px 20px", textAlign: "center" }}>
-          <p style={{ color: "var(--text-muted)" }}>Shared Team not found or you are not a member.</p>
-          <Link href="/">← Back to home</Link>
-        </div>
-      </section>
-    );
+    return <div className="myteam-state"><p style={{ color: "var(--text-muted)" }}>Shared Team not found or you are not a member.</p></div>;
   }
 
   return (
-    <section className="page">
-      <Breadcrumbs currentTab={SHARED_TEAM_WORKSPACE_NAV.find((entry) => entry.value === tab)?.label ?? "Dashboard"} />
-      <PageTitle icon={<Users />} title={team?.name ?? "Shared Team"} />
-      <div style={{ marginBottom: 12 }}>
-        <a href="/" className="join-shared-team-back" onClick={(e) => { e.preventDefault(); navigate("/"); }}>← Back to home</a>
-      </div>
-      <div className="settings-layout">
+    <div className="settings-layout">
         <nav className="settings-tabs" aria-label="Shared team sections">
           {SHARED_TEAM_WORKSPACE_NAV.map((t) => (
             <button
@@ -14351,7 +14334,6 @@ function SharedTeamWorkspacePage({ sharedTeamId }: { sharedTeamId: string }) {
           {tab === "settings"  && <SharedTeamSettingsSection sharedTeamId={sharedTeamId} team={team} />}
         </div>
       </div>
-    </section>
   );
 }
 
@@ -15502,7 +15484,51 @@ type MyTeamTimelineRow = {
   nextMatch: string | null;
 };
 
-function MyTeamPage() {
+function MyTeamPage({ sharedTeamId }: { sharedTeamId: string | null }) {
+  const sharedTeams = useSharedTeams();
+  const ready = useSharedTeamsReady();
+  const active = sharedTeamId ? sharedTeams.find((t) => t.sharedTeamId === sharedTeamId) : null;
+
+  // Deep-linked to a team you're not a member of (once memberships load) → home tab.
+  useEffect(() => {
+    if (sharedTeamId && ready && !active) navigate("/my-team");
+  }, [sharedTeamId, ready, active]);
+
+  const tabs: Array<{ id: string | null; label: string }> = [
+    { id: null, label: "My Team" },
+    ...sharedTeams.map((t) => ({ id: t.sharedTeamId, label: t.teamNumber || t.name })),
+  ];
+
+  return (
+    <section className="page myteam-shell">
+      {tabs.length > 1 && (
+        <nav className="myteam-tabs" aria-label="My Team sections">
+          {tabs.map((t) => {
+            const isActive = (t.id ?? null) === (sharedTeamId ?? null);
+            return (
+              <button
+                key={t.id ?? "__my"}
+                type="button"
+                className={`myteam-tab ${isActive ? "active" : ""}`}
+                onClick={() => navigate(t.id ? `/my-team/${t.id}` : "/my-team")}
+              >
+                {t.id ? <Users size={15} /> : <Star size={15} />}
+                {t.label}
+              </button>
+            );
+          })}
+        </nav>
+      )}
+      {sharedTeamId && active
+        ? <SharedTeamWorkspace sharedTeamId={sharedTeamId} />
+        : sharedTeamId && !ready
+          ? <div className="myteam-state"><p style={{ color: "var(--text-muted)" }}>Loading…</p></div>
+          : <MyTeamDashboard />}
+    </section>
+  );
+}
+
+function MyTeamDashboard() {
   const { profile, ready } = useAuth();
   const teamNumber = profile?.team_number?.trim() ?? "";
   const teamProgramId = profile?.team_program ? Number(profile.team_program) : null;
@@ -15697,21 +15723,21 @@ function MyTeamPage() {
   // ── states ──────────────────────────────────────────────────────────────
   if (ready && (!teamNumber || !teamProgramId)) {
     return (
-      <section className="page myteam-page">
+      <div className="myteam-page">
         <div className="panel myteam-empty">
           <Star size={26} />
           <h2>Set your team</h2>
           <p>Add your team number and program to your profile to unlock the My Team tab — your live events, matches, and season at a glance.</p>
           <Link href="/settings" className="button-link">Go to settings</Link>
         </div>
-      </section>
+      </div>
     );
   }
   if (lookup.loading || (!team && events.loading)) {
-    return <section className="page myteam-page"><Status loading={true} error={null} /></section>;
+    return <div className="myteam-page"><Status loading={true} error={null} /></div>;
   }
   if (!team) {
-    return <section className="page myteam-page"><div className="panel myteam-empty"><h2>Team not found</h2><p>We couldn't find {programLabel(profile?.team_program)} {teamNumber}.</p><Link href="/settings" className="button-link">Update profile</Link></div></section>;
+    return <div className="myteam-page"><div className="panel myteam-empty"><h2>Team not found</h2><p>We couldn't find {programLabel(profile?.team_program)} {teamNumber}.</p><Link href="/settings" className="button-link">Update profile</Link></div></div>;
   }
 
   const renderPieces = (row: MyTeamTimelineRow) => {
@@ -15942,24 +15968,29 @@ function MyTeamPage() {
   );
 
   const fullTimeline = !liveEvent && (
-    <section className="panel myteam-tl2-panel">
-      <h2><span className="ttl">Season timeline</span><span className="myteam-act muted-act">{timeline.length} events</span></h2>
-      <div className="myteam-timeline2">
-        {timeline.map((row, i) => (
-          <div key={row.event.id} className={`myteam-tnode ${i % 2 ? "right" : "left"} ${row.state} ${row.isNext ? "next" : ""}`}>
-            <Link href={eventPath(row.event)} className="myteam-tcard">{timelineNode(row)}</Link>
-          </div>
-        ))}
-        {!timeline.length && <div className="myteam-upnext-empty">No events this season yet.</div>}
+    <div className="myteam-timeline-row">
+      <section className="panel myteam-tl2-panel">
+        <h2><span className="ttl">Season timeline</span><span className="myteam-act muted-act">{timeline.length} events</span></h2>
+        <div className="myteam-timeline2">
+          {timeline.map((row, i) => (
+            <div key={row.event.id} className={`myteam-tnode ${i % 2 ? "right" : "left"} ${row.state} ${row.isNext ? "next" : ""}`}>
+              <Link href={eventPath(row.event)} className="myteam-tcard">{timelineNode(row)}</Link>
+            </div>
+          ))}
+          {!timeline.length && <div className="myteam-upnext-empty">No events this season yet.</div>}
+        </div>
+        <div className="myteam-tl-legend center">
+          <span><i className="nextpt" /> Next up</span><span><i className="up" /> Upcoming</span><span><i className="done" /> Completed</span>
+        </div>
+      </section>
+      <div className="myteam-timeline-aside" aria-hidden="true">
+        <Skeleton className="myteam-timeline-skeleton" />
       </div>
-      <div className="myteam-tl-legend center">
-        <span><i className="nextpt" /> Next up</span><span><i className="up" /> Upcoming</span><span><i className="done" /> Completed</span>
-      </div>
-    </section>
+    </div>
   );
 
   return (
-    <section className="page myteam-page">
+    <div className="myteam-page">
       {header}
       {liveBand}
       {upNextPanel}
@@ -15973,7 +16004,7 @@ function MyTeamPage() {
         <TeamShareCard team={team} record={record} winPct={winPct} skills={seasonSkillsSummary.combined} worldRank={wsEntry?.rank ?? null} awards={seasonAwards.length} season={season?.name} />
       )}
       {playback && <MatchVideoOverlay playback={playback} onClose={() => setPlayback(null)} />}
-    </section>
+    </div>
   );
 }
 
@@ -16013,17 +16044,18 @@ function route(path: string) {
   if (path === "/events") return <EventsPage />;
   if (path === "/teams") return <TeamsPage />;
   if (path === "/skills") return <WorldSkillsPage />;
-  if (path === "/my-team") return <MyTeamPage />;
+  const myTeamMatch = path.match(/^\/my-team(?:\/([0-9a-f-]+))?$/i);
+  if (myTeamMatch) return <MyTeamPage sharedTeamId={myTeamMatch[1] ?? null} />;
   if (path === "/insights") return <InsightsPage />;
   if (path === "/terms") return <TermsPage />;
   if (path === "/privacy") return <PrivacyPage />;
   const joinMatch = path.match(/^\/join\/([0-9a-f-]+)$/i);
   if (joinMatch) return <JoinSharedTeamPage token={joinMatch[1]} />;
-  // Redirect legacy /org/:id[/settings] → /shared-team/:id[/settings]
-  const legacyOrg = path.match(/^\/org\/([0-9a-f-]+)((?:\/settings)?)$/i);
-  if (legacyOrg) { navigate(`/shared-team/${legacyOrg[1]}${legacyOrg[2]}`); return null; }
-  const stMatch = path.match(/^\/shared-team\/([0-9a-f-]+)(?:\/settings)?$/i);
-  if (stMatch) return <SharedTeamWorkspacePage sharedTeamId={stMatch[1]} />;
+  // Redirect legacy /org/:id[/settings] and /shared-team/:id[/settings] → /my-team/:id
+  const legacyOrg = path.match(/^\/org\/([0-9a-f-]+)(\/settings)?$/i);
+  if (legacyOrg) { navigate(`/my-team/${legacyOrg[1]}${legacyOrg[2] ? "#settings" : ""}`); return null; }
+  const stMatch = path.match(/^\/shared-team\/([0-9a-f-]+)(\/settings)?$/i);
+  if (stMatch) { navigate(`/my-team/${stMatch[1]}${stMatch[2] ? "#settings" : ""}`); return null; }
   const compareMatch = path.match(/^\/compare\/(.+)$/);
   if (compareMatch) return <CompareFromUrl param={compareMatch[1]} />;
   const eventMatch = path.match(/^\/events?\/(.+)$/);
@@ -16046,8 +16078,8 @@ function recordBreadcrumb(path: string) {
   if (eventMatch) return recordTrail({ path: p, kind: "event", label: decodeURIComponent(eventMatch[1]) });
   const teamMatch = p.match(/^\/teams?\/(.+)$/);
   if (teamMatch) return recordTrail({ path: p, kind: "team", label: decodeURIComponent(teamMatch[1].split("/").pop() ?? teamMatch[1]) });
-  const stMatch = p.match(/^\/shared-team\/([0-9a-f-]+)/i);
-  if (stMatch) return recordTrail({ path: p, kind: "shared-team", label: "Shared Team" });
+  const myTeamTeamMatch = p.match(/^\/my-team\/([0-9a-f-]+)/i);
+  if (myTeamTeamMatch) return recordTrail({ path: p, kind: "shared-team", label: "Shared Team" });
   // Everything else (settings, insights, my-team, compare, join, legal) is not
   // part of the breadcrumb hierarchy — leave the trail as it is.
 }
