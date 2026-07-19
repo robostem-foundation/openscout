@@ -11405,6 +11405,23 @@ a.myteam-tcard:hover { border-color: var(--accent); }
   .myteam-tcard { display: block; max-width: none; }
 }
 
+/* ── My Team tab bar ─────────────────────────────────────────────────────── */
+.myteam-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.myteam-tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-size: 14px; font-weight: 600; cursor: pointer; }
+.myteam-tab:hover { color: var(--text); }
+.myteam-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+/* ── My Team timeline row + skeleton aside ───────────────────────────────── */
+.myteam-timeline-row { display: flex; gap: 16px; align-items: stretch; }
+.myteam-timeline-row .myteam-tl2-panel { flex: 0 0 auto; width: 100%; max-width: 460px; }
+.myteam-timeline-aside { flex: 1 1 0; min-width: 0; }
+.myteam-timeline-skeleton { height: 100%; width: 100%; min-height: 220px; border-radius: var(--radius); }
+@media (max-width: 900px) {
+  .myteam-timeline-row { flex-direction: column; }
+  .myteam-timeline-row .myteam-tl2-panel { max-width: none; }
+  .myteam-timeline-aside { display: none; }
+}
+
 
 /* ── Alliance selection simulator (selection tracker) ────────────────────── */
 .alliance-board { margin-top: 8px; }

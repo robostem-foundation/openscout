@@ -404,7 +404,7 @@ export function AuthSlot() {
                   key={t.sharedTeamId}
                   type="button"
                   className="auth-menu-item auth-menu-shared-team"
-                  onClick={() => goTo(`/shared-team/${t.sharedTeamId}`)}
+                  onClick={() => goTo(`/my-team/${t.sharedTeamId}`)}
                 >
                   <span className="auth-menu-shared-team-badge">{(t.name || "?").charAt(0).toUpperCase()}</span>
                   <span className="auth-menu-shared-team-id">
