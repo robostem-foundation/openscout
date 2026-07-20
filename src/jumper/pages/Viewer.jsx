@@ -76,7 +76,7 @@ async function detectOrFallbackStreams(event, divisions) {
     return newStreams;
 }
 
-function Viewer({ onGoToWorlds }) {
+function Viewer() {
     const [showEventHistory, setShowEventHistory] = useState(false);
     const [webcastCandidates, setWebcastCandidates] = useState([]);
     const [showStreamSuccess, setShowStreamSuccess] = useState(false); // Popup state
@@ -1637,33 +1637,23 @@ function Viewer({ onGoToWorlds }) {
                     {/* Right Column: Controls */}
                     <div className="xl:col-span-4 flex flex-col gap-4">
 
-                        {/* Top row: playback controls (left) + Worlds switch (right) */}
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="min-h-[38px] flex items-center">
-                                {event && streams.length > 0 && (
-                                    <SeekControls
-                                        onSeek={handleSeek}
-                                        onJumpToSyncedStart={() => {
-                                            const match = matches.find(m => m.id === selectedMatchId);
-                                            if (match) {
-                                                jumpToMatch(match);
-                                            } else {
-                                                alert("No match selected to sync back to.");
-                                            }
-                                        }}
-                                        canControl={!!players[activeStreamId]}
-                                    />
-                                )}
+                        {/* Playback controls — top of the sidebar */}
+                        {event && streams.length > 0 && (
+                            <div className="flex">
+                                <SeekControls
+                                    onSeek={handleSeek}
+                                    onJumpToSyncedStart={() => {
+                                        const match = matches.find(m => m.id === selectedMatchId);
+                                        if (match) {
+                                            jumpToMatch(match);
+                                        } else {
+                                            alert("No match selected to sync back to.");
+                                        }
+                                    }}
+                                    canControl={!!players[activeStreamId]}
+                                />
                             </div>
-                            <button
-                                onClick={() => onGoToWorlds && onGoToWorlds()}
-                                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--surface-2)] hover:bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text)] transition-colors flex-shrink-0"
-                                title="Switch to VEX Worlds"
-                            >
-                                <Globe className="w-4 h-4" />
-                                Worlds
-                            </button>
-                        </div>
+                        )}
 
                         {/* Sync Control Bar — hidden for now (manual sync WIP) */}
                         {false && event && streams.length > 0 && (
