@@ -11347,6 +11347,7 @@ a.myteam-cal:hover { border-color: var(--accent); }
 .myteam-node.done::before { border-color: var(--success); background: var(--success); }
 
 /* timeline (two-sided, full width) */
+.myteam-tl2-scroll { max-height: 520px; overflow-y: auto; }
 .myteam-timeline2 { position: relative; padding: 20px 20px 10px; }
 .myteam-timeline2::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: var(--border); transform: translateX(-50%); }
 .myteam-tnode { position: relative; width: 50%; box-sizing: border-box; padding: 9px 36px 9px 0; }
