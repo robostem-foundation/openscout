@@ -76,7 +76,7 @@ async function detectOrFallbackStreams(event, divisions) {
     return newStreams;
 }
 
-function Viewer() {
+function Viewer({ onGoToWorlds }) {
     const [showEventHistory, setShowEventHistory] = useState(false);
     const [webcastCandidates, setWebcastCandidates] = useState([]);
     const [showStreamSuccess, setShowStreamSuccess] = useState(false); // Popup state
@@ -1495,36 +1495,19 @@ function Viewer() {
                             </div>
                         </div>
 
-                        {/* Playback controls — directly beneath the video they control */}
-                        {event && streams.length > 0 && (
-                            <div className="flex justify-center xl:justify-start -mt-3">
-                                <SeekControls
-                                    onSeek={handleSeek}
-                                    onJumpToSyncedStart={() => {
-                                        const match = matches.find(m => m.id === selectedMatchId);
-                                        if (match) {
-                                            jumpToMatch(match);
-                                        } else {
-                                            alert("No match selected to sync back to.");
-                                        }
-                                    }}
-                                    canControl={!!players[activeStreamId]}
-                                />
-                            </div>
-                        )}
-
                         {/* Find Event + Livestream — two cards that resize as an event loads.
-                            Before an event: only Find Event (full width). After: Find Event
-                            shrinks and Livestream expands to fill the space. */}
-                        <div
-                            className="grid gap-4"
-                            style={{
-                                gridTemplateColumns: event ? 'minmax(220px, 300px) 1fr' : '1fr 0fr',
-                                transition: 'grid-template-columns 500ms cubic-bezier(0.16, 1, 0.3, 1)'
-                            }}
-                        >
+                            Before an event: only Find Event. After: Find Event shrinks and
+                            the Livestream card expands beside it. Widths animate in px so the
+                            transition is actually interpolable (fr/minmax mixes don't animate). */}
+                        <div className="flex gap-4 items-start">
                             {/* Card A: Find Event */}
-                            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-hidden min-w-0">
+                            <div
+                                className="bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-hidden flex-shrink-0"
+                                style={{
+                                    width: event ? 260 : 440,
+                                    transition: 'width 450ms cubic-bezier(0.16, 1, 0.3, 1)'
+                                }}
+                            >
                                 {event && isEventSearchCollapsed ? (
                                     <button
                                         onClick={() => setIsEventSearchCollapsed(false)}
@@ -1537,9 +1520,9 @@ function Viewer() {
                                         <span className="inline-block mt-2 text-[10px] font-semibold text-[var(--accent)] uppercase tracking-wider">Change event</span>
                                     </button>
                                 ) : (
-                                    <div className="p-4 space-y-4">
+                                    <div className="p-3 space-y-3">
                                         {event && (
-                                            <div className="flex justify-end -mb-2">
+                                            <div className="flex justify-end -mb-1">
                                                 <button
                                                     onClick={() => setIsEventSearchCollapsed(true)}
                                                     className="text-[var(--text-faint)] hover:text-[var(--text)] p-1"
@@ -1552,7 +1535,7 @@ function Viewer() {
 
                                         {/* Presets Dropdown */}
                                         {presets.length > 0 && (
-                                            <div className="space-y-2">
+                                            <div className="space-y-1.5">
                                                 <label className="flex items-center gap-1.5 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ml-1">
                                                     <Star className="w-3 h-3 text-yellow-500" />
                                                     Featured Events
@@ -1564,7 +1547,7 @@ function Viewer() {
                                                             if (preset) handleLoadPreset(preset);
                                                         }}
                                                         value={selectedPresetSku}
-                                                        className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all appearance-none cursor-pointer hover:border-[var(--border-strong)] shadow-inner"
+                                                        className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all appearance-none cursor-pointer hover:border-[var(--border-strong)] shadow-inner"
                                                     >
                                                         <option value="">Select an event...</option>
                                                         {presets.map((p, idx) => (
@@ -1578,7 +1561,7 @@ function Viewer() {
                                             </div>
                                         )}
 
-                                        <div className="space-y-2">
+                                        <div className="space-y-1.5">
                                             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ml-1">
                                                 <Link className="w-3 h-3 text-[var(--text-faint)]" />
                                                 Search by URL
@@ -1606,19 +1589,18 @@ function Viewer() {
                                                 </button>
                                             </div>
                                         </div>
-
-                                        {event && (
-                                            <div className="p-3 bg-[var(--surface)] border border-[var(--border)] rounded-lg mt-2">
-                                                <p className="text-[var(--text)] font-semibold text-sm line-clamp-1" title={event.name}>{event.name}</p>
-                                                <p className="text-xs text-[var(--text-muted)] mt-1">{event.location?.venue}, {event.location?.city}</p>
-                                            </div>
-                                        )}
                                     </div>
                                 )}
                             </div>
 
-                            {/* Card B: Livestream (collapsed to 0 width until an event loads) */}
-                            <div className={`bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 min-w-0 overflow-hidden transition-opacity duration-300 ${event ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                            {/* Card B: Livestream (0 width until an event loads, then expands) */}
+                            <div
+                                className={`bg-[var(--surface)] border border-[var(--border)] rounded-lg min-w-0 overflow-hidden ${event ? 'p-4 opacity-100' : 'opacity-0 pointer-events-none'}`}
+                                style={{
+                                    width: event ? 440 : 0,
+                                    transition: 'width 450ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease'
+                                }}
+                            >
                                 {event && (
                                     <>
                                         {webcastCandidates.length > 0 ? (
@@ -1658,6 +1640,34 @@ function Viewer() {
 
                     {/* Right Column: Controls */}
                     <div className="xl:col-span-4 flex flex-col gap-4">
+
+                        {/* Top row: playback controls (left) + Worlds switch (right) */}
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="min-h-[38px] flex items-center">
+                                {event && streams.length > 0 && (
+                                    <SeekControls
+                                        onSeek={handleSeek}
+                                        onJumpToSyncedStart={() => {
+                                            const match = matches.find(m => m.id === selectedMatchId);
+                                            if (match) {
+                                                jumpToMatch(match);
+                                            } else {
+                                                alert("No match selected to sync back to.");
+                                            }
+                                        }}
+                                        canControl={!!players[activeStreamId]}
+                                    />
+                                )}
+                            </div>
+                            <button
+                                onClick={() => onGoToWorlds && onGoToWorlds()}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--surface-2)] hover:bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text)] transition-colors flex-shrink-0"
+                                title="Switch to VEX Worlds"
+                            >
+                                <Globe className="w-4 h-4" />
+                                Worlds
+                            </button>
+                        </div>
 
                         {/* Sync Control Bar — hidden for now (manual sync WIP) */}
                         {false && event && streams.length > 0 && (
