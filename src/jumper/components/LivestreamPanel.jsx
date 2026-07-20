@@ -207,7 +207,7 @@ export default function LivestreamPanel({
                                     key={div.id}
                                     onClick={() => onActiveDivisionIdChange(div.id)}
                                     className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${active
-                                        ? 'bg-purple-600 text-white'
+                                        ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
                                         : 'text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:text-[var(--text)]'}`}
                                 >
                                     {div.name}

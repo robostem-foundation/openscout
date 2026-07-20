@@ -178,14 +178,11 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                     {/* Division toggle (multi-division events only) */}
                     {multiDivisionMode && event?.divisions?.length > 1 && (
                         <div className="flex items-center gap-2">
-                            <span className="w-16 flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Division</span>
-                            <div className="flex-1 flex gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5 min-w-0">
+                            <span className="w-16 flex-shrink-0 jmp-label">Division</span>
+                            <div className="seg-toggle flex-1 min-w-0">
                                 <button
                                     onClick={() => setSelectedDivisionId(null)}
-                                    className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors truncate ${!selectedDivisionId
-                                        ? 'bg-purple-600 text-white'
-                                        : 'text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
-                                        }`}
+                                    className={!selectedDivisionId ? 'active' : ''}
                                 >
                                     All
                                 </button>
@@ -193,10 +190,7 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                                     <button
                                         key={div.id}
                                         onClick={() => setSelectedDivisionId(div.id)}
-                                        className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors truncate ${selectedDivisionId === div.id
-                                            ? 'bg-purple-600 text-white'
-                                            : 'text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
-                                            }`}
+                                        className={selectedDivisionId === div.id ? 'active' : ''}
                                     >
                                         {div.name}
                                     </button>
@@ -207,24 +201,20 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
 
                     {/* View-mode toggle */}
                     <div className="flex items-center gap-2">
-                        <span className="w-16 flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Filter by</span>
-                        <div className="flex-1 flex gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5 min-w-0">
+                        <span className="w-16 flex-shrink-0 jmp-label">Filter by</span>
+                        <div className="seg-toggle flex-1 min-w-0">
                             {[
-                                { key: 'default', label: 'Default', Icon: Users },
-                                { key: 'rank', label: 'Rank', Icon: Trophy },
-                                { key: 'skills', label: 'Skills', Icon: Medal },
-                                { key: 'world_skills', label: 'World Skills', Icon: Globe },
-                            ].map(({ key, label, Icon }) => (
+                                { key: 'default', label: 'Team #' },
+                                { key: 'rank', label: 'Rank' },
+                                { key: 'skills', label: 'Skills' },
+                                { key: 'world_skills', label: 'World' },
+                            ].map(({ key, label }) => (
                                 <button
                                     key={key}
                                     onClick={() => setViewMode(key)}
-                                    className={`flex-1 min-w-0 flex items-center justify-center gap-1 px-1.5 py-1.5 rounded-md text-[11px] font-semibold whitespace-nowrap transition-colors ${viewMode === key
-                                        ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
-                                        : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
-                                        }`}
+                                    className={viewMode === key ? 'active' : ''}
                                 >
-                                    <Icon className="w-3 h-3 flex-shrink-0" />
-                                    <span className="truncate">{label}</span>
+                                    {label}
                                 </button>
                             ))}
                         </div>
@@ -234,17 +224,17 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
 
             {/* Divisions from Preset Disclaimer */}
             {divisionsFromPreset && (
-                <div className="mx-2 mt-2 p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
-                    <div className="text-xs text-orange-300">
-                        <span className="font-semibold">Divisions not yet published.</span>
-                        <span className="text-orange-400/80 ml-1">The official division assignments are not available from RobotEvents yet. Division filters may not work correctly until they are released.</span>
+                <div className="mx-2 mt-2 p-3 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-[#b7791f] flex-shrink-0 mt-0.5" />
+                    <div className="text-xs text-[var(--text-2)]">
+                        <span className="font-semibold text-[var(--text)]">Divisions not yet published.</span>
+                        <span className="text-[var(--text-muted)] ml-1">The official division assignments are not available from RobotEvents yet. Division filters may not work correctly until they are released.</span>
                     </div>
                 </div>
             )}
 
             {/* Team List */}
-            <div className="overflow-y-auto p-2 space-y-2 h-[600px]">
+            <div className="overflow-y-auto p-2 space-y-2 flex-1 min-h-[420px]">
                 {viewMode === 'world_skills' ? (
                     <div className="flex flex-col items-center justify-center h-64 text-center px-4">
                         <Globe className="w-12 h-12 text-[var(--text-faint)] mb-4" />
