@@ -15559,7 +15559,21 @@ function MyTeamDashboard() {
     }
     return best;
   }, [teamEvents]);
-  const seasonId = season?.id ?? null;
+  const seasonOptions = useMemo(() => {
+    const bySeason = new Map<number, { id: number; name: string; latest: number }>();
+    for (const e of teamEvents) {
+      const t = new Date(e.start ?? 0).getTime();
+      const existing = bySeason.get(e.season.id);
+      if (!existing || t > existing.latest) bySeason.set(e.season.id, { id: e.season.id, name: e.season.name, latest: t });
+    }
+    return [...bySeason.values()].sort((a, b) => b.latest - a.latest);
+  }, [teamEvents]);
+  const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
+  // Clear a stale selection when switching teams (season no longer in this team's list).
+  useEffect(() => {
+    if (selectedSeasonId != null && !seasonOptions.some((s) => s.id === selectedSeasonId)) setSelectedSeasonId(null);
+  }, [seasonOptions, selectedSeasonId]);
+  const seasonId = selectedSeasonId ?? season?.id ?? null;
   const liveRefresh = teamEvents.some(eventIsLive) ? liveEventRefreshMs : 0;
 
   // Season data buckets.
@@ -15671,6 +15685,11 @@ function MyTeamDashboard() {
     [teamEvents, now],
   );
   const nextEvent = upcoming[0] ?? null;
+  const nextEventTeams = useAsync(async () => {
+    if (!nextEvent) return null;
+    return api.eventTeams(nextEvent.id, { per_page: 1 });
+  }, [nextEvent?.id]);
+  const nextEventTeamCount = nextEventTeams.data?.meta.total ?? null;
 
   // Season timeline rows (current season + any future events), ascending.
   const timeline = useMemo<MyTeamTimelineRow[]>(() => {
@@ -15780,6 +15799,18 @@ function MyTeamDashboard() {
       </div>
       <div className="myteam-actions">
         <Link href="/settings" className="button-link secondary sm">Change team</Link>
+        {seasonOptions.length > 0 && (
+          <Select value={seasonId != null ? String(seasonId) : undefined} onValueChange={(v) => setSelectedSeasonId(Number(v))}>
+            <SelectTrigger className="myteam-season-select" aria-label="Season">
+              <SelectValue placeholder="Season" />
+            </SelectTrigger>
+            <SelectContent>
+              {seasonOptions.map((s) => (
+                <SelectItem key={s.id} value={String(s.id)}>{shortSeasonName(s.name)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
     </div>
   );
@@ -15869,14 +15900,14 @@ function MyTeamDashboard() {
       <h2><span className="ttl">Up next</span><span className="myteam-act muted-act">Not currently at an event</span></h2>
       {nextEvent ? (
         <div className="myteam-upnext">
-          <div className="myteam-cal"><div className="mo">{new Intl.DateTimeFormat("en-US", { month: "short" }).format(new Date(nextEvent.start ?? 0))}</div><div className="day">{new Date(nextEvent.start ?? 0).getDate()}</div></div>
+          <Link className="myteam-cal" href={eventPath(nextEvent)}><div className="mo">{new Intl.DateTimeFormat("en-US", { month: "short" }).format(new Date(nextEvent.start ?? 0))}</div><div className="day">{new Date(nextEvent.start ?? 0).getDate()}</div></Link>
           <div className="info">
-            <div className="nm">{nextEvent.name}</div>
+            <Link className="nm" href={eventPath(nextEvent)}>{nextEvent.name}</Link>
             <div className="sub"><span>{locationLine(nextEvent)}</span><span className={`event-priority priority-${eventCategory(nextEvent).rank}`}>{eventCategory(nextEvent).label}</span><span>{myTeamDateLabel(nextEvent.start)}</span></div>
           </div>
           <div className="right">
             <div className="count"><div className="n">{Math.max(0, Math.round((new Date(nextEvent.start ?? 0).getTime() - now) / oneDay))}</div><div className="l">days away</div></div>
-            <Link className="button-link sm" href={eventPath(nextEvent)}>Event page →</Link>
+            <div className="count"><div className="n">{nextEventTeamCount ?? "…"}</div><div className="l">teams</div></div>
           </div>
         </div>
       ) : (
