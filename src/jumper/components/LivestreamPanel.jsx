@@ -15,7 +15,7 @@ function StreamPill({ stream, loading, greyed, onEdit, onRemove }) {
     const undated = !stream.streamStartTime && !loading;
 
     return (
-        <div className={`group/pill relative inline-flex items-center gap-1.5 px-2 py-1.5 rounded-full border text-xs font-medium transition-all bg-[var(--surface-2)]/60 border-[var(--border)] text-[var(--text)] hover:border-[var(--border-strong)] ${greyed ? 'opacity-40 border-dashed' : ''}`}>
+        <div className={`group/pill relative inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all bg-[var(--surface-2)]/60 border-[var(--border)] text-[var(--text)] hover:border-[var(--border-strong)] ${greyed ? 'opacity-40 border-dashed' : ''}`}>
             <Youtube className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
             <span className="tabular-nums whitespace-nowrap flex items-center gap-1">
                 {loading && <Loader className="w-3 h-3 animate-spin text-[var(--accent)]" />}

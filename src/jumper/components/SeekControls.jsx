@@ -44,7 +44,7 @@ export default function SeekControls({ onSeek, onJumpToSyncedStart, canControl }
             {feedback && (
                 <div
                     key={feedback.key}
-                    className={`absolute -top-9 left-1/2 -translate-x-1/2 pointer-events-none px-3 py-1 rounded-full text-[10px] font-semibold z-50 animate-feedback-pill border border-white/10 ${feedback.isPositive ? 'bg-[var(--accent)] text-[var(--accent-ink)]' : 'bg-[var(--surface-2)] text-[var(--text)]'}`}
+                    className={`absolute -top-9 left-1/2 -translate-x-1/2 pointer-events-none px-3 py-1 rounded-md text-[10px] font-semibold z-50 animate-feedback-pill border border-white/10 ${feedback.isPositive ? 'bg-[var(--accent)] text-[var(--accent-ink)]' : 'bg-[var(--surface-2)] text-[var(--text)]'}`}
                 >
                     {feedback.text}
                 </div>
