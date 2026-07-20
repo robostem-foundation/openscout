@@ -24,6 +24,21 @@
   .jumper-root textarea::placeholder { color: var(--text-faint); }
 }
 
+/* App-shell fit: on wide screens the whole tool fills the viewport exactly —
+   no page scroll, only the footer sits below the fold. The two columns become
+   equal-height (a perfect rectangle) and their inner lists scroll internally.
+   Offset = topbar (12 + 58 + 24 margins) + .page bottom padding (30) = 124px.
+   Below xl the layout returns to normal document flow (stacks and page-scrolls). */
+@media (min-width: 1280px) {
+  /* Trim the page's default 30px bottom padding so the fitted grid gets that
+     room back — offset = topbar (94) + this reduced bottom padding (8) = 102px. */
+  .page.jumper-root { padding-bottom: 8px; }
+  .jumper-root .jmp-fit {
+    height: calc(100dvh - 102px);
+    overflow: hidden;
+  }
+}
+
 /* Match Jumper / VEX Worlds switch — uses OpenScout's .seg-toggle, kept
    compact (auto width instead of full-bleed) at the top of the tab. The
    .jumper-root ancestor raises specificity above .seg-toggle's width:100%. */

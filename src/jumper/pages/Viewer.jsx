@@ -1401,9 +1401,9 @@ function Viewer({ onGoToWorlds }) {
 
 
             <main className="w-full">
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 h-full">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 jmp-fit">
                     {/* Left Column: Stream & Stream Manager */}
-                    <div className="xl:col-span-8 flex flex-col gap-6">
+                    <div className="xl:col-span-8 flex flex-col gap-6 xl:h-full xl:min-h-0">
                         {/* Stream Player */}
                         <div className="bg-[var(--surface)] border border-[var(--border)] p-1 rounded-lg overflow-hidden flex-shrink-0">
                             <div className="bg-black rounded-lg overflow-hidden aspect-video relative group">
@@ -1512,43 +1512,49 @@ function Viewer({ onGoToWorlds }) {
                             </div>
                         </div>
 
-                        {/* Find Event + Livestream — two cards that resize as an event loads.
-                            Before an event: only Find Event. After: Find Event shrinks and
-                            the Livestream card expands beside it. Widths animate in px so the
-                            transition is actually interpolable (fr/minmax mixes don't animate). */}
+                        {/* Find Event + Livestream — 50/50 once an event loads (before that,
+                            Find Event spans full width and the Livestream card is 0-width).
+                            On wide screens this row fills the remaining left-column height so
+                            the two columns form a clean rectangle; on narrow screens the event
+                            card collapses to a "Change event" button. */}
                         <div
-                            className="grid w-full items-stretch"
+                            className="grid w-full items-stretch xl:flex-1 xl:min-h-0"
                             style={{
-                                gridTemplateColumns: event ? '2fr 5fr' : '1fr 0fr',
+                                gridTemplateColumns: event ? '1fr 1fr' : '1fr 0fr',
                                 columnGap: event ? '1rem' : 0,
                                 transition: 'grid-template-columns 450ms cubic-bezier(0.16, 1, 0.3, 1)'
                             }}
                         >
-                            {/* Card A: Find Event */}
-                            <div className="relative bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-hidden min-w-0">
-                                {event && isEventSearchCollapsed ? (
-                                    <button
-                                        onClick={() => setIsEventSearchCollapsed(false)}
-                                        className="w-full h-full text-left p-3 hover:bg-[var(--surface-2)]/50 transition-colors"
-                                    >
-                                        <p className="text-[var(--text)] font-semibold text-sm line-clamp-2" title={event.name}>{event.name}</p>
-                                        <p className="text-xs text-[var(--text-muted)] mt-1 line-clamp-1">
-                                            {event.location?.venue}{event.location?.city ? `, ${event.location.city}` : ''}
-                                        </p>
-                                        <span className="inline-block mt-2 text-[10px] font-semibold text-[var(--accent)] uppercase tracking-wider">Change event</span>
-                                    </button>
-                                ) : (
-                                    <div className="p-3 space-y-3">
-                                        {event && (
-                                            <button
-                                                onClick={() => setIsEventSearchCollapsed(true)}
-                                                className="absolute top-2.5 right-2.5 z-10 text-[var(--text-faint)] hover:text-[var(--text)] p-0.5"
-                                                title="Collapse"
-                                            >
-                                                <ChevronUp className="w-4 h-4" />
-                                            </button>
-                                        )}
+                            {/* Card A: Find Event — expanded (name/place + pickers) when there's
+                                room; on narrow screens it collapses to a Change-event button. */}
+                            <div className="relative bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-y-auto min-w-0 flex flex-col">
+                                {event && (
+                                    <>
+                                        {/* Static name/place header — shown on wide screens */}
+                                        <div className="hidden xl:block px-3 py-2 border-b border-[var(--border)] flex-shrink-0">
+                                            <p className="text-[var(--text)] font-semibold text-[13px] leading-tight line-clamp-1" title={event.name}>{event.name}</p>
+                                            <p className="text-[11px] text-[var(--text-muted)] mt-0.5 line-clamp-1">
+                                                {event.location?.venue}{event.location?.city ? `, ${event.location.city}` : ''}
+                                            </p>
+                                        </div>
+                                        {/* Narrow-screen collapse toggle */}
+                                        <button
+                                            onClick={() => setIsEventSearchCollapsed((c) => !c)}
+                                            className="xl:hidden w-full text-left p-3 hover:bg-[var(--surface-2)]/50 transition-colors flex-shrink-0"
+                                        >
+                                            <p className="text-[var(--text)] font-semibold text-sm line-clamp-2" title={event.name}>{event.name}</p>
+                                            <p className="text-xs text-[var(--text-muted)] mt-1 line-clamp-1">
+                                                {event.location?.venue}{event.location?.city ? `, ${event.location.city}` : ''}
+                                            </p>
+                                            <span className="inline-flex items-center gap-1 mt-2 text-[10px] font-semibold text-[var(--accent)] uppercase tracking-wider">
+                                                {isEventSearchCollapsed ? 'Change event' : <>Hide <ChevronUp className="w-3 h-3" /></>}
+                                            </span>
+                                        </button>
+                                    </>
+                                )}
 
+                                {/* Pickers: always visible on xl; on narrow screens hidden while collapsed */}
+                                <div className={`p-3 space-y-2 flex-shrink-0 ${event && isEventSearchCollapsed ? 'hidden xl:block' : 'block'}`}>
                                         {/* Presets Dropdown */}
                                         {presets.length > 0 && (
                                             <div className="space-y-1.5">
@@ -1605,13 +1611,12 @@ function Viewer({ onGoToWorlds }) {
                                                 </button>
                                             </div>
                                         </div>
-                                    </div>
-                                )}
+                                </div>
                             </div>
 
                             {/* Card B: Livestream (0 width until an event loads, then expands) */}
                             <div
-                                className={`bg-[var(--surface)] border border-[var(--border)] rounded-lg min-w-0 overflow-hidden ${event ? 'p-4 opacity-100' : 'opacity-0 pointer-events-none'}`}
+                                className={`bg-[var(--surface)] border border-[var(--border)] rounded-lg min-w-0 overflow-y-auto ${event ? 'p-4 opacity-100' : 'opacity-0 pointer-events-none'}`}
                                 style={{ transition: 'opacity 300ms ease' }}
                             >
                                 {event && (
@@ -1652,7 +1657,7 @@ function Viewer({ onGoToWorlds }) {
                     </div>
 
                     {/* Right Column: Controls */}
-                    <div className="xl:col-span-4 flex flex-col gap-4 xl:self-start xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
+                    <div className="xl:col-span-4 flex flex-col gap-4 xl:h-full xl:min-h-0">
 
                         {/* Top row: playback controls (left) + Worlds switch filling the rest (right) */}
                         <div className="flex flex-wrap items-center gap-2">
