@@ -2219,12 +2219,8 @@ function Viewer({ onGoToWorlds }) {
 
                                                             return (
                                                                 <div key={dayIndex}>
-                                                                    <div className="flex items-center gap-2 mb-2 sticky top-0 bg-[var(--surface)]/95 backdrop-blur py-2 z-10 -mx-4 px-4">
-                                                                        <div className="flex-1 h-px bg-[var(--surface-3)]"></div>
-                                                                        <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
-                                                                            {dayLabel}
-                                                                        </span>
-                                                                        <div className="flex-1 h-px bg-[var(--surface-3)]"></div>
+                                                                    <div className="jmp-daysep sticky top-0 z-10 -mx-4 px-4 mb-2 bg-[var(--surface)]/95 backdrop-blur">
+                                                                        <span className="jmp-label">{dayLabel}</span>
                                                                     </div>
                                                                     <div className="space-y-2">
                                                                         {dayMatches.map((match) => {
@@ -2244,26 +2240,22 @@ function Viewer({ onGoToWorlds }) {
                                                                             return (
                                                                                 <div
                                                                                     key={match.id}
-                                                                                    className={`bg-[var(--surface)] border rounded-lg p-3 transition-colors ${grayOutReason ? 'border-[var(--border)] opacity-60' :
-                                                                                        selectedMatchId === match.id ? 'border-[var(--accent)] bg-[var(--surface)]' : 'border-[var(--border)] hover:border-[var(--border-strong)]'
-                                                                                        }`}
+                                                                                    className={`jmp-row ${grayOutReason ? 'opacity-60' : ''}`}
+                                                                                    style={selectedMatchId === match.id ? { borderColor: 'var(--accent)' } : undefined}
                                                                                 >
-                                                                                    <div className="flex justify-between items-start mb-2">
-                                                                                        <div>
-                                                                                            <span className="font-semibold text-[var(--accent)]">{matchName}</span>
-                                                                                            <span className="text-[var(--text-faint)] text-xs ml-2">
+                                                                                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                                                                                        <div className="flex items-baseline gap-2 min-w-0">
+                                                                                            <span className="text-[13px] font-semibold text-[var(--text)] truncate">{matchName}</span>
+                                                                                            <span className="jmp-label shrink-0">
                                                                                                 {match.started ? format(new Date(match.started), 'h:mm a') :
                                                                                                     match.scheduled ? format(new Date(match.scheduled), 'h:mm a') : 'Scheduled'}
                                                                                             </span>
                                                                                         </div>
-                                                                                        <div className="flex gap-1">
+                                                                                        <div className="flex items-center gap-1 shrink-0">
                                                                                             <button
                                                                                                 onClick={() => jumpToMatch(match)}
                                                                                                 disabled={!!grayOutReason}
-                                                                                                className={`p-1.5 rounded-md transition-colors ${grayOutReason
-                                                                                                    ? 'text-[var(--text-faint)] cursor-not-allowed'
-                                                                                                    : 'bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20'
-                                                                                                    }`}
+                                                                                                className="jmp-iconbtn"
                                                                                                 title={grayOutReason || "Jump to match"}
                                                                                             >
                                                                                                 <Play className="w-3 h-3 fill-current" />
@@ -2296,7 +2288,7 @@ function Viewer({ onGoToWorlds }) {
                                                                                                         setTimeout(() => btn.classList.remove('text-red-400'), 1000);
                                                                                                     }
                                                                                                 }}
-                                                                                                className="p-1.5 rounded-md transition-colors bg-[var(--surface-2)]/50 text-[var(--text-faint)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]"
+                                                                                                className="p-1.5 rounded-md transition-colors text-[var(--text-faint)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]"
                                                                                                 title="Copy link to match"
                                                                                             >
                                                                                                 <Share2 className="w-3 h-3" />
@@ -2304,15 +2296,11 @@ function Viewer({ onGoToWorlds }) {
                                                                                         </div>
                                                                                     </div>
 
-                                                                                    <div className="grid grid-cols-2 gap-4 text-xs">
+                                                                                    <div className="grid grid-cols-2 gap-1.5">
                                                                                         {match.alliances.map((alliance) => (
-                                                                                            <div key={alliance.color} className={`flex flex-col ${alliance.color === 'red' ? 'text-[var(--danger)]' : 'text-[var(--score-blue)]'}`}>
-                                                                                                {/* Score at top of column */}
-                                                                                                <div className="flex justify-between items-end border-b border-[var(--border)] pb-1 mb-1">
-                                                                                                    <span className="font-mono text-lg font-semibold opacity-90">{alliance.score}</span>
-                                                                                                </div>
-                                                                                                {/* Teams list */}
-                                                                                                <div className="flex flex-col gap-1">
+                                                                                            <div key={alliance.color} className={`jmp-alliance ${alliance.color === 'red' ? 'red' : 'blue'}`}>
+                                                                                                <span className="jmp-alliance-score">{alliance.score}</span>
+                                                                                                <div className="flex flex-col gap-0.5 min-w-0">
                                                                                                     {alliance.teams.map((t, ti) => (
                                                                                                         <button
                                                                                                             key={t.team.id ?? `${alliance.color}-${ti}`}
@@ -2323,9 +2311,8 @@ function Viewer({ onGoToWorlds }) {
                                                                                                                 setTeamNumber(teamNum);
                                                                                                                 handleTeamSearch(teamNum);
                                                                                                             }}
-                                                                                                            className={`text-left hover:underline cursor-pointer transition-all ${isSearchedTeam(t) ? 'bg-white/10 rounded px-1 -mx-1 font-semibold text-[var(--text)]' : 'hover:text-[var(--text)]'}`}
+                                                                                                            className={`jmp-alliance-team text-left hover:underline cursor-pointer ${isSearchedTeam(t) ? 'hit' : ''}`}
                                                                                                         >
-                                                                                                            {/* Fallback to name if number is missing */}
                                                                                                             {t.team.number || t.team.name}
                                                                                                         </button>
                                                                                                     ))}

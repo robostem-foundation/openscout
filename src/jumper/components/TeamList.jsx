@@ -259,66 +259,49 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                             <button
                                 key={team.id}
                                 onClick={() => onTeamSelect(team.number)}
-                                className="w-full bg-[var(--surface)] hover:border-[var(--border-strong)] hover:shadow-sm border border-[var(--border)] rounded-lg p-3 flex items-center justify-between group transition-all text-left"
+                                className="jmp-row group"
                             >
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        {rankingData && viewMode === 'rank' && (
-                                            <span className="text-sm font-medium text-[var(--text-muted)] w-6">#{rankingData.rank}</span>
+                                <div className="flex items-center gap-2.5">
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        {viewMode === 'rank' && rankingData && (
+                                            <span className="jmp-rank">#{rankingData.rank}</span>
                                         )}
-                                        <span className="font-semibold text-[var(--accent)]">{team.number}</span>
-                                        <span className="text-xs text-[var(--text-muted)] truncate max-w-[100px]">{team.team_name}</span>
+                                        <span className="text-[15px] font-semibold text-[var(--text)] tracking-tight shrink-0">{team.number}</span>
+                                        {team.team_name && (
+                                            <span className="text-xs text-[var(--text-muted)] truncate">{team.team_name}</span>
+                                        )}
                                         {multiDivisionMode && rankingData?.division && (
-                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-muted)]">
+                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-muted)] shrink-0">
                                                 {rankingData.division.name}
                                             </span>
                                         )}
                                     </div>
 
-                                    {/* Show ranking details when in rank view mode */}
-                                    {viewMode === 'rank' && rankingData && (
-                                        <div className="flex items-center gap-3 mt-1.5 text-[10px] text-[var(--text-faint)]">
-                                            <span className="flex items-center gap-0.5">
-                                                <span className="text-[var(--text-muted)]">W-L-T:</span>
-                                                <span className="text-[var(--text-2)]">{rankingData.wins}-{rankingData.losses}-{rankingData.ties}</span>
-                                            </span>
-                                            <span className="text-[var(--text-faint)]">|</span>
-                                            <span className="flex items-center gap-1">
-                                                <span className="text-[var(--text-muted)]">WP:</span>
-                                                <span className="text-[var(--text-2)]">{rankingData.wp}</span>
-                                                <span className="text-[var(--text-faint)]">/</span>
-                                                <span className="text-[var(--text-muted)]">AP:</span>
-                                                <span className="text-[var(--text-2)]">{rankingData.ap}</span>
-                                                <span className="text-[var(--text-faint)]">/</span>
-                                                <span className="text-[var(--text-muted)]">SP:</span>
-                                                <span className="text-[var(--text-2)]">{rankingData.sp}</span>
-                                            </span>
-                                        </div>
-                                    )}
-
-                                    {/* Show other stats when NOT in rank view mode */}
-                                    {viewMode !== 'rank' && (
-                                        <div className="flex items-center gap-3 mt-1 text-[10px] text-[var(--text-faint)]">
-                                            {rankingData && (
-                                                <span className="flex items-center gap-1">
-                                                    <Trophy className="w-3 h-3" /> #{rankingData.rank}
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        {viewMode === 'rank' && rankingData ? (
+                                            <>
+                                                <span className="jmp-record">
+                                                    <span className="w">{rankingData.wins}</span>-<span className="l">{rankingData.losses}</span>-<span className="t">{rankingData.ties}</span>
                                                 </span>
-                                            )}
-                                            {skillScore !== undefined && (
-                                                <span className="flex items-center gap-1">
-                                                    <Medal className="w-3 h-3" /> {skillScore}
-                                                </span>
-                                            )}
-                                            {worldRank && (
-                                                <span className="flex items-center gap-1">
-                                                    <Globe className="w-3 h-3" /> #{worldRank}
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <Search className="w-4 h-4 text-[var(--text-muted)]" />
+                                                <span className="jmp-stat"><span className="jmp-label">WP</span><b>{rankingData.wp}</b></span>
+                                                <span className="jmp-stat"><span className="jmp-label">AP</span><b>{rankingData.ap}</b></span>
+                                                <span className="jmp-stat"><span className="jmp-label">SP</span><b>{rankingData.sp}</b></span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                {rankingData && (
+                                                    <span className="jmp-stat"><Trophy className="w-3 h-3 text-[var(--text-faint)]" /><b>#{rankingData.rank}</b></span>
+                                                )}
+                                                {skillScore !== undefined && (
+                                                    <span className="jmp-stat"><Medal className="w-3 h-3 text-[var(--text-faint)]" /><b>{skillScore}</b></span>
+                                                )}
+                                                {worldRank && (
+                                                    <span className="jmp-stat"><Globe className="w-3 h-3 text-[var(--text-faint)]" /><b>#{worldRank}</b></span>
+                                                )}
+                                            </>
+                                        )}
+                                        <Search className="w-3.5 h-3.5 text-[var(--text-faint)] opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </div>
                                 </div>
                             </button>
                         );
