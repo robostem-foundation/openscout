@@ -1460,7 +1460,7 @@ function Viewer() {
                                                                     setActiveStreamId(targetStream.id);
                                                                 }
                                                             }}
-                                                            className={`px-3 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all backdrop-blur-md border ${activeDivisionId === div.id
+                                                            className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all backdrop-blur-md border ${activeDivisionId === div.id
                                                                 ? 'bg-[var(--accent)] text-[var(--accent-ink)] border-[var(--accent)]  shadow-[var(--accent)]/20'
                                                                 : 'bg-[var(--surface-2)]/60 text-[var(--text-muted)] border-[var(--border)] hover:text-[var(--text)] hover:bg-[var(--surface-2)]/80'
                                                                 } ${!hasAnyVideo ? 'opacity-50' : ''}`}
@@ -1815,7 +1815,7 @@ function Viewer() {
                                                         <p className="text-xs text-[var(--text-muted)]">{team.organization}</p>
                                                     </div>
                                                     {matches.length > 0 && matches[0].division && multiDivisionMode && (
-                                                        <span className="text-[10px] font-semibold px-2 py-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 uppercase tracking-wider">
+                                                        <span className="text-[10px] font-semibold px-2 py-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
                                                             {matches[0].division.name}
                                                         </span>
                                                     )}
@@ -2103,7 +2103,7 @@ function Viewer() {
                                                             <button
                                                                 key={div.id}
                                                                 onClick={() => setActiveDivisionId(div.id)}
-                                                                className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-colors truncate ${activeDivisionId === div.id
+                                                                className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors truncate ${activeDivisionId === div.id
                                                                     ? 'bg-purple-600 text-white'
                                                                     : 'text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
                                                                     }`}

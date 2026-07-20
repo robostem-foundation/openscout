@@ -182,7 +182,7 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                             <div className="flex-1 flex gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5 min-w-0">
                                 <button
                                     onClick={() => setSelectedDivisionId(null)}
-                                    className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-colors truncate ${!selectedDivisionId
+                                    className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors truncate ${!selectedDivisionId
                                         ? 'bg-purple-600 text-white'
                                         : 'text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
                                         }`}
@@ -193,7 +193,7 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                                     <button
                                         key={div.id}
                                         onClick={() => setSelectedDivisionId(div.id)}
-                                        className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-colors truncate ${selectedDivisionId === div.id
+                                        className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors truncate ${selectedDivisionId === div.id
                                             ? 'bg-purple-600 text-white'
                                             : 'text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
                                             }`}
@@ -279,7 +279,7 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                                         <span className="font-semibold text-[var(--accent)]">{team.number}</span>
                                         <span className="text-xs text-[var(--text-muted)] truncate max-w-[100px]">{team.team_name}</span>
                                         {multiDivisionMode && rankingData?.division && (
-                                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-muted)] uppercase tracking-tight">
+                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-muted)]">
                                                 {rankingData.division.name}
                                             </span>
                                         )}
