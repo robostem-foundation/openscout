@@ -12304,25 +12304,35 @@ function WorldSkillsPageInner() {
         subtitle=""
       />
 
-      {/* Program, season, and grade controls */}
+      {/* Program, season, and grade controls — one shared tab row */}
       <div className="ws-controls" onClick={(e) => e.stopPropagation()}>
-        <div className="segmented ws-segmented-inline">
-          <button className={program === "v5rc" ? "active" : ""} onClick={() => setProgram("v5rc")}>V5RC</button>
-          <button className={program === "viqrc" ? "active" : ""} onClick={() => setProgram("viqrc")}>VIQRC</button>
+        <div className="segmented ws-segmented-inline" role="group" aria-label="Program">
+          <button aria-pressed={program === "v5rc"} className={program === "v5rc" ? "active" : ""} onClick={() => setProgram("v5rc")}>V5RC</button>
+          <button aria-pressed={program === "viqrc"} className={program === "viqrc" ? "active" : ""} onClick={() => setProgram("viqrc")}>VIQRC</button>
         </div>
 
-        {/* Season dropdown */}
-        <div className={`ws-filter-menu ws-season-picker${openMenu === "season" ? " open" : ""}`}>
-          <button onClick={() => setOpenMenu(openMenu === "season" ? null : "season")}>
+        <span className="ws-controls-sep" aria-hidden="true" />
+
+        {/* Season dropdown — a tab-styled menu trigger, not a bordered box */}
+        <div className={`ws-season-picker${openMenu === "season" ? " open" : ""}`}>
+          <button
+            aria-label="Season"
+            aria-haspopup="listbox"
+            aria-expanded={openMenu === "season"}
+            title="Season"
+            onClick={() => setOpenMenu(openMenu === "season" ? null : "season")}
+          >
             {seasonOptions.find((s) => s.id === resolvedSeasonId)?.label ?? (seasonsAsync.loading ? "Loading…" : "Season")}
-            <ChevronDown size={12} />
+            <ChevronDown size={14} className="ws-season-chevron" />
           </button>
           {openMenu === "season" && (
-            <div className="ws-filter-dropdown">
+            <div className="ws-filter-dropdown" role="listbox" aria-label="Season">
               <div className="ws-filter-list">
                 {seasonOptions.map((s) => (
                   <button
                     key={s.id}
+                    role="option"
+                    aria-selected={s.id === resolvedSeasonId}
                     className={`ws-season-opt${s.id === resolvedSeasonId ? " active" : ""}`}
                     onClick={() => { setManualSeasonId(s.id); setPage(1); setOpenMenu(null); }}
                   >
@@ -12335,14 +12345,17 @@ function WorldSkillsPageInner() {
           )}
         </div>
 
-        <div className="segmented ws-segmented-inline">
+        <span className="ws-controls-sep" aria-hidden="true" />
+
+        <div className="segmented ws-segmented-inline" role="group" aria-label="Grade level">
           {gradeOptions.map((g) => (
             <button
               key={g}
+              aria-pressed={grade === g}
               className={grade === g ? "active" : ""}
               onClick={() => { setGrade(g); setPage(1); }}
             >
-              {g === "High School" ? "High School" : g === "Middle School" ? "Middle School" : "Elementary"}
+              {g}
             </button>
           ))}
         </div>
