@@ -120,38 +120,45 @@ body {
   overflow-x: clip;
 }
 
-a {
+/* NOTE: these app-wide element resets are scoped to exclude the Jumper tab
+   (`.jumper-root`, src/jumper/**). That subtree is a ported Tailwind app and
+   relies on its own utility classes for typography/color; without the exclusion
+   the unlayered `font: inherit` here would override its `text-*`/`font-*`
+   utilities. `:where(:not(...))` keeps specificity identical (0,0,1) so behavior
+   everywhere else is unchanged. Jumper re-establishes its own control defaults
+   in src/jumper/jumper.css. */
+a:where(:not(.jumper-root *)) {
   color: var(--link);
   text-decoration: none;
 }
 
-a:hover,
-a:focus {
+a:where(:not(.jumper-root *)):hover,
+a:where(:not(.jumper-root *)):focus {
   color: var(--link-hover);
   text-decoration: underline;
 }
 
-button,
-input,
-select,
-textarea {
+button:where(:not(.jumper-root *)),
+input:where(:not(.jumper-root *)),
+select:where(:not(.jumper-root *)),
+textarea:where(:not(.jumper-root *)) {
   font: inherit;
 }
 
 /* Form controls don't inherit color by default — without this their text stays
    the UA default (black) and goes invisible on dark surfaces. */
-input,
-select,
-textarea {
+input:where(:not(.jumper-root *)),
+select:where(:not(.jumper-root *)),
+textarea:where(:not(.jumper-root *)) {
   color: var(--text);
 }
 
-input::placeholder,
-textarea::placeholder {
+input:where(:not(.jumper-root *))::placeholder,
+textarea:where(:not(.jumper-root *))::placeholder {
   color: var(--text-faint);
 }
 
-button {
+button:where(:not(.jumper-root *)) {
   cursor: pointer;
 }
 

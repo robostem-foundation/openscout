@@ -1,0 +1,65 @@
+/* Jumper tab — scoped styles for the ported VEX Match Jumper tool.
+   Everything visual is driven by OpenScout design tokens so the tab is
+   theme-aware (light/dark via [data-theme]). Only rules Tailwind utilities
+   can't express (native range-slider theming) live here; they're scoped to
+   .jumper-root so they never leak into the rest of the app. */
+
+/* The Jumper layout is a wide two-column (video + panel) app, so give it more
+   room than a standard page while keeping the centered gutter. */
+.page.jumper-root {
+  width: min(1600px, calc(100% - 24px));
+}
+
+/* Control defaults for the subtree. These live in @layer base so the tool's
+   Tailwind utilities (utilities layer) still win where present, but controls
+   get sane, theme-aware defaults instead of the UA fallback (app-wide element
+   resets are scoped out of .jumper-root in styles.css). */
+@layer base {
+  .jumper-root a { color: inherit; text-decoration: none; }
+  .jumper-root button { cursor: pointer; }
+  .jumper-root input,
+  .jumper-root select,
+  .jumper-root textarea { color: var(--text); }
+  .jumper-root input::placeholder,
+  .jumper-root textarea::placeholder { color: var(--text-faint); }
+}
+
+/* Match Jumper / VEX Worlds switch — uses OpenScout's .seg-toggle, kept
+   compact (auto width instead of full-bleed) at the top of the tab. The
+   .jumper-root ancestor raises specificity above .seg-toggle's width:100%. */
+.jumper-root .jumper-seg-compact {
+  display: inline-flex;
+  width: auto;
+  margin-bottom: 8px;
+}
+.jumper-root .jumper-seg-compact button {
+  flex: 0 0 auto;
+}
+
+/* Native range sliders (sync offset, seek, volume) — accent thumbs.
+   The tool draws the filled track via an inline linear-gradient using
+   var(--accent), so we only theme the thumb + clear the default track. */
+.jumper-root input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 9999px;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.jumper-root input[type="range"]::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 9999px;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  cursor: pointer;
+}
+.jumper-root input[type="range"]::-webkit-slider-runnable-track,
+.jumper-root input[type="range"]::-moz-range-track {
+  background: transparent;
+  border: 0;
+}

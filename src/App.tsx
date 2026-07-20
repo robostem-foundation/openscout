@@ -59,6 +59,7 @@ import {
 import { Component, createContext, Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Dispatch, ErrorInfo, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
 import { api } from "./api";
+import JumperPage from "./jumper/JumperPage.jsx";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
@@ -2906,6 +2907,7 @@ function MobileTabBar({ path }: { path: string }) {
     { href: "/events", label: "Events", Icon: CalendarDays, active: path === "/events" || path.startsWith("/event") },
     { href: "/teams", label: "Teams", Icon: Users, active: path === "/teams" || path.startsWith("/team") },
     { href: "/skills", label: "Skills", Icon: Trophy, active: path === "/skills" },
+    { href: "/jumper", label: "Jumper", Icon: Tv2, active: path === "/jumper" },
     ...((hasMyTeam || sharedTeams.length > 0) ? [{ href: "/my-team", label: "My Team", Icon: Star, active: path === "/my-team" || path.startsWith("/my-team/") }] : []),
   ];
   return (
@@ -2965,6 +2967,7 @@ function MobileNavDrawer({ path, open, onClose }: { path: string; open: boolean;
     { href: "/events", label: "Events", Icon: CalendarDays, active: path === "/events" || path.startsWith("/event") },
     { href: "/teams", label: "Teams", Icon: Users, active: path === "/teams" || path.startsWith("/team") },
     { href: "/skills", label: "Skills", Icon: Trophy, active: path === "/skills" },
+    { href: "/jumper", label: "Jumper", Icon: Tv2, active: path === "/jumper" },
     ...((hasMyTeam || sharedTeams.length > 0) ? [{ href: "/my-team", label: "My Team", Icon: Star, active: path === "/my-team" || path.startsWith("/my-team/") }] : []),
   ];
   const name = profile?.display_name || suggestedName(user) || "Account";
@@ -3128,6 +3131,7 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
     ["/events", "Events"],
     ["/teams", "Teams"],
     ["/skills", "Skills"],
+    ["/jumper", "Jumper"],
     ...((hasMyTeam || sharedTeams.length > 0) ? [["/my-team", "My Team"]] : []),
   ];
 
@@ -16205,6 +16209,7 @@ function route(path: string) {
   if (path === "/events") return <EventsPage />;
   if (path === "/teams") return <TeamsPage />;
   if (path === "/skills") return <WorldSkillsPage />;
+  if (path === "/jumper") return <JumperPage />;
   const myTeamMatch = path.match(/^\/my-team(?:\/([0-9a-f-]+))?$/i);
   if (myTeamMatch) return <MyTeamPage sharedTeamId={myTeamMatch[1] ?? null} />;
   if (path === "/insights") return <InsightsPage />;
