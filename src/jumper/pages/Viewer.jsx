@@ -1355,24 +1355,26 @@ function Viewer() {
 
     return (
         <div className="jumper-viewer font-sans flex flex-col text-[var(--text)]">
-            {/* Floating Controls (Bottom Left) */}
-            <div className="fixed bottom-4 left-4 z-40 flex gap-2">
-                <button
-                    onClick={() => setShowEventHistory(true)}
-                    className="p-3 bg-[var(--surface)]/90 hover:bg-[var(--surface-2)] border border-[var(--border)] rounded-full transition-all   backdrop-blur-sm"
-                    title="Event History"
-                >
-                    <History className="w-5 h-5 text-[var(--text-2)] hover:text-[var(--text)]" />
-                </button>
-                <div className="w-px h-8 bg-[var(--surface-2)] self-center mx-1"></div>
-                <button
-                    onClick={handleClearAll}
-                    className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-full transition-all   backdrop-blur-sm group"
-                    title="Clear All"
-                >
-                    <RotateCcw className="w-5 h-5 text-red-400 group-hover:text-red-300" />
-                </button>
-            </div>
+            {/* Floating Controls (Bottom Left) — hidden per redesign; kept for easy restore */}
+            {false && (
+                <div className="fixed bottom-4 left-4 z-40 flex gap-2">
+                    <button
+                        onClick={() => setShowEventHistory(true)}
+                        className="p-3 bg-[var(--surface)]/90 hover:bg-[var(--surface-2)] border border-[var(--border)] rounded-full transition-all   backdrop-blur-sm"
+                        title="Event History"
+                    >
+                        <History className="w-5 h-5 text-[var(--text-2)] hover:text-[var(--text)]" />
+                    </button>
+                    <div className="w-px h-8 bg-[var(--surface-2)] self-center mx-1"></div>
+                    <button
+                        onClick={handleClearAll}
+                        className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-full transition-all   backdrop-blur-sm group"
+                        title="Clear All"
+                    >
+                        <RotateCcw className="w-5 h-5 text-red-400 group-hover:text-red-300" />
+                    </button>
+                </div>
+            )}
 
             {/* Error Display */}
             {error && (
