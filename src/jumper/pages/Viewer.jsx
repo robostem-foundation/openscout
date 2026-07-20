@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, RefreshCw, Loader, History, AlertCircle, Tv, Zap, ChevronDown, ChevronUp, LayoutList, Star, Link, RotateCcw, Search, Globe, CheckCircle2, Share2 } from 'lucide-react';
+import { Play, RefreshCw, Loader, History, AlertCircle, Tv, Zap, ChevronDown, ChevronUp, Star, Link, RotateCcw, Search, Globe, CheckCircle2, Share2 } from 'lucide-react';
 import YouTube from 'react-youtube';
 import { format } from 'date-fns';
 import { useQueryState } from 'nuqs';
 import WebcastSelector from '../components/WebcastSelector';
 import EventHistory from '../components/EventHistory';
-import StreamManager from '../components/StreamManager';
+import SeekControls from '../components/SeekControls';
+import LivestreamPanel from '../components/LivestreamPanel';
 import TeamList from '../components/TeamList';
 import {
     getEventBySku,
@@ -1494,170 +1495,169 @@ function Viewer() {
                             </div>
                         </div>
 
-                        {/* Stream Manager (Livestream URLs) */}
-                        {/* Stream Manager Controls - Always visible, disabled if no event */}
-                        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4">
-                            {event ? (
-                                <>
-                                    {webcastCandidates.length > 0 ? (
-                                        <>
-                                            <h2 className="text-lg font-semibold text-[var(--text)] flex items-center gap-2">
-                                                <Tv className="w-5 h-5 text-[var(--accent)]" />
-                                                Livestream URL (Auto-detected)
-                                            </h2>
+                        {/* Playback controls — directly beneath the video they control */}
+                        {event && streams.length > 0 && (
+                            <div className="flex justify-center xl:justify-start -mt-3">
+                                <SeekControls
+                                    onSeek={handleSeek}
+                                    onJumpToSyncedStart={() => {
+                                        const match = matches.find(m => m.id === selectedMatchId);
+                                        if (match) {
+                                            jumpToMatch(match);
+                                        } else {
+                                            alert("No match selected to sync back to.");
+                                        }
+                                    }}
+                                    canControl={!!players[activeStreamId]}
+                                />
+                            </div>
+                        )}
+
+                        {/* Find Event + Livestream — two cards that resize as an event loads.
+                            Before an event: only Find Event (full width). After: Find Event
+                            shrinks and Livestream expands to fill the space. */}
+                        <div
+                            className="grid gap-4"
+                            style={{
+                                gridTemplateColumns: event ? 'minmax(220px, 300px) 1fr' : '1fr 0fr',
+                                transition: 'grid-template-columns 500ms cubic-bezier(0.16, 1, 0.3, 1)'
+                            }}
+                        >
+                            {/* Card A: Find Event */}
+                            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-hidden min-w-0">
+                                {event && isEventSearchCollapsed ? (
+                                    <button
+                                        onClick={() => setIsEventSearchCollapsed(false)}
+                                        className="w-full text-left p-4 hover:bg-[var(--surface-2)]/50 transition-colors"
+                                    >
+                                        <p className="text-[var(--text)] font-semibold text-sm line-clamp-2" title={event.name}>{event.name}</p>
+                                        <p className="text-xs text-[var(--text-muted)] mt-1 line-clamp-1">
+                                            {event.location?.venue}{event.location?.city ? `, ${event.location.city}` : ''}
+                                        </p>
+                                        <span className="inline-block mt-2 text-[10px] font-semibold text-[var(--accent)] uppercase tracking-wider">Change event</span>
+                                    </button>
+                                ) : (
+                                    <div className="p-4 space-y-4">
+                                        {event && (
+                                            <div className="flex justify-end -mb-2">
+                                                <button
+                                                    onClick={() => setIsEventSearchCollapsed(true)}
+                                                    className="text-[var(--text-faint)] hover:text-[var(--text)] p-1"
+                                                    title="Collapse"
+                                                >
+                                                    <ChevronUp className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {/* Presets Dropdown */}
+                                        {presets.length > 0 && (
+                                            <div className="space-y-2">
+                                                <label className="flex items-center gap-1.5 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ml-1">
+                                                    <Star className="w-3 h-3 text-yellow-500" />
+                                                    Featured Events
+                                                </label>
+                                                <div className="relative group">
+                                                    <select
+                                                        onChange={(e) => {
+                                                            const preset = presets.find(p => p.sku === e.target.value);
+                                                            if (preset) handleLoadPreset(preset);
+                                                        }}
+                                                        value={selectedPresetSku}
+                                                        className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all appearance-none cursor-pointer hover:border-[var(--border-strong)] shadow-inner"
+                                                    >
+                                                        <option value="">Select an event...</option>
+                                                        {presets.map((p, idx) => (
+                                                            <option key={idx} value={p.sku}>{p.label}</option>
+                                                        ))}
+                                                    </select>
+                                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-faint)] group-hover:text-[var(--accent)] transition-colors">
+                                                        <ChevronDown className="w-4 h-4" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-2">
+                                            <label className="flex items-center gap-1.5 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ml-1">
+                                                <Link className="w-3 h-3 text-[var(--text-faint)]" />
+                                                Search by URL
+                                            </label>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={eventUrl}
+                                                    onChange={(e) => {
+                                                        const newUrl = e.target.value;
+                                                        setEventUrl(newUrl);
+                                                        if (urlPreset) setUrlPreset(null);
+                                                        if (selectedPresetSku) setSelectedPresetSku('');
+                                                    }}
+                                                    placeholder="Paste RobotEvents URL..."
+                                                    className="flex-1 min-w-0 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all"
+                                                    onKeyDown={(e) => e.key === 'Enter' && handleEventSearch()}
+                                                />
+                                                <button
+                                                    onClick={handleEventSearch}
+                                                    disabled={eventLoading}
+                                                    className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-[var(--accent-ink)] px-4 py-2 rounded-lg font-semibold text-sm transition-colors flex items-center gap-2 flex-shrink-0"
+                                                >
+                                                    {eventLoading ? <Loader className="w-4 h-4 animate-spin" /> : 'Search'}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {event && (
+                                            <div className="p-3 bg-[var(--surface)] border border-[var(--border)] rounded-lg mt-2">
+                                                <p className="text-[var(--text)] font-semibold text-sm line-clamp-1" title={event.name}>{event.name}</p>
+                                                <p className="text-xs text-[var(--text-muted)] mt-1">{event.location?.venue}, {event.location?.city}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Card B: Livestream (collapsed to 0 width until an event loads) */}
+                            <div className={`bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 min-w-0 overflow-hidden transition-opacity duration-300 ${event ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                                {event && (
+                                    <>
+                                        {webcastCandidates.length > 0 ? (
                                             <WebcastSelector
                                                 candidates={webcastCandidates}
                                                 onSelect={handleWebcastSelect}
                                                 event={event}
                                             />
-                                        </>
-                                    ) : (
-                                        <StreamManager
-                                            event={event}
-                                            streams={streams}
-                                            onStreamsChange={setStreams}
-                                            onWebcastSelect={handleWebcastSelect}
-                                            multiDivisionMode={multiDivisionMode}
-                                            onMultiDivisionModeChange={setMultiDivisionMode}
-                                            activeDivisionId={activeDivisionId}
-                                            onActiveDivisionIdChange={setActiveDivisionId}
-                                            onSeek={handleSeek}
-                                            onJumpToSyncedStart={() => {
-                                                const match = matches.find(m => m.id === selectedMatchId);
-                                                if (match) {
-                                                    jumpToMatch(match);
-                                                } else {
-                                                    alert("No match selected to sync back to.");
-                                                }
-                                            }}
-                                            canControl={!!players[activeStreamId]}
-                                        />
-                                    )}
-                                    {noWebcastsFound && !isDetecting && !showStreamSuccess && !streams.some(s => s.videoId) && (
-                                        <p className="text-yellow-500 text-xs text-center sm:text-left mt-2 animate-fade-in">
-                                            No webcasts found automatically. Please paste the URL manually. <br className="sm:hidden" />
-                                            Check <a href={`https://www.robotevents.com/robot-competitions/vex-robotics-competition/${event.sku}.html#webcast`} target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--text)]">here</a>.
-                                        </p>
-                                    )}
-                                    {showStreamSuccess && (
-                                        <div className="flex items-center justify-center sm:justify-start gap-2 text-green-400 text-sm mt-2 animate-fade-in font-medium">
-                                            <CheckCircle2 className="w-4 h-4" />
-                                            <span>Streams found and loaded!</span>
-                                        </div>
-                                    )}
-                                </>
-                            ) : (
-                                // Empty State for Stream Manager
-                                <div className="space-y-4 opacity-50 pointer-events-none grayscale">
-                                    <div className="flex justify-between items-center">
-                                        <h3 className="text-[var(--text)] font-semibold flex items-center gap-2">
-                                            <Tv className="w-5 h-5 text-[var(--accent)]" />
-                                            Livestream URLs
-                                        </h3>
-                                    </div>
-                                    <div className="space-y-3">
-                                        <div>
-                                            <label className="block text-sm font-medium text-[var(--text-muted)] mb-1.5">Livestream URL</label>
-                                            <input type="text" disabled placeholder="https://youtube.com/..." className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-4 py-3 text-[var(--text)]" />
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
+                                        ) : (
+                                            <LivestreamPanel
+                                                event={event}
+                                                streams={streams}
+                                                onStreamsChange={setStreams}
+                                                multiDivisionMode={multiDivisionMode}
+                                                onMultiDivisionModeChange={setMultiDivisionMode}
+                                                activeDivisionId={activeDivisionId}
+                                                onActiveDivisionIdChange={setActiveDivisionId}
+                                            />
+                                        )}
+                                        {noWebcastsFound && !isDetecting && !showStreamSuccess && !streams.some(s => s.videoId) && (
+                                            <p className="text-yellow-500 text-xs mt-3 animate-fade-in">
+                                                No webcasts found automatically. Paste the stream link above.{' '}
+                                                Check <a href={`https://www.robotevents.com/robot-competitions/vex-robotics-competition/${event.sku}.html#webcast`} target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--text)]">here</a>.
+                                            </p>
+                                        )}
+                                        {showStreamSuccess && (
+                                            <div className="flex items-center gap-2 text-green-400 text-sm mt-3 animate-fade-in font-medium">
+                                                <CheckCircle2 className="w-4 h-4" />
+                                                <span>Streams found and loaded!</span>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
 
                     {/* Right Column: Controls */}
                     <div className="xl:col-span-4 flex flex-col gap-4">
-                        {/* Event Search Section */}
-                        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-hidden flex-shrink-0">
-                            <button
-                                onClick={() => setIsEventSearchCollapsed(!isEventSearchCollapsed)}
-                                className="w-full p-4 flex justify-between items-center hover:bg-[var(--surface-2)]/50 transition-colors"
-                            >
-                                <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
-                                    <LayoutList className="w-4 h-4" />
-                                    Find Event
-                                </h2>
-                                <div className="flex items-center gap-3">
-                                    {event && isEventSearchCollapsed && (
-                                        <span className="text-xs text-[var(--accent)] font-semibold truncate max-w-[150px] sm:max-w-[200px]">
-                                            {event.name}
-                                        </span>
-                                    )}
-                                    {isEventSearchCollapsed ? <ChevronDown className="w-4 h-4 text-[var(--text-faint)]" /> : <ChevronUp className="w-4 h-4 text-[var(--text-faint)]" />}
-                                </div>
-                            </button>
-
-                            <div className={`transition-all duration-300 ${isEventSearchCollapsed ? 'max-h-0 opacity-0 pointer-events-none' : 'max-h-[600px] opacity-100'}`}>
-                                <div className="p-5 pt-0 space-y-4">
-                                    {/* Presets Dropdown */}
-                                    {presets.length > 0 && (
-                                        <div className="space-y-2">
-                                            <label className="flex items-center gap-1.5 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ml-1">
-                                                <Star className="w-3 h-3 text-yellow-500" />
-                                                Featured Events
-                                            </label>
-                                            <div className="relative group">
-                                                <select
-                                                    onChange={(e) => {
-                                                        const preset = presets.find(p => p.sku === e.target.value);
-                                                        if (preset) handleLoadPreset(preset);
-                                                    }}
-                                                    value={selectedPresetSku}
-                                                    className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all appearance-none cursor-pointer hover:border-[var(--border-strong)] shadow-inner"
-                                                >
-                                                    <option value="">Select an event...</option>
-                                                    {presets.map((p, idx) => (
-                                                        <option key={idx} value={p.sku}>{p.label}</option>
-                                                    ))}
-                                                </select>
-                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-faint)] group-hover:text-[var(--accent)] transition-colors">
-                                                    <ChevronDown className="w-4 h-4" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-2">
-                                        <label className="flex items-center gap-1.5 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ml-1">
-                                            <Link className="w-3 h-3 text-[var(--text-faint)]" />
-                                            Search by URL
-                                        </label>
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                value={eventUrl}
-                                                onChange={(e) => {
-                                                    const newUrl = e.target.value;
-                                                    setEventUrl(newUrl);
-                                                    // If input changes, we are no longer strictly following the preset
-                                                    if (urlPreset) setUrlPreset(null);
-                                                    if (selectedPresetSku) setSelectedPresetSku('');
-                                                }}
-                                                placeholder="Paste RobotEvents URL..."
-                                                className="flex-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all"
-                                                onKeyDown={(e) => e.key === 'Enter' && handleEventSearch()}
-                                            />
-                                            <button
-                                                onClick={handleEventSearch}
-                                                disabled={eventLoading}
-                                                className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-[var(--accent-ink)] px-4 py-2 rounded-lg font-semibold text-sm transition-colors flex items-center gap-2"
-                                            >
-                                                {eventLoading ? <Loader className="w-4 h-4 animate-spin" /> : 'Search'}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {event && (
-                                        <div className="p-3 bg-[var(--surface)] border border-[var(--border)] rounded-lg mt-2">
-                                            <p className="text-[var(--text)] font-semibold text-sm line-clamp-1" title={event.name}>{event.name}</p>
-                                            <p className="text-xs text-[var(--text-muted)] mt-1">{event.location?.venue}, {event.location?.city}</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                        </div>
 
                         {/* Sync Control Bar — hidden for now (manual sync WIP) */}
                         {false && event && streams.length > 0 && (
