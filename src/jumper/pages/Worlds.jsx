@@ -1748,9 +1748,13 @@ export default function Worlds() {
 
                         {/* Sync calibration */}
                         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg flex-shrink-0 overflow-visible">
-                            <button
+                            <div
+                                role="button"
+                                tabIndex={0}
                                 onClick={() => setIsSyncCardOpen((open) => !open)}
-                                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 hover:bg-[var(--surface-2)]/40 transition-colors"
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsSyncCardOpen((open) => !open); } }}
+                                aria-expanded={isSyncCardOpen}
+                                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 hover:bg-[var(--surface-2)]/40 transition-colors cursor-pointer"
                             >
                                 <div className="flex items-center gap-2 min-w-0 text-left">
                                     <h2 className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Sync</h2>
@@ -1764,7 +1768,7 @@ export default function Worlds() {
                                     </span>
                                 </div>
                                 <ChevronDown className={`w-3.5 h-3.5 text-[var(--text-faint)] transition-transform shrink-0 ${isSyncCardOpen ? 'rotate-180' : ''}`} />
-                            </button>
+                            </div>
 
                             {isSyncCardOpen && (
                                 <div className="border-t border-[var(--border)] px-3 py-3 overflow-visible">
