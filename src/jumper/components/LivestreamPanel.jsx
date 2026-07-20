@@ -73,8 +73,8 @@ export default function LivestreamPanel({
     const fetched = useRef(new Set());
 
     const hasDivisions = event?.divisions?.length > 1;
-    const targetDivisionId = multiDivisionMode && hasDivisions
-        ? activeDivisionId
+    const targetDivisionId = hasDivisions
+        ? (activeDivisionId || event.divisions[0].id)
         : (event?.divisions?.[0]?.id || 1);
 
     const visibleStreams = streams.filter(s =>
@@ -180,29 +180,23 @@ export default function LivestreamPanel({
 
     return (
         <div className="space-y-3">
-            {/* Division selector (multi-division events only) */}
+            {/* Division selector — the division names themselves are the toggle */}
             {hasDivisions && (
-                <div className="flex flex-wrap items-center gap-2">
-                    <button
-                        onClick={() => onMultiDivisionModeChange(!multiDivisionMode)}
-                        className={`text-[10px] font-semibold px-2 py-1 rounded border transition-all whitespace-nowrap ${multiDivisionMode
-                            ? 'bg-purple-500/20 border-purple-500/50 text-purple-300'
-                            : 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-faint)] hover:text-[var(--text-muted)]'}`}
-                        title={multiDivisionMode ? 'Disable Multi-Division Mode' : 'Enable Multi-Division Mode'}
-                    >
-                        {multiDivisionMode ? 'DIVISIONS: ON' : 'DIVISIONS: OFF'}
-                    </button>
-                    {multiDivisionMode && event.divisions.map(div => (
-                        <button
-                            key={div.id}
-                            onClick={() => onActiveDivisionIdChange(div.id)}
-                            className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all ${activeDivisionId === div.id
-                                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                                : 'bg-[var(--surface-2)]/50 text-[var(--text-faint)] border border-transparent hover:bg-[var(--surface-3)]'}`}
-                        >
-                            {div.name}
-                        </button>
-                    ))}
+                <div className="inline-flex flex-wrap gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-1">
+                    {event.divisions.map(div => {
+                        const active = targetDivisionId === div.id;
+                        return (
+                            <button
+                                key={div.id}
+                                onClick={() => onActiveDivisionIdChange(div.id)}
+                                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${active
+                                    ? 'bg-purple-600 text-white'
+                                    : 'text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:text-[var(--text)]'}`}
+                            >
+                                {div.name}
+                            </button>
+                        );
+                    })}
                 </div>
             )}
 
