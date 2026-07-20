@@ -6179,6 +6179,26 @@ function EventDetail({ param }: { param: string }) {
   // Shared search query — declared before all filtered memos that depend on it
   const searchQ = teamSearch.trim().toLowerCase();
 
+  // Lookup from the fully-loaded event teams list so the tabs that only carry a
+  // team's number (matches/rankings/skills/awards) can still match on the team's
+  // organization and name.  Keyed by team id.
+  const teamInfoById = useMemo(() => {
+    const m = new Map<number, { org: string; name: string }>();
+    for (const t of teams.data?.data ?? [])
+      m.set(t.id, { org: (t.organization ?? "").toLowerCase(), name: (t.team_name ?? "").toLowerCase() });
+    return m;
+  }, [teams.data]);
+
+  // True when a team ref (id + number) matches the search by number, organization, or name.
+  const teamRefMatches = useCallback(
+    (ref: { id: number; name: string }) => {
+      if (ref.name.toLowerCase().includes(searchQ)) return true;
+      const info = teamInfoById.get(ref.id);
+      return !!info && (info.org.includes(searchQ) || info.name.includes(searchQ));
+    },
+    [searchQ, teamInfoById],
+  );
+
   const filteredTeams = useMemo(() => {
     let all = teams.data?.data ?? [];
     if (teamsDivFilter && allDivisionRankings.data)
@@ -6186,7 +6206,8 @@ function EventDetail({ param }: { param: string }) {
     if (searchQ)
       all = all.filter((t) =>
         t.number.toLowerCase().includes(searchQ) ||
-        (t.team_name ?? "").toLowerCase().includes(searchQ)
+        (t.team_name ?? "").toLowerCase().includes(searchQ) ||
+        (t.organization ?? "").toLowerCase().includes(searchQ)
       );
     return all;
   }, [teams.data, teamsDivFilter, allDivisionRankings.data, searchQ]);
@@ -6216,27 +6237,27 @@ function EventDetail({ param }: { param: string }) {
     const all = matches.data?.data ?? [];
     if (!searchQ) return all;
     return all.filter((m) =>
-      m.alliances.some((a) => a.teams.some((t) => t.team.name.toLowerCase().includes(searchQ)))
+      m.alliances.some((a) => a.teams.some((t) => teamRefMatches(t.team)))
     );
-  }, [matches.data, searchQ]);
+  }, [matches.data, searchQ, teamRefMatches]);
 
   const filteredRankings = useMemo(() => {
     const all = rankings.data?.data ?? [];
     if (!searchQ) return all;
-    return all.filter((r) => r.team.name.toLowerCase().includes(searchQ));
-  }, [rankings.data, searchQ]);
+    return all.filter((r) => teamRefMatches(r.team));
+  }, [rankings.data, searchQ, teamRefMatches]);
 
   const filteredSkills = useMemo(() => {
     const all = skills.data?.data ?? [];
     if (!searchQ) return all;
-    return all.filter((s) => s.team.name.toLowerCase().includes(searchQ));
-  }, [skills.data, searchQ]);
+    return all.filter((s) => teamRefMatches(s.team));
+  }, [skills.data, searchQ, teamRefMatches]);
 
   const filteredAwards = useMemo(() => {
     const all = awards.data?.data ?? [];
     if (!searchQ) return all;
-    return all.filter((a) => a.teamWinners?.some((w) => w.team.name.toLowerCase().includes(searchQ)));
-  }, [awards.data, searchQ]);
+    return all.filter((a) => a.teamWinners?.some((w) => teamRefMatches(w.team)));
+  }, [awards.data, searchQ, teamRefMatches]);
 
   useEffect(() => {
     if (!event) return;
@@ -6398,7 +6419,7 @@ function EventDetail({ param }: { param: string }) {
           <input
             className="event-team-search-input"
             type="text"
-            placeholder="Filter by team…"
+            placeholder="Filter by team #, name, or organization…"
             value={teamSearch}
             autoFocus
             onChange={(e) => setTeamSearch(e.target.value)}
@@ -6438,7 +6459,7 @@ function EventDetail({ param }: { param: string }) {
         />
       )}
       {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} allMatches={matches.data?.data ?? []} sharedTeamId={primarySharedTeam?.sharedTeamId} eventId={String(event.id)} />}
-      {tab === "skills" && <SkillsTable skills={filteredSkills} />}
+      {tab === "skills" && <SkillsTable skills={filteredSkills} focusTeamId={focusTeam?.id} />}
       {tab === "awards" && <AwardsList awards={filteredAwards} />}
       {tab === "teams" && divisions.length > 1 && (
         <div className="division-tabs" aria-label="Filter teams by division">
@@ -9119,13 +9140,6 @@ function bestSkillEntries(skills: Skill[]) {
     driver: byType.get("driver"),
     programming: byType.get("programming") ?? byType.get("program"),
   };
-}
-
-function skillTypeLabel(type: string): string {
-  const t = (type ?? "").toLowerCase();
-  if (t.includes("program")) return "Programming";
-  if (t.includes("driver")) return "Driver";
-  return type ? type.charAt(0).toUpperCase() + type.slice(1) : "Skills";
 }
 
 function skillSummary(skills: Skill[]) {
@@ -11832,8 +11846,12 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, share
   );
 }
 
-function SkillsTable({ skills }: { skills: Skill[] }) {
+function SkillsTable({ skills, focusTeamId }: { skills: Skill[]; focusTeamId?: number }) {
   const programCode = useContext(ProgramContext);
+  const focusRowRef = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    if (focusRowRef.current) focusRowRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [focusTeamId, skills]);
   const rows = Object.values(
     skills.reduce<Record<string, { rank: number | null; team: Skill["team"]; entries: Skill[] }>>((groups, skill) => {
       const key = String(skill.team.id ?? skill.team.name);
@@ -11882,7 +11900,11 @@ function SkillsTable({ skills }: { skills: Skill[] }) {
             const total = entries.reduce((sum, entry) => sum + (entry.score ?? 0), 0);
 
             return (
-              <tr key={row.team.id}>
+              <tr
+                key={row.team.id}
+                ref={focusTeamId != null && row.team.id === focusTeamId ? focusRowRef : undefined}
+                className={focusTeamId != null && row.team.id === focusTeamId ? "skills-row-focus" : undefined}
+              >
                 <td>{row.rank ?? "-"}</td>
                 <td>
                   <CompareTeamLink teamId={row.team.id} teamNumber={row.team.name} programCode={programCode} />
@@ -15735,8 +15757,10 @@ function MyTeamDashboard() {
   // Recent matches (most recent first) for the season-timeline aside.
   const recentMatches = useMemo(() => {
     if (!team) return [];
+    // NOTE: RobotEvents `scored` is unreliable here (often false even for played
+    // matches), so we key off actual alliance scores like the season record does.
     return seasonMatches
-      .filter((m) => m.scored && !/practice/i.test(m.name) && m.alliances.some((a) => a.teams.some((t) => t.team.id === team.id)))
+      .filter((m) => !/practice/i.test(m.name) && !isScrimmageEvent(eventIndex.get(m.event.id)) && m.alliances.some((a) => a.teams.some((t) => t.team.id === team.id)))
       .map((m) => {
         const mine = m.alliances.find((a) => a.teams.some((t) => t.team.id === team.id));
         const opp = m.alliances.find((a) => a !== mine);
@@ -15751,18 +15775,25 @@ function MyTeamDashboard() {
           order: m.matchnum ?? 0,
         };
       })
+      .filter((r) => r.teamScore != null && r.oppScore != null)
       .sort((a, b) => (b.sort - a.sort) || (b.order - a.order))
       .slice(0, 6);
   }, [seasonMatches, team, eventIndex, isIq]);
 
-  // Recent skills runs (most recent first) for the season-timeline aside.
+  // Recent skills grouped by event (driver + programming on one row), newest first.
   const recentSkills = useMemo(() => {
-    return seasonSkills
-      .filter((s) => (s.score ?? 0) > 0)
-      .map((s) => {
-        const ev = eventIndex.get(s.event.id);
-        return { id: s.id, typeLabel: skillTypeLabel(s.type), score: s.score ?? 0, sort: ev ? new Date(ev.start ?? 0).getTime() : 0 };
-      })
+    const byEvent = new Map<number, { eventId: number; event: Event | undefined; driver: number | null; prog: number | null; sort: number }>();
+    for (const s of seasonSkills) {
+      if ((s.score ?? 0) <= 0) continue;
+      const ev = eventIndex.get(s.event.id);
+      const cur = byEvent.get(s.event.id) ?? { eventId: s.event.id, event: ev, driver: null, prog: null, sort: ev ? new Date(ev.start ?? 0).getTime() : 0 };
+      const t = s.type.toLowerCase();
+      if (t.includes("driver")) cur.driver = Math.max(cur.driver ?? 0, s.score ?? 0);
+      else if (t.includes("program")) cur.prog = Math.max(cur.prog ?? 0, s.score ?? 0);
+      byEvent.set(s.event.id, cur);
+    }
+    return [...byEvent.values()]
+      .filter((r) => r.driver != null || r.prog != null)
       .sort((a, b) => b.sort - a.sort)
       .slice(0, 5);
   }, [seasonSkills, eventIndex]);
@@ -16081,12 +16112,22 @@ function MyTeamDashboard() {
           <div className="myteam-recent-head">Recent skills</div>
           {recentSkills.length > 0 ? (
             <ul className="myteam-recent-list">
-              {recentSkills.map((s) => (
-                <li key={s.id} className="myteam-recent-row">
-                  <span className="rr-label">{s.typeLabel}</span>
-                  <span className="rr-score rr-solo">{s.score}</span>
-                </li>
-              ))}
+              {recentSkills.map((r) => {
+                const ev = r.event;
+                const href = ev ? urlWithHash(`${eventPath(ev)}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`, "skills") : null;
+                return (
+                  <li key={r.eventId} className="myteam-recent-row myteam-recent-skill">
+                    {href
+                      ? <Link className="rr-open" href={href} title="Open event skills"><ExternalLink size={13} /></Link>
+                      : <span className="rr-open rr-open-off"><ExternalLink size={13} /></span>}
+                    <span className="rr-label rr-label-event">{ev?.name ?? "Event"}</span>
+                    <span className="rr-right">
+                      <span className="rr-skill"><span className="rr-skill-k">D</span>{r.driver ?? "—"}</span>
+                      <span className="rr-skill"><span className="rr-skill-k">P</span>{r.prog ?? "—"}</span>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p className="myteam-recent-empty">No skills runs yet.</p>
