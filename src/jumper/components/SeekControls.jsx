@@ -1,12 +1,12 @@
 import React, { useState, useRef } from 'react';
-import { Play } from 'lucide-react';
+import { Play, Pause } from 'lucide-react';
 
 /**
- * SeekControls — slim playback bar that sits at the top of the right sidebar.
- * Text-based ± steps flanking a prominent accent "Sync" button, so the jump
- * amounts are legible at a glance instead of tiny icon labels.
+ * SeekControls — slim playback bar for the top of the right sidebar.
+ * Text-based ± steps flanking a plain play/pause button that toggles the
+ * active player.
  */
-export default function SeekControls({ onSeek, onJumpToSyncedStart, canControl }) {
+export default function SeekControls({ onSeek, onTogglePlay, isPlaying, canControl }) {
     const [feedback, setFeedback] = useState(null);
     const feedbackTimeout = useRef(null);
 
@@ -21,7 +21,6 @@ export default function SeekControls({ onSeek, onJumpToSyncedStart, canControl }
         const absVal = Math.abs(seconds);
         triggerFeedback(absVal >= 60 ? `${sign}${absVal / 60}m` : `${sign}${absVal}s`, seconds > 0);
     };
-    const handleSyncedClick = () => { onJumpToSyncedStart(); triggerFeedback('Synced!', true); };
 
     const steps = [-60, -30, -10, -5, 5, 10, 30, 60];
     const stepLabel = (s) => (Math.abs(s) >= 60 ? `${Math.abs(s) / 60}m` : `${Math.abs(s)}s`);
@@ -30,20 +29,20 @@ export default function SeekControls({ onSeek, onJumpToSyncedStart, canControl }
         <button
             onClick={() => handleSeekClick(seconds)}
             title={`${seconds < 0 ? 'Back' : 'Forward'} ${stepLabel(seconds)}`}
-            className="px-2 py-1.5 rounded-lg text-xs font-semibold tabular-nums text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] transition-colors"
+            className="px-1.5 py-1.5 rounded-lg text-xs font-semibold tabular-nums text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] transition-colors"
         >
             {seconds < 0 ? '−' : '+'}{stepLabel(seconds)}
         </button>
     );
 
-    const Divider = () => <div className="mx-1 h-5 w-px bg-[var(--border)] flex-shrink-0" />;
+    const Divider = () => <div className="mx-0.5 h-5 w-px bg-[var(--border)] flex-shrink-0" />;
 
     return (
         <div className="relative inline-flex">
             {feedback && (
                 <div
                     key={feedback.key}
-                    className={`absolute -top-9 left-1/2 -translate-x-1/2 pointer-events-none px-3 py-1 rounded-md text-[10px] font-semibold z-50 animate-feedback-pill border border-white/10 ${feedback.isPositive ? 'bg-[var(--accent)] text-[var(--accent-ink)]' : 'bg-[var(--surface-2)] text-[var(--text)]'}`}
+                    className={`absolute -top-9 left-1/2 -translate-x-1/2 pointer-events-none px-3 py-1 rounded-md text-[10px] font-semibold z-[500] animate-feedback-pill border border-white/10 ${feedback.isPositive ? 'bg-[var(--accent)] text-[var(--accent-ink)]' : 'bg-[var(--surface-2)] text-[var(--text)]'}`}
                 >
                     {feedback.text}
                 </div>
@@ -52,12 +51,13 @@ export default function SeekControls({ onSeek, onJumpToSyncedStart, canControl }
                 {steps.slice(0, 4).map((s) => <SeekBtn key={s} seconds={s} />)}
                 <Divider />
                 <button
-                    onClick={handleSyncedClick}
-                    title="Jump to synced match start"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[var(--accent)] text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors"
+                    onClick={onTogglePlay}
+                    title={isPlaying ? 'Pause' : 'Play'}
+                    className="p-1.5 rounded-lg text-[var(--accent)] hover:bg-[var(--accent)]/15 transition-colors"
                 >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    Sync
+                    {isPlaying
+                        ? <Pause className="w-4 h-4 fill-current" />
+                        : <Play className="w-4 h-4 fill-current" />}
                 </button>
                 <Divider />
                 {steps.slice(4).map((s) => <SeekBtn key={s} seconds={s} />)}

@@ -76,7 +76,7 @@ async function detectOrFallbackStreams(event, divisions) {
     return newStreams;
 }
 
-function Viewer() {
+function Viewer({ onGoToWorlds }) {
     const [showEventHistory, setShowEventHistory] = useState(false);
     const [webcastCandidates, setWebcastCandidates] = useState([]);
     const [showStreamSuccess, setShowStreamSuccess] = useState(false); // Popup state
@@ -141,6 +141,7 @@ function Viewer() {
     const [streams, setStreams] = useState([]);
     const [activeStreamId, setActiveStreamId] = useState(null);
     const [players, setPlayers] = useState({});
+    const [playerStates, setPlayerStates] = useState({}); // YouTube state per stream (1 = playing)
 
     // Loading states
     const [eventLoading, setEventLoading] = useState(false);
@@ -685,6 +686,17 @@ function Viewer() {
         if (player && typeof player.getCurrentTime === 'function') {
             const currentTime = player.getCurrentTime();
             player.seekTo(currentTime + seconds, true);
+        }
+    };
+
+    const handleTogglePlay = () => {
+        const player = players[activeStreamId];
+        if (!player) return;
+        const state = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
+        if (state === 1) {
+            player.pauseVideo();
+        } else if (typeof player.playVideo === 'function') {
+            player.playVideo();
         }
     };
 
@@ -1414,6 +1426,9 @@ function Viewer() {
                                                     onReady={(event) => {
                                                         setPlayers(prev => ({ ...prev, [stream.id]: event.target }));
                                                     }}
+                                                    onStateChange={(event) => {
+                                                        setPlayerStates(prev => ({ ...prev, [stream.id]: event.data }));
+                                                    }}
                                                     className="w-full h-full"
                                                 />
                                             ) : (
@@ -1637,23 +1652,25 @@ function Viewer() {
                     {/* Right Column: Controls */}
                     <div className="xl:col-span-4 flex flex-col gap-4">
 
-                        {/* Playback controls — top of the sidebar */}
-                        {event && streams.length > 0 && (
-                            <div className="flex">
+                        {/* Top row: playback controls (left) + Worlds switch filling the rest (right) */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {event && streams.length > 0 && (
                                 <SeekControls
                                     onSeek={handleSeek}
-                                    onJumpToSyncedStart={() => {
-                                        const match = matches.find(m => m.id === selectedMatchId);
-                                        if (match) {
-                                            jumpToMatch(match);
-                                        } else {
-                                            alert("No match selected to sync back to.");
-                                        }
-                                    }}
+                                    onTogglePlay={handleTogglePlay}
+                                    isPlaying={playerStates[activeStreamId] === 1}
                                     canControl={!!players[activeStreamId]}
                                 />
-                            </div>
-                        )}
+                            )}
+                            <button
+                                onClick={() => onGoToWorlds && onGoToWorlds()}
+                                className="flex-1 min-w-[100px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--surface-2)] hover:bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text)] transition-colors"
+                                title="Switch to VEX Worlds"
+                            >
+                                <Globe className="w-4 h-4" />
+                                Worlds
+                            </button>
+                        </div>
 
                         {/* Sync Control Bar — hidden for now (manual sync WIP) */}
                         {false && event && streams.length > 0 && (
