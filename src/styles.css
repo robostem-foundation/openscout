@@ -3223,8 +3223,19 @@ a.team-card-num:hover {
 
 .profile-header {
   position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 15px;
   padding-bottom: 5px;
+}
+
+/* Text column: take remaining space and allow the title to wrap instead of
+   sliding under the (variable-width) actions. */
+.profile-header > div:first-child {
+  flex: 1;
+  min-width: 0;
 }
 
 .profile-header .eyebrow {
@@ -3232,7 +3243,8 @@ a.team-card-num:hover {
 }
 
 .profile-header h1 {
-  padding-right: 45px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .profile-header .icon-button {
@@ -9139,17 +9151,21 @@ a.shared-team-note-row:hover { background: var(--surface-2); }
 /* ── Profile header: support two icon buttons side-by-side ─────────────────── */
 
 .profile-header-actions {
-  position: absolute;
-  top: 0;
-  right: 0;
   display: flex;
   gap: 4px;
+  flex-shrink: 0;
 }
 .profile-header-actions .icon-button {
   position: static; /* override the default absolute positioning from .profile-header .icon-button */
 }
-.profile-header:has(.profile-header-actions) h1 {
-  padding-right: 90px;
+
+/* On narrow screens, stack the actions below the title so the title gets the
+   full width instead of squeezing into a sliver beside the labeled button. */
+@media (max-width: 560px) {
+  .profile-header {
+    flex-direction: column;
+    gap: 10px;
+  }
 }
 
 /* ── Compare Overlay & Modal ───────────────────────────────────────────────── */
