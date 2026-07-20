@@ -1761,7 +1761,7 @@ function Viewer() {
                                 )}
                             </div>
                         )}
-                        <div className="seg-toggle flex-shrink-0" style={{ marginBottom: 16 }}>
+                        <div className="seg-toggle flex-shrink-0">
                             {/* Only show 'Find Team' tab if event is loaded OR it's been explicitly selected (though deprecated in no-event mode) */}
                             {event && (
                                 <button
