@@ -9121,6 +9121,13 @@ function bestSkillEntries(skills: Skill[]) {
   };
 }
 
+function skillTypeLabel(type: string): string {
+  const t = (type ?? "").toLowerCase();
+  if (t.includes("program")) return "Programming";
+  if (t.includes("driver")) return "Driver";
+  return type ? type.charAt(0).toUpperCase() + type.slice(1) : "Skills";
+}
+
 function skillSummary(skills: Skill[]) {
   const { driver, programming } = bestSkillEntries(skills);
   const ranks = [driver?.rank, programming?.rank].filter((rank): rank is number => rank !== null && rank !== undefined);
@@ -15725,6 +15732,41 @@ function MyTeamDashboard() {
     return rows;
   }, [teamEvents, seasonId, seasonAwards, seasonRankings, seasonSkills, nextUp, now, isIq]);
 
+  // Recent matches (most recent first) for the season-timeline aside.
+  const recentMatches = useMemo(() => {
+    if (!team) return [];
+    return seasonMatches
+      .filter((m) => m.scored && !/practice/i.test(m.name) && m.alliances.some((a) => a.teams.some((t) => t.team.id === team.id)))
+      .map((m) => {
+        const mine = m.alliances.find((a) => a.teams.some((t) => t.team.id === team.id));
+        const opp = m.alliances.find((a) => a !== mine);
+        const ev = eventIndex.get(m.event.id);
+        return {
+          id: m.id,
+          label: shortMatchName(m.name),
+          outcome: isIq ? null : teamMatchOutcome(m, team.id),
+          teamScore: mine?.score ?? null,
+          oppScore: opp?.score ?? null,
+          sort: ev ? new Date(ev.start ?? 0).getTime() : 0,
+          order: m.matchnum ?? 0,
+        };
+      })
+      .sort((a, b) => (b.sort - a.sort) || (b.order - a.order))
+      .slice(0, 6);
+  }, [seasonMatches, team, eventIndex, isIq]);
+
+  // Recent skills runs (most recent first) for the season-timeline aside.
+  const recentSkills = useMemo(() => {
+    return seasonSkills
+      .filter((s) => (s.score ?? 0) > 0)
+      .map((s) => {
+        const ev = eventIndex.get(s.event.id);
+        return { id: s.id, typeLabel: skillTypeLabel(s.type), score: s.score ?? 0, sort: ev ? new Date(ev.start ?? 0).getTime() : 0 };
+      })
+      .sort((a, b) => b.sort - a.sort)
+      .slice(0, 5);
+  }, [seasonSkills, eventIndex]);
+
   // Height-match the live timeline to the matches panel and open scrolled to "now".
   const matchesPanelRef = useRef<HTMLDivElement>(null);
   const tlPanelRef = useRef<HTMLDivElement>(null);
@@ -16016,9 +16058,41 @@ function MyTeamDashboard() {
           <span><i className="nextpt" /> Next up</span><span><i className="up" /> Upcoming</span><span><i className="done" /> Completed</span>
         </div>
       </section>
-      <div className="myteam-timeline-aside" aria-hidden="true">
-        <Skeleton className="myteam-timeline-skeleton" />
-      </div>
+      <aside className="panel myteam-recent myteam-timeline-aside">
+        <div className="myteam-recent-block">
+          <div className="myteam-recent-head">Recent matches</div>
+          {recentMatches.length > 0 ? (
+            <ul className="myteam-recent-list">
+              {recentMatches.map((m) => (
+                <li key={m.id} className="myteam-recent-row">
+                  <span className="rr-label">{m.label}</span>
+                  <span className="rr-right">
+                    {m.outcome && <span className={`rr-badge rr-${m.outcome}`}>{m.outcome}</span>}
+                    <span className="rr-score">{m.teamScore ?? "—"}<span className="rr-dash">–</span>{m.oppScore ?? "—"}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="myteam-recent-empty">No matches yet.</p>
+          )}
+        </div>
+        <div className="myteam-recent-block">
+          <div className="myteam-recent-head">Recent skills</div>
+          {recentSkills.length > 0 ? (
+            <ul className="myteam-recent-list">
+              {recentSkills.map((s) => (
+                <li key={s.id} className="myteam-recent-row">
+                  <span className="rr-label">{s.typeLabel}</span>
+                  <span className="rr-score rr-solo">{s.score}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="myteam-recent-empty">No skills runs yet.</p>
+          )}
+        </div>
+      </aside>
     </div>
   );
 

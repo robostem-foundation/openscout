@@ -11417,15 +11417,29 @@ a.myteam-tcard:hover { border-color: var(--accent); }
 .myteam-tab:hover { color: var(--text); }
 .myteam-tab.active { color: var(--text); border-bottom-color: var(--accent); }
 
-/* ── My Team timeline row + skeleton aside ───────────────────────────────── */
+/* ── My Team timeline row + recent aside ─────────────────────────────────── */
 .myteam-timeline-row { display: flex; gap: 20px; align-items: stretch; }
 .myteam-timeline-row .myteam-tl2-panel { flex: 0 1 760px; min-width: 0; }
 .myteam-timeline-aside { flex: 1 1 0; min-width: 0; }
-.myteam-timeline-skeleton { height: 100%; width: 100%; min-height: 220px; border-radius: var(--radius); }
+
+/* Recent matches / skills — minimalist, editorial */
+.myteam-recent { padding: 18px 20px; display: flex; flex-direction: column; gap: 24px; }
+.myteam-recent-head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; font-weight: 600; color: var(--text-muted); }
+.myteam-recent-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.myteam-recent-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+.myteam-recent-row:last-child { border-bottom: none; padding-bottom: 0; }
+.myteam-recent .rr-label { font-family: var(--font-geist-mono); font-size: 12.5px; color: var(--text); }
+.myteam-recent .rr-right { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+.myteam-recent .rr-score { font-family: var(--font-geist-mono); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; color: var(--text); }
+.myteam-recent .rr-score.rr-solo { margin-left: auto; }
+.myteam-recent .rr-dash { color: var(--text-faint); font-weight: 400; margin: 0 1px; }
+.myteam-recent .rr-badge { font-family: var(--font-geist-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 5px; }
+.myteam-recent .rr-badge.rr-W { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
+.myteam-recent .rr-badge.rr-L { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.myteam-recent-empty { font-size: 12.5px; color: var(--text-muted); margin: 8px 0 0; }
 @media (max-width: 900px) {
   .myteam-timeline-row { flex-direction: column; }
   .myteam-timeline-row .myteam-tl2-panel { max-width: none; }
-  .myteam-timeline-aside { display: none; }
 }
 
 
