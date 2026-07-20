@@ -202,6 +202,22 @@
   cursor: not-allowed;
 }
 
+/* Soft upward blur where a scrolling list meets the controls above it —
+   replaces the hard divider. Sits over the top edge of the scroll viewport
+   (its parent must be position:relative) and blurs content scrolling under it,
+   fading out downward so the effect is subtle. */
+.jumper-root .jmp-scrolltop {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 16px;
+  pointer-events: none;
+  z-index: 5;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  -webkit-mask-image: linear-gradient(to top, transparent, black 90%);
+  mask-image: linear-gradient(to top, transparent, black 90%);
+}
+
 /* Day-group divider label inside scrolling lists. */
 .jumper-root .jmp-daysep {
   display: flex;

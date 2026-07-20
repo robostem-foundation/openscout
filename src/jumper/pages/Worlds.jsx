@@ -1811,7 +1811,7 @@ export default function Worlds() {
                             {/* ── Find Team tab ── */}
                             {activeTab === 'findTeam' && (
                                 <>
-                                    <div className="px-3 py-2 border-b border-[var(--border)] space-y-1.5">
+                                    <div className="px-3 py-2 space-y-1.5">
                                         <div className="flex gap-1.5">
                                             <input
                                                 type="text"
@@ -1832,12 +1832,14 @@ export default function Worlds() {
                                             </button>
                                         </div>
                                         {findTeamLookupError ? (
-                                            <p className="text-[11px] text-red-400">{findTeamLookupError}</p>
+                                            <p className="text-[11px] text-[var(--danger)]">{findTeamLookupError}</p>
                                         ) : !selectedDivName ? (
                                             <p className="text-[11px] text-[var(--text-faint)]">Search a team and it will auto-find division.</p>
                                         ) : null}
                                     </div>
-                                    <div className="overflow-y-auto flex-1 min-h-[60vh] xl:min-h-0 px-4 pb-4">
+                                    <div className="relative flex-1 min-h-[60vh] xl:min-h-0 flex flex-col">
+                                    <div className="jmp-scrolltop" />
+                                    <div className="overflow-y-auto flex-1 min-h-0 px-4 pb-4">
                                         {findTeamQuery && findTeamMatches.length > 0 ? (
                                             <div className="space-y-6 pt-4">
                                                 <p className="text-xs text-[var(--text-faint)] mb-3">{findTeamMatches.length} matches for <span className="text-[var(--accent)] font-semibold">{findTeamQuery.toUpperCase()}</span> in <span className="text-[var(--text-2)]">{selectedDivName}</span></p>
@@ -1876,24 +1878,14 @@ export default function Worlds() {
                                             </div>
                                         )}
                                     </div>
+                                    </div>
                                 </>
                             )}
 
                             {/* ── Rankings tab ── */}
                             {activeTab === 'rankings' && (
                                 <>
-                                    <div className="px-3 py-2 border-b border-[var(--border)] space-y-1.5">
-                                        {/* Search */}
-                                        <div className="flex items-center gap-1.5 bg-[var(--surface-2)] px-2.5 py-1.5 rounded-lg">
-                                            <Search className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
-                                            <input
-                                                type="text"
-                                                placeholder="Search teams..."
-                                                value={rankSearch}
-                                                onChange={(e) => setRankSearchState(e.target.value)}
-                                                className="bg-transparent border-none focus:outline-none text-xs w-full text-[var(--text)] placeholder-[var(--text-faint)]"
-                                            />
-                                        </div>
+                                    <div className="px-3 py-2 space-y-1.5">
                                         {/* Sort — one house toggle idiom */}
                                         <div className="seg-toggle">
                                             <button
@@ -1909,8 +1901,21 @@ export default function Worlds() {
                                                 Team #
                                             </button>
                                         </div>
+                                        {/* Search */}
+                                        <div className="flex items-center gap-1.5 bg-[var(--surface-2)] px-2.5 py-1.5 rounded-lg">
+                                            <Search className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
+                                            <input
+                                                type="text"
+                                                placeholder="Search teams..."
+                                                value={rankSearch}
+                                                onChange={(e) => setRankSearchState(e.target.value)}
+                                                className="bg-transparent border-none focus:outline-none text-xs w-full text-[var(--text)] placeholder-[var(--text-faint)]"
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="overflow-y-auto flex-1 min-h-[60vh] xl:min-h-0 p-3 space-y-2">
+                                    <div className="relative flex-1 min-h-[60vh] xl:min-h-0 flex flex-col">
+                                    <div className="jmp-scrolltop" />
+                                    <div className="overflow-y-auto flex-1 min-h-0 p-3 space-y-2">
                                         {!selectedDivName ? (
                                             <div className="jmp-empty">
                                                 <Trophy className="w-8 h-8 opacity-20" />
@@ -1939,23 +1944,14 @@ export default function Worlds() {
                                             ))
                                         )}
                                     </div>
+                                    </div>
                                 </>
                             )}
 
                             {/* ── Matches tab ── */}
                             {activeTab === 'matches' && (
                                 <>
-                                    <div className="px-3 py-2 border-b border-[var(--border)] space-y-1.5">
-                                        <div className="flex items-center gap-1.5 bg-[var(--surface-2)] px-2.5 py-1.5 rounded-lg">
-                                            <Search className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
-                                            <input
-                                                type="text"
-                                                value={matchSearch}
-                                                onChange={(e) => setMatchSearchState(e.target.value)}
-                                                placeholder="Search matches or teams..."
-                                                className="bg-transparent border-none focus:outline-none text-xs w-full text-[var(--text)] placeholder-[var(--text-faint)]"
-                                            />
-                                        </div>
+                                    <div className="px-3 py-2 space-y-1.5">
                                         <div className="seg-toggle">
                                             {['all', 'quals', 'elim'].map((f) => (
                                                 <button
@@ -1967,8 +1963,20 @@ export default function Worlds() {
                                                 </button>
                                             ))}
                                         </div>
+                                        <div className="flex items-center gap-1.5 bg-[var(--surface-2)] px-2.5 py-1.5 rounded-lg">
+                                            <Search className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
+                                            <input
+                                                type="text"
+                                                value={matchSearch}
+                                                onChange={(e) => setMatchSearchState(e.target.value)}
+                                                placeholder="Search matches or teams..."
+                                                className="bg-transparent border-none focus:outline-none text-xs w-full text-[var(--text)] placeholder-[var(--text-faint)]"
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="overflow-y-auto flex-1 min-h-[60vh] xl:min-h-0 px-4 pb-4">
+                                    <div className="relative flex-1 min-h-[60vh] xl:min-h-0 flex flex-col">
+                                    <div className="jmp-scrolltop" />
+                                    <div className="overflow-y-auto flex-1 min-h-0 px-4 pb-4">
                                         {!selectedDivName ? (
                                             <div className="jmp-empty">
                                                 <Zap />
@@ -2005,6 +2013,7 @@ export default function Worlds() {
                                                 ))}
                                             </div>
                                         )}
+                                    </div>
                                     </div>
                                 </>
                             )}

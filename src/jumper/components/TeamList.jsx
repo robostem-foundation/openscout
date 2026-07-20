@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Globe, Loader, Search, AlertTriangle, ListOrdered, Gauge } from 'lucide-react';
-import { getTeamsForEvent, getRankingsForEvent, getSkillsForEvent, getWorldSkillsForTeams } from '../services/robotevents';
+import { getTeamsForEvent, getRankingsForEvent, getSkillsForEvent, getWorldSkillsLeaderboard } from '../services/robotevents';
 
 const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset }) => {
     const [teams, setTeams] = useState([]);
@@ -90,21 +90,25 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
             setSkills(skillsMapFinal);
 
 
-            // 4. Fetch World Skills (if season is available)
-            if (event.season) {
-                const teamIds = teamsData.map(t => t.id);
-                const worldSkillsData = await getWorldSkillsForTeams(event.season.id, teamIds);
+            // 4. Fetch World Skills standings for the event's season. Standings are
+            //    per grade level, and an event may be mixed (multiple grades), so we
+            //    fetch every grade present among its teams and merge by team id.
+            if (event.season?.id) {
+                const grades = [...new Set(teamsData.map(t => t.grade).filter(Boolean))];
+                const gradesToFetch = grades.length ? grades : ['High School'];
+                const boards = await Promise.all(
+                    gradesToFetch.map(g => getWorldSkillsLeaderboard(event.season.id, g))
+                );
                 const worldSkillsMap = {};
-                worldSkillsData.forEach(ws => {
-                    if (ws.team) {
-                        // World skills data also needs aggregation or checking rank
-                        // The /seasons/{id}/skills endpoint returns ranked entries if we don't filter?
-                        // When filtering by team, we get their entries.
-                        // We should look for the entry with the highest score/rank.
-                        if (!worldSkillsMap[ws.team.id] || ws.rank < worldSkillsMap[ws.team.id].rank) {
-                            worldSkillsMap[ws.team.id] = { rank: ws.rank, score: ws.score };
-                        }
-                    }
+                boards.flat().forEach(entry => {
+                    const teamId = entry.team?.id;
+                    if (teamId == null) return;
+                    worldSkillsMap[teamId] = {
+                        rank: entry.rank,
+                        score: entry.scores?.score,
+                        driver: entry.scores?.driver,
+                        programming: entry.scores?.programming,
+                    };
                 });
                 setWorldSkills(worldSkillsMap);
             }
@@ -160,19 +164,8 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
 
     return (
         <div className="h-full flex flex-col bg-[var(--surface)] text-[var(--text)]">
-            {/* Header & Filters */}
-            <div className="p-4 border-b border-[var(--border)] space-y-4">
-                <div className="flex items-center gap-2 bg-[var(--surface-2)] p-2 rounded-lg">
-                    <Search className="w-4 h-4 text-[var(--text-muted)]" />
-                    <input
-                        type="text"
-                        placeholder="Search teams..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="bg-transparent border-none focus:outline-none text-sm w-full text-[var(--text)] placeholder-[var(--text-faint)]"
-                    />
-                </div>
-
+            {/* Header & Filters — toggles first, then the search bar. */}
+            <div className="p-4 space-y-3">
                 {/* Filters — two full-width segmented toggles with left labels */}
                 <div className="space-y-2">
                     {/* Division toggle (multi-division events only) */}
@@ -220,6 +213,16 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                         </div>
                     </div>
                 </div>
+                <div className="flex items-center gap-2 bg-[var(--surface-2)] p-2 rounded-lg">
+                    <Search className="w-4 h-4 text-[var(--text-muted)]" />
+                    <input
+                        type="text"
+                        placeholder="Search teams..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="bg-transparent border-none focus:outline-none text-sm w-full text-[var(--text)] placeholder-[var(--text-faint)]"
+                    />
+                </div>
             </div>
 
             {/* Divisions from Preset Disclaimer */}
@@ -234,14 +237,10 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
             )}
 
             {/* Team List */}
-            <div className="overflow-y-auto p-2 space-y-2 flex-1 min-h-[60vh] xl:min-h-0">
-                {viewMode === 'world_skills' ? (
-                    <div className="flex flex-col items-center justify-center h-64 text-center px-4">
-                        <Globe className="w-12 h-12 text-[var(--text-faint)] mb-4" />
-                        <h3 className="text-lg font-medium text-[var(--text-2)] mb-2">Coming Soon!</h3>
-                        <p className="text-sm text-[var(--text-faint)]">World Skills rankings are not yet available. Check back later!</p>
-                    </div>
-                ) : loading ? (
+            <div className="relative flex-1 min-h-[60vh] xl:min-h-0 flex flex-col">
+                <div className="jmp-scrolltop" />
+                <div className="overflow-y-auto p-2 space-y-2 flex-1 min-h-0">
+                {loading ? (
                     <div className="flex justify-center items-center h-32">
                         <Loader className="w-6 h-6 text-[var(--accent)] animate-spin" />
                     </div>
@@ -253,7 +252,8 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                     sortedTeams.map((team, idx) => {
                         const rankingData = rankings[team.id];
                         const skillScore = skills[team.id]?.score;
-                        const worldRank = worldSkills[team.id]?.rank;
+                        const worldData = worldSkills[team.id];
+                        const worldRank = worldData?.rank;
 
                         return (
                             <button
@@ -268,6 +268,9 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                                         )}
                                         {viewMode === 'skills' && (
                                             <span className="jmp-rank">#{idx + 1}</span>
+                                        )}
+                                        {viewMode === 'world_skills' && worldData && (
+                                            <span className="jmp-rank">#{worldData.rank}</span>
                                         )}
                                         <span className="text-[15px] font-semibold text-[var(--text)] tracking-tight shrink-0">{team.number}</span>
                                         {team.team_name && (
@@ -290,6 +293,14 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                                                 <span className="jmp-stat"><span className="jmp-label">AP</span><b>{rankingData.ap}</b></span>
                                                 <span className="jmp-stat"><span className="jmp-label">SP</span><b>{rankingData.sp}</b></span>
                                             </>
+                                        ) : viewMode === 'world_skills' ? (
+                                            worldData && (
+                                                <>
+                                                    <span className="jmp-stat"><span className="jmp-label">Skills</span><b>{worldData.score ?? '—'}</b></span>
+                                                    <span className="jmp-stat"><span className="jmp-label">Driver</span><b>{worldData.driver ?? '—'}</b></span>
+                                                    <span className="jmp-stat"><span className="jmp-label">Prog</span><b>{worldData.programming ?? '—'}</b></span>
+                                                </>
+                                            )
                                         ) : (
                                             <>
                                                 {rankingData && (
@@ -310,6 +321,7 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                         );
                     })
                 )}
+                </div>
             </div>
         </div>
     );

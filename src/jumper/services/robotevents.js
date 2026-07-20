@@ -288,13 +288,27 @@ export const getSkillsForEvent = async (eventId) => {
     }
 };
 
-export const getWorldSkillsForTeams = async (seasonId, teamIds) => {
-    // The RobotEvents API v2 does not currently support bulk fetching of skills for specific teams
-    // or a generic /skills endpoint that we can filter by team list efficiently.
-    // Endpoints like /skills and /seasons/{id}/skills return 404.
-    // To avoid errors, we return an empty list.
-    console.warn('World Skills API not available for bulk fetch.');
-    return [];
+// World Skills standings live on the RobotEvents *root* API
+// (events.vex.com/api/seasons/{id}/skills), reached via the /api/re-root proxy —
+// NOT the /api/re (v2) proxy this file otherwise uses. Standings are per-season
+// AND per-grade, so callers fetch every grade present at the event and merge.
+// Team profiles say "Elementary School" but the endpoint only accepts "Elementary".
+const worldSkillsGradeParam = (grade) => (grade === 'Elementary School' ? 'Elementary' : grade);
+
+export const getWorldSkillsLeaderboard = async (seasonId, grade) => {
+    if (!seasonId || !grade) return [];
+    const client = axios.create({ baseURL: '/api/re-root', headers: { Accept: 'application/json' } });
+    try {
+        const res = await client.get(`/api/seasons/${seasonId}/skills`, {
+            params: { post_season: 0, grade_level: worldSkillsGradeParam(grade) },
+        });
+        // An unsupported grade answers HTTP 200 with a non-array error object
+        // `{ error, data }` instead of rejecting — normalize any non-array to [].
+        return Array.isArray(res.data) ? res.data : [];
+    } catch (error) {
+        console.error('Error fetching world skills leaderboard:', grade, error);
+        return [];
+    }
 };
 
 
