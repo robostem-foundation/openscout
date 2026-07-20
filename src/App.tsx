@@ -15691,9 +15691,9 @@ function MyTeamDashboard() {
   }, [nextEvent?.id]);
   const nextEventTeamCount = nextEventTeams.data?.meta.total ?? null;
 
-  // Season timeline rows (current season + any future events), ascending.
+  // Season timeline rows for the chosen season only, ascending.
   const timeline = useMemo<MyTeamTimelineRow[]>(() => {
-    const source = teamEvents.filter((e) => e.season.id === seasonId || new Date(e.start ?? 0).getTime() > now);
+    const source = teamEvents.filter((e) => e.season.id === seasonId);
     const rows = source.map((event) => {
       const start = new Date(event.start ?? 0).getTime();
       const live = eventIsLive(event);
@@ -16002,6 +16002,7 @@ function MyTeamDashboard() {
     <div className="myteam-timeline-row">
       <section className="panel myteam-tl2-panel">
         <h2><span className="ttl">Season timeline</span><span className="myteam-act muted-act">{timeline.length} events</span></h2>
+        <div className="myteam-tl2-scroll">
         <div className="myteam-timeline2">
           {timeline.map((row, i) => (
             <div key={row.event.id} className={`myteam-tnode ${i % 2 ? "right" : "left"} ${row.state} ${row.isNext ? "next" : ""}`}>
@@ -16009,6 +16010,7 @@ function MyTeamDashboard() {
             </div>
           ))}
           {!timeline.length && <div className="myteam-upnext-empty">No events this season yet.</div>}
+        </div>
         </div>
         <div className="myteam-tl-legend center">
           <span><i className="nextpt" /> Next up</span><span><i className="up" /> Upcoming</span><span><i className="done" /> Completed</span>
