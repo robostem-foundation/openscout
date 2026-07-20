@@ -1,0 +1,56 @@
+[
+    {
+        "label": "Diamond MS",
+        "path": "diamond-ms",
+        "sku": "RE-V5RC-25-9905",
+        "streams": [
+            "",
+            "O8IR7ANKRso",
+            "WsGt7dxIGzQ"
+        ]
+    },
+    {
+        "label": "Diamond in the Desert (HS)",
+        "path": "diamond-hs",
+        "sku": "RE-V5RC-25-9904",
+        "streams": {
+            "1": [
+                "FBB-_HPy_cw",
+                "zKHvcTtnfXo"
+            ],
+            "2": [
+                "VrJZoD2gw_U",
+                "8F_WaGBRphE"
+            ]
+        }
+    },
+    {
+        "label": "Sugar Rush (HS)",
+        "path": "sugarrush",
+        "sku": "RE-V5RC-25-9947",
+        "streams": {
+            "1": [
+                "fQoOJ_XyslE",
+                "m_J74mfy9Uc"
+            ],
+            "2": [
+                "DdNA056CZXg",
+                "wUcZTarU7ys"
+            ]
+        },
+        "divisionNames": {
+            "1": "Sweets",
+            "2": "Treats"
+        }
+    },
+    {
+        "label": "SCORE Showdown (HS)",
+        "path": "score",
+        "sku": "RE-V5RC-24-5572",
+        "streams": [
+            "Oer813gz8Jo",
+            "9d7pHNizY7s",
+            "EmSO40B1VdQ"
+        ]
+    }
+]
