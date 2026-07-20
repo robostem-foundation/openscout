@@ -141,29 +141,42 @@
    replacing the saturated -400 text. */
 .jumper-root .jmp-alliance {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 6px 8px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
   border-radius: 6px;
+  border: 1px solid transparent;
   min-width: 0;
 }
 .jumper-root .jmp-alliance.red { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .jumper-root .jmp-alliance.blue { background: color-mix(in srgb, var(--score-blue) 10%, transparent); }
+/* Losing alliance: outline only, no fill, and a lighter score. */
+.jumper-root .jmp-alliance.loser { background: transparent; }
+.jumper-root .jmp-alliance.loser.red { border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+.jumper-root .jmp-alliance.loser.blue { border-color: color-mix(in srgb, var(--score-blue) 35%, transparent); }
 .jumper-root .jmp-alliance-score {
   font-size: 15px;
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
+.jumper-root .jmp-alliance.loser .jmp-alliance-score { font-weight: 500; opacity: 0.85; }
 .jumper-root .jmp-alliance.red .jmp-alliance-score { color: var(--danger-strong); }
 .jumper-root .jmp-alliance.blue .jmp-alliance-score { color: var(--score-blue); }
+.jumper-root .jmp-alliance-teams {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 1px 8px;
+  min-width: 0;
+}
 .jumper-root .jmp-alliance-team {
   font-size: 12px;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .jumper-root .jmp-alliance-team.hit {
   font-weight: 700;

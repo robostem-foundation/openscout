@@ -701,6 +701,12 @@ function MatchCard({ match, onJump, canJump, highlightTeam }) {
         return (t.team?.number || t.team?.name || '').toLowerCase().includes(highlightTeam.toLowerCase());
     };
 
+    const scores = (match.alliances ?? []).map((a) => a.score);
+    const hasScores = scores.length > 0 && scores.every((s) => s !== undefined && s !== null);
+    const maxScore = hasScores ? Math.max(...scores) : null;
+    const isTie = hasScores && scores.every((s) => s === scores[0]);
+    const isLoser = (alliance) => hasScores && !isTie && alliance.score < maxScore;
+
     return (
         <div className="jmp-row">
             <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -719,11 +725,11 @@ function MatchCard({ match, onJump, canJump, highlightTeam }) {
             </div>
             <div className="grid grid-cols-2 gap-1.5">
                 {match.alliances?.map((alliance) => (
-                    <div key={alliance.color} className={`jmp-alliance ${alliance.color === 'red' ? 'red' : 'blue'}`}>
+                    <div key={alliance.color} className={`jmp-alliance ${alliance.color === 'red' ? 'red' : 'blue'} ${isLoser(alliance) ? 'loser' : ''}`}>
                         <span className="jmp-alliance-score">
                             {alliance.score !== undefined && alliance.score !== null ? alliance.score : '—'}
                         </span>
-                        <div className="flex flex-col gap-0.5 min-w-0">
+                        <div className="jmp-alliance-teams">
                             {alliance.teams?.map((t, i) => (
                                 <span
                                     key={t.team?.id ?? `${alliance.color}-${i}`}
@@ -1721,7 +1727,7 @@ export default function Worlds() {
                     </div>
 
                     {/* ── Right Column ─────────────────────────────────────────── */}
-                    <div className="xl:col-span-4 flex flex-col gap-2.5">
+                    <div className="xl:col-span-4 flex flex-col gap-2.5 xl:self-start xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
 
                         {/* Program / Year selectors */}
                         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 flex-shrink-0">
@@ -1831,7 +1837,7 @@ export default function Worlds() {
                                             <p className="text-[11px] text-[var(--text-faint)]">Search a team and it will auto-find division.</p>
                                         ) : null}
                                     </div>
-                                    <div className="overflow-y-auto flex-1 min-h-[440px] px-4 pb-4">
+                                    <div className="overflow-y-auto flex-1 min-h-[60vh] xl:min-h-0 px-4 pb-4">
                                         {findTeamQuery && findTeamMatches.length > 0 ? (
                                             <div className="space-y-6 pt-4">
                                                 <p className="text-xs text-[var(--text-faint)] mb-3">{findTeamMatches.length} matches for <span className="text-[var(--accent)] font-semibold">{findTeamQuery.toUpperCase()}</span> in <span className="text-[var(--text-2)]">{selectedDivName}</span></p>
@@ -1904,7 +1910,7 @@ export default function Worlds() {
                                             </button>
                                         </div>
                                     </div>
-                                    <div className="overflow-y-auto flex-1 min-h-[440px] p-3 space-y-2">
+                                    <div className="overflow-y-auto flex-1 min-h-[60vh] xl:min-h-0 p-3 space-y-2">
                                         {!selectedDivName ? (
                                             <div className="jmp-empty">
                                                 <Trophy className="w-8 h-8 opacity-20" />
@@ -1962,7 +1968,7 @@ export default function Worlds() {
                                             ))}
                                         </div>
                                     </div>
-                                    <div className="overflow-y-auto flex-1 min-h-[440px] px-4 pb-4">
+                                    <div className="overflow-y-auto flex-1 min-h-[60vh] xl:min-h-0 px-4 pb-4">
                                         {!selectedDivName ? (
                                             <div className="jmp-empty">
                                                 <Zap />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Trophy, Medal, Globe, Loader, Search, AlertTriangle } from 'lucide-react';
+import { Globe, Loader, Search, AlertTriangle, ListOrdered, Gauge } from 'lucide-react';
 import { getTeamsForEvent, getRankingsForEvent, getSkillsForEvent, getWorldSkillsForTeams } from '../services/robotevents';
 
 const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset }) => {
@@ -234,7 +234,7 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
             )}
 
             {/* Team List */}
-            <div className="overflow-y-auto p-2 space-y-2 flex-1 min-h-[420px]">
+            <div className="overflow-y-auto p-2 space-y-2 flex-1 min-h-[60vh] xl:min-h-0">
                 {viewMode === 'world_skills' ? (
                     <div className="flex flex-col items-center justify-center h-64 text-center px-4">
                         <Globe className="w-12 h-12 text-[var(--text-faint)] mb-4" />
@@ -250,7 +250,7 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                         No teams found
                     </div>
                 ) : (
-                    sortedTeams.map(team => {
+                    sortedTeams.map((team, idx) => {
                         const rankingData = rankings[team.id];
                         const skillScore = skills[team.id]?.score;
                         const worldRank = worldSkills[team.id]?.rank;
@@ -265,6 +265,9 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                                     <div className="flex items-center gap-2 min-w-0 flex-1">
                                         {viewMode === 'rank' && rankingData && (
                                             <span className="jmp-rank">#{rankingData.rank}</span>
+                                        )}
+                                        {viewMode === 'skills' && (
+                                            <span className="jmp-rank">#{idx + 1}</span>
                                         )}
                                         <span className="text-[15px] font-semibold text-[var(--text)] tracking-tight shrink-0">{team.number}</span>
                                         {team.team_name && (
@@ -290,10 +293,10 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                                         ) : (
                                             <>
                                                 {rankingData && (
-                                                    <span className="jmp-stat"><Trophy className="w-3 h-3 text-[var(--text-faint)]" /><b>#{rankingData.rank}</b></span>
+                                                    <span className="jmp-stat"><ListOrdered className="w-3 h-3 text-[var(--text-faint)]" /><b>#{rankingData.rank}</b></span>
                                                 )}
                                                 {skillScore !== undefined && (
-                                                    <span className="jmp-stat"><Medal className="w-3 h-3 text-[var(--text-faint)]" /><b>{skillScore}</b></span>
+                                                    <span className="jmp-stat"><Gauge className="w-3 h-3 text-[var(--text-faint)]" /><b>{skillScore}</b></span>
                                                 )}
                                                 {worldRank && (
                                                     <span className="jmp-stat"><Globe className="w-3 h-3 text-[var(--text-faint)]" /><b>#{worldRank}</b></span>

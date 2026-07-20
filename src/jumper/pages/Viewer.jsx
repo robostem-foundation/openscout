@@ -1652,7 +1652,7 @@ function Viewer({ onGoToWorlds }) {
                     </div>
 
                     {/* Right Column: Controls */}
-                    <div className="xl:col-span-4 flex flex-col gap-4">
+                    <div className="xl:col-span-4 flex flex-col gap-4 xl:self-start xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
 
                         {/* Top row: playback controls (left) + Worlds switch filling the rest (right) */}
                         <div className="flex flex-wrap items-center gap-2">
@@ -1803,7 +1803,7 @@ function Viewer({ onGoToWorlds }) {
                         </div>
 
                         {/* Tab Content Panel */}
-                        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-hidden flex flex-col">
+                        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-hidden flex flex-col flex-1 min-h-0">
                             {activeTab === 'search' ? (
                                 <>
                                     {/* Search Header */}
@@ -1849,7 +1849,7 @@ function Viewer({ onGoToWorlds }) {
                                     </div>
 
                                     {/* Matches List */}
-                                    <div className="overflow-y-auto px-4 pb-4 h-[600px]">
+                                    <div className="overflow-y-auto px-4 pb-4 flex-1 min-h-[60vh] xl:min-h-0">
                                         {matches.length > 0 ? (
                                             <div className="space-y-4">
                                                 <div className="flex justify-between items-center sticky top-0 bg-[var(--surface)] pb-2 z-10 pt-4">
@@ -2154,7 +2154,7 @@ function Viewer({ onGoToWorlds }) {
                                     </div>
 
                                     {/* Full Matches List */}
-                                    <div className="overflow-y-auto px-4 pb-4 h-[600px]">
+                                    <div className="overflow-y-auto px-4 pb-4 flex-1 min-h-[60vh] xl:min-h-0">
                                         {allMatchesLoading ? (
                                             <div className="flex justify-center py-8">
                                                 <Loader className="w-8 h-8 animate-spin text-[var(--accent)]" />
@@ -2237,6 +2237,13 @@ function Viewer({ onGoToWorlds }) {
                                                                                     (t.team.name || '').toLowerCase().includes(term);
                                                                             };
 
+                                                                            // Winner/loser styling: losing alliance shows as outline only.
+                                                                            const allianceScores = match.alliances.map((a) => a.score);
+                                                                            const allianceHasScores = allianceScores.length > 0 && allianceScores.every((s) => s !== undefined && s !== null);
+                                                                            const allianceMax = allianceHasScores ? Math.max(...allianceScores) : null;
+                                                                            const allianceTie = allianceHasScores && allianceScores.every((s) => s === allianceScores[0]);
+                                                                            const isLoserAlliance = (a) => allianceHasScores && !allianceTie && a.score < allianceMax;
+
                                                                             return (
                                                                                 <div
                                                                                     key={match.id}
@@ -2298,9 +2305,9 @@ function Viewer({ onGoToWorlds }) {
 
                                                                                     <div className="grid grid-cols-2 gap-1.5">
                                                                                         {match.alliances.map((alliance) => (
-                                                                                            <div key={alliance.color} className={`jmp-alliance ${alliance.color === 'red' ? 'red' : 'blue'}`}>
+                                                                                            <div key={alliance.color} className={`jmp-alliance ${alliance.color === 'red' ? 'red' : 'blue'} ${isLoserAlliance(alliance) ? 'loser' : ''}`}>
                                                                                                 <span className="jmp-alliance-score">{alliance.score}</span>
-                                                                                                <div className="flex flex-col gap-0.5 min-w-0">
+                                                                                                <div className="jmp-alliance-teams">
                                                                                                     {alliance.teams.map((t, ti) => (
                                                                                                         <button
                                                                                                             key={t.team.id ?? `${alliance.color}-${ti}`}
@@ -2384,7 +2391,7 @@ function Viewer({ onGoToWorlds }) {
                                             </div>
                                         </div>
 
-                                        <div className="flex-1 overflow-y-auto p-2 space-y-2 max-h-[600px]">
+                                        <div className="overflow-y-auto p-2 space-y-2 flex-1 min-h-[60vh] xl:min-h-0">
                                             {isGlobalSearchLoading ? (
                                                 <div className="flex justify-center py-8">
                                                     <Loader className="w-8 h-8 animate-spin text-[var(--accent)]" />
