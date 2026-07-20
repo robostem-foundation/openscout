@@ -1499,19 +1499,20 @@ function Viewer({ onGoToWorlds }) {
                             Before an event: only Find Event. After: Find Event shrinks and
                             the Livestream card expands beside it. Widths animate in px so the
                             transition is actually interpolable (fr/minmax mixes don't animate). */}
-                        <div className="flex gap-4 items-start">
+                        <div
+                            className="grid w-full items-stretch"
+                            style={{
+                                gridTemplateColumns: event ? '2fr 5fr' : '1fr 0fr',
+                                columnGap: event ? '1rem' : 0,
+                                transition: 'grid-template-columns 450ms cubic-bezier(0.16, 1, 0.3, 1)'
+                            }}
+                        >
                             {/* Card A: Find Event */}
-                            <div
-                                className="bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-hidden flex-shrink-0"
-                                style={{
-                                    width: event ? 260 : 440,
-                                    transition: 'width 450ms cubic-bezier(0.16, 1, 0.3, 1)'
-                                }}
-                            >
+                            <div className="relative bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-hidden min-w-0">
                                 {event && isEventSearchCollapsed ? (
                                     <button
                                         onClick={() => setIsEventSearchCollapsed(false)}
-                                        className="w-full text-left p-4 hover:bg-[var(--surface-2)]/50 transition-colors"
+                                        className="w-full h-full text-left p-3 hover:bg-[var(--surface-2)]/50 transition-colors"
                                     >
                                         <p className="text-[var(--text)] font-semibold text-sm line-clamp-2" title={event.name}>{event.name}</p>
                                         <p className="text-xs text-[var(--text-muted)] mt-1 line-clamp-1">
@@ -1522,15 +1523,13 @@ function Viewer({ onGoToWorlds }) {
                                 ) : (
                                     <div className="p-3 space-y-3">
                                         {event && (
-                                            <div className="flex justify-end -mb-1">
-                                                <button
-                                                    onClick={() => setIsEventSearchCollapsed(true)}
-                                                    className="text-[var(--text-faint)] hover:text-[var(--text)] p-1"
-                                                    title="Collapse"
-                                                >
-                                                    <ChevronUp className="w-4 h-4" />
-                                                </button>
-                                            </div>
+                                            <button
+                                                onClick={() => setIsEventSearchCollapsed(true)}
+                                                className="absolute top-2.5 right-2.5 z-10 text-[var(--text-faint)] hover:text-[var(--text)] p-0.5"
+                                                title="Collapse"
+                                            >
+                                                <ChevronUp className="w-4 h-4" />
+                                            </button>
                                         )}
 
                                         {/* Presets Dropdown */}
@@ -1596,10 +1595,7 @@ function Viewer({ onGoToWorlds }) {
                             {/* Card B: Livestream (0 width until an event loads, then expands) */}
                             <div
                                 className={`bg-[var(--surface)] border border-[var(--border)] rounded-lg min-w-0 overflow-hidden ${event ? 'p-4 opacity-100' : 'opacity-0 pointer-events-none'}`}
-                                style={{
-                                    width: event ? 440 : 0,
-                                    transition: 'width 450ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease'
-                                }}
+                                style={{ transition: 'opacity 300ms ease' }}
                             >
                                 {event && (
                                     <>
