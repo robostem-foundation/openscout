@@ -173,74 +173,62 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                     />
                 </div>
 
-                {/* Division Filter */}
-                {multiDivisionMode && event?.divisions?.length > 1 && (
-                    <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
-                        <button
-                            onClick={() => setSelectedDivisionId(null)}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] font-semibold transition-all uppercase whitespace-nowrap ${!selectedDivisionId
-                                ? 'bg-white/10 text-[var(--text)]'
-                                : 'text-[var(--text-faint)] hover:text-[var(--text-2)]'
-                                }`}
-                        >
-                            All
-                        </button>
-                        {event.divisions.map((div) => (
-                            <button
-                                key={div.id}
-                                onClick={() => setSelectedDivisionId(div.id)}
-                                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all uppercase whitespace-nowrap ${selectedDivisionId === div.id
-                                    ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                                    : 'bg-[var(--surface-2)]/40 text-[var(--text-faint)] border border-transparent hover:text-[var(--text-muted)]'
-                                    }`}
-                            >
-                                {div.name}
-                            </button>
-                        ))}
-                    </div>
-                )}
+                {/* Filters — two full-width segmented toggles with left labels */}
+                <div className="space-y-2">
+                    {/* Division toggle (multi-division events only) */}
+                    {multiDivisionMode && event?.divisions?.length > 1 && (
+                        <div className="flex items-center gap-2">
+                            <span className="w-16 flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Division</span>
+                            <div className="flex-1 flex gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5 min-w-0">
+                                <button
+                                    onClick={() => setSelectedDivisionId(null)}
+                                    className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-colors truncate ${!selectedDivisionId
+                                        ? 'bg-purple-600 text-white'
+                                        : 'text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
+                                        }`}
+                                >
+                                    All
+                                </button>
+                                {event.divisions.map((div) => (
+                                    <button
+                                        key={div.id}
+                                        onClick={() => setSelectedDivisionId(div.id)}
+                                        className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-colors truncate ${selectedDivisionId === div.id
+                                            ? 'bg-purple-600 text-white'
+                                            : 'text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
+                                            }`}
+                                    >
+                                        {div.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                    <button
-                        onClick={() => setViewMode('default')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${viewMode === 'default'
-                            ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
-                            : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]'
-                            }`}
-                    >
-                        <Users className="w-3 h-3" />
-                        Default
-                    </button>
-                    <button
-                        onClick={() => setViewMode('rank')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${viewMode === 'rank'
-                            ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
-                            : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]'
-                            }`}
-                    >
-                        <Trophy className="w-3 h-3" />
-                        Rank
-                    </button>
-                    <button
-                        onClick={() => setViewMode('skills')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${viewMode === 'skills'
-                            ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
-                            : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]'
-                            }`}
-                    >
-                        <Medal className="w-3 h-3" />
-                        Skills
-                    </button>
-                    <button
-                        onClick={() => setViewMode('world_skills')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${viewMode === 'world_skills'
-                            ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
-                            : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]'
-                            }`}
-                    >
-                        <Globe className="w-3 h-3" />
-                        World Skills
-                    </button>
+                    {/* View-mode toggle */}
+                    <div className="flex items-center gap-2">
+                        <span className="w-16 flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Filter by</span>
+                        <div className="flex-1 flex gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5 min-w-0">
+                            {[
+                                { key: 'default', label: 'Default', Icon: Users },
+                                { key: 'rank', label: 'Rank', Icon: Trophy },
+                                { key: 'skills', label: 'Skills', Icon: Medal },
+                                { key: 'world_skills', label: 'World Skills', Icon: Globe },
+                            ].map(({ key, label, Icon }) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setViewMode(key)}
+                                    className={`flex-1 min-w-0 flex items-center justify-center gap-1 px-1.5 py-1.5 rounded-md text-[11px] font-semibold whitespace-nowrap transition-colors ${viewMode === key
+                                        ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
+                                        : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
+                                        }`}
+                                >
+                                    <Icon className="w-3 h-3 flex-shrink-0" />
+                                    <span className="truncate">{label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </div>
 

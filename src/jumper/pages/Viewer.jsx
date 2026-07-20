@@ -2103,38 +2103,50 @@ function Viewer({ onGoToWorlds }) {
                                                 className="flex-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all"
                                             />
                                         </div>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            {/* Match Type Filters */}
-                                            {['all', 'quals', 'elim'].map((filterType) => (
-                                                <button
-                                                    key={filterType}
-                                                    onClick={() => setMatchesTabState(prev => ({ ...prev, filter: filterType }))}
-                                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${matchesTabState.filter === filterType
-                                                        ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
-                                                        : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]'
-                                                        }`}
-                                                >
-                                                    {filterType === 'quals' ? 'Quals' : filterType === 'elim' ? 'Elims' : 'All Matches'}
-                                                </button>
-                                            ))}
-
-                                            {/* Division Switcher in Matches Tab - Integrated into same row */}
+                                        <div className="space-y-2">
+                                            {/* Division toggle (multi-division events only) */}
                                             {multiDivisionMode && event?.divisions?.length > 1 && (
-                                                <div className="flex flex-wrap gap-1">
-                                                    {event.divisions.map((div) => (
+                                                <div className="flex items-center gap-2">
+                                                    <span className="w-16 flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Division</span>
+                                                    <div className="flex-1 flex gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5 min-w-0">
+                                                        {event.divisions.map((div) => (
+                                                            <button
+                                                                key={div.id}
+                                                                onClick={() => setActiveDivisionId(div.id)}
+                                                                className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-colors truncate ${activeDivisionId === div.id
+                                                                    ? 'bg-purple-600 text-white'
+                                                                    : 'text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
+                                                                    }`}
+                                                            >
+                                                                {div.name}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Sort-by toggle (match type) */}
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-16 flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Sort by</span>
+                                                <div className="flex-1 flex gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5 min-w-0">
+                                                    {[
+                                                        { key: 'all', label: 'All Matches' },
+                                                        { key: 'quals', label: 'Quals' },
+                                                        { key: 'elim', label: 'Elims' },
+                                                    ].map(({ key, label }) => (
                                                         <button
-                                                            key={div.id}
-                                                            onClick={() => setActiveDivisionId(div.id)}
-                                                            className={`px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all uppercase whitespace-nowrap ${activeDivisionId === div.id
-                                                                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                                                                : 'bg-[var(--surface-2)]/50 text-[var(--text-faint)] border border-transparent hover:bg-[var(--surface-3)]'
+                                                            key={key}
+                                                            onClick={() => setMatchesTabState(prev => ({ ...prev, filter: key }))}
+                                                            className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[11px] font-semibold whitespace-nowrap truncate transition-colors ${matchesTabState.filter === key
+                                                                ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
+                                                                : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
                                                                 }`}
                                                         >
-                                                            {div.name}
+                                                            {label}
                                                         </button>
                                                     ))}
                                                 </div>
-                                            )}
+                                            </div>
                                         </div>
                                     </div>
 
