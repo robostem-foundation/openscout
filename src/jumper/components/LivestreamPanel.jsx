@@ -180,40 +180,42 @@ export default function LivestreamPanel({
 
     return (
         <div className="space-y-3">
-            {/* Division selector — the division names themselves are the toggle */}
-            {hasDivisions && (
-                <div className="inline-flex flex-wrap gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-1">
-                    {event.divisions.map(div => {
-                        const active = targetDivisionId === div.id;
-                        return (
-                            <button
-                                key={div.id}
-                                onClick={() => onActiveDivisionIdChange(div.id)}
-                                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${active
-                                    ? 'bg-purple-600 text-white'
-                                    : 'text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:text-[var(--text)]'}`}
-                            >
-                                {div.name}
-                            </button>
-                        );
-                    })}
+            {/* Row 1: stream pills (left) + division selector pinned to the far right */}
+            <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 min-h-[32px] min-w-0">
+                    {visibleStreams.length > 0
+                        ? visibleStreams.map(s => (
+                            <StreamPill
+                                key={s.id}
+                                stream={s}
+                                loading={loadingIds[s.id]}
+                                greyed={editingId === s.id}
+                                onEdit={handleEdit}
+                                onRemove={clearStream}
+                            />
+                        ))
+                        : <span className="text-xs text-[var(--text-faint)]">No streams yet — paste a YouTube link below.</span>}
                 </div>
-            )}
 
-            {/* Row 1: stream pills */}
-            <div className="flex flex-wrap items-center gap-2 min-h-[34px]">
-                {visibleStreams.length > 0
-                    ? visibleStreams.map(s => (
-                        <StreamPill
-                            key={s.id}
-                            stream={s}
-                            loading={loadingIds[s.id]}
-                            greyed={editingId === s.id}
-                            onEdit={handleEdit}
-                            onRemove={clearStream}
-                        />
-                    ))
-                    : <span className="text-xs text-[var(--text-faint)]">No streams yet — paste a YouTube link below.</span>}
+                {/* Division selector — the division names themselves are the toggle */}
+                {hasDivisions && (
+                    <div className="inline-flex flex-wrap gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5 flex-shrink-0">
+                        {event.divisions.map(div => {
+                            const active = targetDivisionId === div.id;
+                            return (
+                                <button
+                                    key={div.id}
+                                    onClick={() => onActiveDivisionIdChange(div.id)}
+                                    className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${active
+                                        ? 'bg-purple-600 text-white'
+                                        : 'text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:text-[var(--text)]'}`}
+                                >
+                                    {div.name}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
 
             {/* Row 2: paste box */}
