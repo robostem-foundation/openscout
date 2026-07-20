@@ -13,6 +13,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   CornerDownLeft,
+  Crown,
   ExternalLink,
   Eye,
   FilePlus2,
@@ -1971,22 +1972,101 @@ const r16SeedPairs = [
   [6, 11],
 ];
 
-function allianceRowsFromMatches(matches: Match[]) {
-  const rows = new Map<number, string[]>();
+/**
+ * Derive each elimination-bracket alliance and its seed from the matches.
+ *
+ * Unlike a naive R16-only read, this scans the WHOLE bracket (R16 → QF → SF → F)
+ * so it works for every standard RobotEvents shape:
+ *  - clean 16-alliance events — seeds recovered straight from the R16 instances
+ *    ([1,16],[8,9],… with red = better seed, blue = worse seed);
+ *  - 8-alliance events that start at Quarterfinals with no R16 round at all —
+ *    seeds recovered from the QF instances ([1,8],[4,5],[2,7],[3,6]);
+ *  - 9–15 alliance events where the top seeds get byes and therefore first appear
+ *    in QF rather than R16.
+ *
+ * Each alliance is identified by its (order-independent) set of team ids so it is
+ * tracked consistently across rounds; the display order (captain first) is taken
+ * from its earliest appearance. Seeds that land cleanly on a standard bracket
+ * instance are assigned structurally (R16 when the event has one, otherwise QF).
+ *
+ * Any alliance left without a structural seed — bye captains that skip R16 — is
+ * resolved by qualification rank: the better-ranked captain (teams[0]) takes the
+ * better of the remaining seed slots. This matches how byes are awarded (to the
+ * top qualifiers). Ranking data is optional; without it, leftovers fall back to
+ * bracket appearance order so the common clean-16 case never regresses.
+ */
+function allianceRowsFromMatches(
+  matches: Match[],
+  rankByTeam?: Map<number, number>,
+): Array<[number, string[]]> {
+  const elim = matches.filter((match) => playoffImportance(match) > 0);
+  if (!elim.length) return [];
 
-  matches
-    .filter((match) => playoffRoundKey(match) === "r16")
-    .sort((a, b) => (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum)
-    .forEach((match) => {
-      const seedPair = r16SeedPairs[(match.instance ?? 1) - 1];
-      if (!seedPair) return;
-      const redTeams = match.alliances.find((alliance) => alliance.color === "red")?.teams.map((entry) => entry.team.name).filter(Boolean) ?? [];
-      const blueTeams = match.alliances.find((alliance) => alliance.color === "blue")?.teams.map((entry) => entry.team.name).filter(Boolean) ?? [];
-      rows.set(seedPair[0], redTeams);
-      rows.set(seedPair[1], blueTeams);
+  // A 16-alliance bracket has an R16 round; an 8-alliance bracket starts at QF.
+  const hasR16 = elim.some((match) => playoffRoundKey(match) === "r16");
+
+  type AllianceInfo = { teams: IdInfo[]; order: number; seed: number | null };
+  const alliances = new Map<string, AllianceInfo>();
+  const identity = (teams: IdInfo[]) =>
+    teams.map((team) => team.id).filter(Boolean).sort((a, b) => a - b).join("-");
+
+  // Scan earliest round first so each alliance's earliest appearance wins the
+  // captain-first ordering and provides its structural seed.
+  const roundRank: Record<string, number> = { r16: 0, qf: 1, sf: 2, f: 3 };
+  const ordered = [...elim].sort(
+    (a, b) =>
+      (roundRank[playoffRoundKey(a)] ?? 9) - (roundRank[playoffRoundKey(b)] ?? 9) ||
+      (a.instance ?? 0) - (b.instance ?? 0) ||
+      a.matchnum - b.matchnum,
+  );
+
+  let appearance = 0;
+  ordered.forEach((match) => {
+    const key = playoffRoundKey(match);
+    (["red", "blue"] as const).forEach((color) => {
+      const teams = match.alliances.find((alliance) => alliance.color === color)?.teams
+        .map((entry) => entry.team)
+        .filter((team) => team?.id) ?? [];
+      if (!teams.length) return;
+      const id = identity(teams);
+      if (!id) return;
+      let info = alliances.get(id);
+      if (!info) {
+        info = { teams, order: appearance++, seed: null };
+        alliances.set(id, info);
+      }
+      if (info.seed != null) return;
+      const slot = color === "red" ? 0 : 1;
+      const pair =
+        key === "r16" ? r16SeedPairs[(match.instance ?? 1) - 1]
+        : key === "qf" && !hasR16 ? qfSeedPairs[(match.instance ?? 1) - 1]
+        : undefined;
+      if (pair) info.seed = pair[slot];
     });
+  });
 
-  return [...rows.entries()].sort((a, b) => a[0] - b[0]);
+  const infos = [...alliances.values()];
+  const used = new Set<number>();
+  infos.forEach((info) => { if (info.seed != null) used.add(info.seed); });
+
+  // Rankings fallback for byes / anything the bracket left ambiguous: better
+  // captain rank → better (lower) remaining seed; appearance order breaks ties.
+  const captainRank = (info: AllianceInfo) =>
+    rankByTeam?.get(info.teams[0]?.id ?? -1) ?? Number.POSITIVE_INFINITY;
+  const leftovers = infos
+    .filter((info) => info.seed == null)
+    .sort((a, b) => captainRank(a) - captainRank(b) || a.order - b.order);
+  let nextSeed = 1;
+  leftovers.forEach((info) => {
+    while (used.has(nextSeed)) nextSeed += 1;
+    info.seed = nextSeed;
+    used.add(nextSeed);
+  });
+
+  return infos
+    .filter((info): info is AllianceInfo & { seed: number } => info.seed != null)
+    .map((info) => [info.seed, info.teams.map((team) => team.name).filter(Boolean)] as [number, string[]])
+    .sort((a, b) => a[0] - b[0]);
 }
 
 function groupItemsByEvent<T extends { event: { id: number; name: string } }>(
@@ -6460,6 +6540,7 @@ function EventDetail({ param }: { param: string }) {
           scoreTier={iqScoreTier}
           eventId={event.id}
           focusMatchId={focusMatchId}
+          rankings={filteredRankings}
         />
       )}
       {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} allMatches={matches.data?.data ?? []} sharedTeamId={primarySharedTeam?.sharedTeamId} eventId={String(event.id)} />}
@@ -10078,6 +10159,7 @@ function MatchesTable({
   scoreTier,
   eventId,
   focusMatchId,
+  rankings = [],
 }: {
   matches: Match[];
   timestampMap: Map<number, MatchTimestamp>;
@@ -10089,6 +10171,7 @@ function MatchesTable({
   scoreTier?: (score: number | null | undefined) => ScoreTier;
   eventId?: number;
   focusMatchId?: string | null;
+  rankings?: Ranking[];
 }) {
   const [qualificationDirection, setQualificationDirection] = useState<DateDirection>("asc");
   const [bracketOpen, setBracketOpen] = useState(false);
@@ -10114,7 +10197,14 @@ function MatchesTable({
     groups.set(key, [...(groups.get(key) ?? []), match]);
     return groups;
   }, new Map());
-  const allianceRows = allianceRowsFromMatches(matches);
+  // Map team id → qualification rank so byes (top seeds that skip R16) can be
+  // seeded by rank when the bracket alone can't place them.
+  const rankByTeam = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const ranking of rankings) if (ranking.team?.id) map.set(ranking.team.id, ranking.rank);
+    return map;
+  }, [rankings]);
+  const allianceRows = allianceRowsFromMatches(matches, rankByTeam);
   const playoffOrder = ["r16", "qf", "sf", "f"];
   // Final-division events (two divisions facing off) have no qualification
   // matches, only the cross-division finals. In that case promote the
@@ -15516,12 +15606,23 @@ function myTeamDateLabel(iso?: string | null) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", year: "numeric" }).format(d);
 }
 
+type MyTeamTimelineWins = {
+  // "full" = overall event Tournament Champion; "division" = division-only champion
+  // at a multi-division event; null = not a champion here.
+  champion: "full" | "division" | null;
+  skills: boolean;
+  excellence: boolean;
+  // Every award the team won at this event, with what each qualifies them for.
+  all: Array<{ title: string; qualifies: string[] }>;
+};
+
 type MyTeamTimelineRow = {
   event: Event;
   state: "live" | "up" | "done";
   start: number;
   isNext: boolean;
-  awardTitle: string | null;
+  // Award wins earned by this team at this event, used to light up the crown row.
+  wins: MyTeamTimelineWins;
   rank: number | null;
   record: string | null;
   avgScore: number | null;
@@ -15745,8 +15846,28 @@ function MyTeamDashboard() {
       const live = eventIsLive(event);
       const up = !live && start > now;
       const state: MyTeamTimelineRow["state"] = live ? "live" : up ? "up" : "done";
-      const evAwards = seasonAwards.filter((a) => a.event.id === event.id).map((a) => a.title);
-      const awardTitle = evAwards.length ? evAwards.slice().sort((a, b) => awardPriority({ title: a } as Award) - awardPriority({ title: b } as Award))[0] : null;
+      // Awards this team won at this event (title-matched via the same regexes used
+      // elsewhere for consistency), with qualifications for the hover popup.
+      const teamWonAwards = team
+        ? seasonAwards.filter((a) => a.event.id === event.id && awardTeamWinners(a).some((w) => w.team?.id === team.id))
+        : [];
+      const champRe = isIq ? /teamwork.*champions?/i : /world champions?|tournament champions?|event champions?/i;
+      const champAward = teamWonAwards.find((a) => champRe.test(a.title)) ?? null;
+      let champion: MyTeamTimelineWins["champion"] = null;
+      if (champAward && team) {
+        // Half crown when the win is division-scoped at a multi-division event: the
+        // winning entry carries a `division` and the event has >1 division. A win with
+        // no division (or a single-division event) is the overall event champion.
+        const multiDivision = (event.divisions?.length ?? 0) > 1;
+        const wonOverall = awardTeamWinners(champAward).some((w) => w.team?.id === team.id && !w.division);
+        champion = wonOverall || !multiDivision ? "full" : "division";
+      }
+      const wins: MyTeamTimelineWins = {
+        champion,
+        skills: teamWonAwards.some((a) => /(?:robot\s*)?skills?.*champions?/i.test(a.title)),
+        excellence: teamWonAwards.some((a) => /excellence award/i.test(a.title)),
+        all: teamWonAwards.map((a) => ({ title: a.title, qualifies: a.qualifications ?? [] })),
+      };
       const rk = seasonRankings.find((r) => r.event.id === event.id) ?? null;
       const sk = skillSummary(seasonSkills.filter((s) => s.event.id === event.id));
       return {
@@ -15754,7 +15875,7 @@ function MyTeamDashboard() {
         state,
         start,
         isNext: false,
-        awardTitle,
+        wins,
         rank: rk?.rank ?? null,
         // VEX IQ is cooperative — no win/loss. Show the teamwork average instead of a
         // meaningless "0–0" record.
@@ -15769,7 +15890,7 @@ function MyTeamDashboard() {
     const firstUp = rows.find((r) => r.state === "up");
     if (firstUp) firstUp.isNext = true;
     return rows;
-  }, [teamEvents, seasonId, seasonAwards, seasonRankings, seasonSkills, nextUp, now, isIq]);
+  }, [teamEvents, seasonId, seasonAwards, seasonRankings, seasonSkills, nextUp, now, isIq, team]);
 
   // Recent matches (most recent first) for the season-timeline aside.
   const recentMatches = useMemo(() => {
@@ -15861,7 +15982,6 @@ function MyTeamDashboard() {
       if (row.nextMatch) pieces.push(<>Next <b>{row.nextMatch}</b></>);
       if (!pieces.length) pieces.push("In progress");
     } else {
-      if (row.awardTitle) pieces.push(row.awardTitle);
       if (row.record) pieces.push(<b>{row.record}</b>);
       else if (row.avgScore != null) pieces.push(<>Avg <b>{row.avgScore}</b></>);
       if (row.skills) pieces.push(<>Skills <b>{row.skills}</b></>);
@@ -16064,10 +16184,43 @@ function MyTeamDashboard() {
     </div>
   );
 
+  // Three crowns: overall Champion (full/half), Robot Skills Champion, Excellence.
+  // Grey by default; lit gold when the team won that award at the event. Hovering the
+  // row reveals a popup listing every award won and what it qualifies for.
+  const crownRow = (row: MyTeamTimelineRow) => {
+    const { champion, skills, excellence, all } = row.wins;
+    return (
+      <span className="myteam-crowns" tabIndex={all.length ? 0 : -1}>
+        {champion === "full" ? (
+          <Crown className="mt-crown on" aria-label="Tournament Champion" />
+        ) : champion === "division" ? (
+          <span className="mt-crown-half" aria-label="Division Champion">
+            <Crown className="mt-crown off" />
+            <span className="mt-crown-clip"><Crown className="mt-crown on" /></span>
+          </span>
+        ) : (
+          <Crown className="mt-crown off" aria-label="Not Tournament Champion" />
+        )}
+        <Crown className={`mt-crown ${skills ? "on" : "off"}`} aria-label={skills ? "Robot Skills Champion" : "Not Robot Skills Champion"} />
+        <Crown className={`mt-crown ${excellence ? "on" : "off"}`} aria-label={excellence ? "Excellence Award" : "No Excellence Award"} />
+        {all.length > 0 && (
+          <span className="myteam-crowns-pop">
+            {all.map((a, i) => (
+              <span key={i} className="mt-crown-popitem">
+                <span className="mt-crown-poptitle">{a.title}</span>
+                {a.qualifies.length > 0 && <span className="mt-crown-popq">Qualifies: {a.qualifies.join(", ")}</span>}
+              </span>
+            ))}
+          </span>
+        )}
+      </span>
+    );
+  };
+
   const timelineNode = (row: MyTeamTimelineRow) => (
     <>
       <div className="row"><span className="nm">{row.event.name}</span><span className="dt">{myTeamDateLabel(row.event.start)}</span></div>
-      <div className="myteam-evmeta"><span className="loc">{locationLine(row.event)}</span><span className={`event-priority priority-${eventCategory(row.event).rank}`}>{eventCategory(row.event).label}</span></div>
+      <div className="myteam-evmeta"><span className="loc">{locationLine(row.event)}</span><span className={`event-priority priority-${eventCategory(row.event).rank}`}>{eventCategory(row.event).label}</span>{crownRow(row)}</div>
       <div className="myteam-resline">{renderPieces(row)}</div>
     </>
   );

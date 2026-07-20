@@ -225,7 +225,7 @@ function StreamManager({
                         <button
                             onClick={() => onMultiDivisionModeChange(!multiDivisionMode)}
                             className={`text-[10px] font-semibold px-2 py-1 rounded border transition-all whitespace-nowrap ${multiDivisionMode
-                                ? 'bg-purple-500/20 border-purple-500/50 text-purple-300'
+                                ? 'bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] border-[color-mix(in_srgb,var(--accent)_40%,transparent)] text-[var(--accent)]'
                                 : 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-faint)] hover:text-[var(--text-muted)]'
                                 }`}
                             title={multiDivisionMode ? "Disable Multi-Division Mode" : "Enable Multi-Division Mode"}

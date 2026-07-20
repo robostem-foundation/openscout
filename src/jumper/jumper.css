@@ -36,6 +36,174 @@
   flex: 0 0 auto;
 }
 
+/* ------------------------------------------------------------------ */
+/* House-style building blocks for the Jumper tab.                      */
+/* These map the ported tool onto OpenScout's editorial-minimalist      */
+/* system (see the Events page / Team detail page): flat cards, hairline */
+/* dividers, one uppercase micro-label scale, pale semantic chips, and   */
+/* a single reused empty-state. Scoped to .jumper-root.                  */
+/* ------------------------------------------------------------------ */
+
+/* Uppercase tracked micro-label — the app's stat-label idiom. */
+.jumper-root .jmp-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+/* Card header bar: surface-2 strip + hairline underline. Distinct cards
+   keep their border; interiors are divided by rules, never nested boxes. */
+.jumper-root .jmp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* One empty-state, reused across every panel. */
+.jumper-root .jmp-empty {
+  height: 100%;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-faint);
+}
+.jumper-root .jmp-empty svg {
+  width: 22px;
+  height: 22px;
+  opacity: 0.5;
+}
+.jumper-root .jmp-empty p { font-size: 13px; }
+
+/* Slim list row — teams and matches. Card-styled, but dense. */
+.jumper-root .jmp-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.jumper-root button.jmp-row:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+/* Rank chip on team rows. */
+.jumper-root .jmp-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inline stat: tiny label + value, e.g. "WP 42". */
+.jumper-root .jmp-stat { display: inline-flex; align-items: baseline; gap: 4px; }
+.jumper-root .jmp-stat b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Neutral record pill (W-L-T). */
+.jumper-root .jmp-record {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.jumper-root .jmp-record .w { color: var(--success); }
+.jumper-root .jmp-record .l { color: var(--danger); }
+.jumper-root .jmp-record .t { color: var(--text-muted); }
+
+/* Pale alliance chips — VEX red/blue, washed backgrounds + readable ink,
+   replacing the saturated -400 text. */
+.jumper-root .jmp-alliance {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  min-width: 0;
+}
+.jumper-root .jmp-alliance.red { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.jumper-root .jmp-alliance.blue { background: color-mix(in srgb, var(--score-blue) 10%, transparent); }
+.jumper-root .jmp-alliance-score {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.jumper-root .jmp-alliance.red .jmp-alliance-score { color: var(--danger-strong); }
+.jumper-root .jmp-alliance.blue .jmp-alliance-score { color: var(--score-blue); }
+.jumper-root .jmp-alliance-team {
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jumper-root .jmp-alliance-team.hit {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Small ghost icon button (jump). Accent on hover. */
+.jumper-root .jmp-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.jumper-root .jmp-iconbtn:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.jumper-root .jmp-iconbtn:disabled {
+  color: var(--text-faint);
+  background: transparent;
+  cursor: not-allowed;
+}
+
+/* Day-group divider label inside scrolling lists. */
+.jumper-root .jmp-daysep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+.jumper-root .jmp-daysep::before,
+.jumper-root .jmp-daysep::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
 /* Native range sliders (sync offset, seek, volume) — accent thumbs.
    The tool draws the filled track via an inline linear-gradient using
    var(--accent), so we only theme the thumb + clear the default track. */

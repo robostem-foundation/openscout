@@ -5,7 +5,7 @@ import {
     Tv, Globe, ChevronDown,
     Loader, Play, Pause, Zap, Trophy, Users, Medal, Search,
     Rewind, FastForward, RotateCcw, RotateCw, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, Info,
-    Volume2, VolumeX, Maximize, Minimize,
+    Volume2, VolumeX, Maximize, Minimize, X,
 } from 'lucide-react';
 import { WORLDS_PROGRAMS, WORLDS_YEARS, getProgConfig } from '../data/worldsConfig';
 import { fetchChannelBroadcasts, groupBroadcasts, resolveBroadcast, fetchBroadcastPlaylist } from '../services/boxcast';
@@ -452,25 +452,25 @@ function PlaybackControls({ canControl, canSync, onSeek, onSynced }) {
                 <button onClick={() => onSeek(-60)} className="p-1 hover:bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] rounded-lg transition-colors" title="Back 1m">
                     <Rewind className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-[7px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">1M</span>
+                <span className="text-[9px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">1M</span>
             </div>
             <div className="flex flex-col items-center">
                 <button onClick={() => onSeek(-30)} className="p-1 hover:bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] rounded-lg transition-colors" title="Back 30s">
                     <ChevronsLeft className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-[7px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">30S</span>
+                <span className="text-[9px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">30S</span>
             </div>
             <div className="flex flex-col items-center">
                 <button onClick={() => onSeek(-10)} className="p-1 hover:bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] rounded-lg transition-colors" title="Back 10s">
                     <RotateCcw className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-[7px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">10S</span>
+                <span className="text-[9px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">10S</span>
             </div>
             <div className="flex flex-col items-center">
                 <button onClick={() => onSeek(-5)} className="p-1 hover:bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] rounded-lg transition-colors" title="Back 5s">
                     <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-[7px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">5S</span>
+                <span className="text-[9px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">5S</span>
             </div>
 
             <div className="h-4 w-px bg-[var(--surface-2)] mx-1" />
@@ -484,7 +484,7 @@ function PlaybackControls({ canControl, canSync, onSeek, onSynced }) {
                 >
                     <Play className="w-3.5 h-3.5 fill-current" />
                 </button>
-                <span className={`text-[7px] font-semibold uppercase tracking-wider -mt-0.5 pointer-events-none ${canSync ? 'text-[var(--accent)]/70' : 'text-[var(--accent)]/35'}`}>Synced</span>
+                <span className={`text-[9px] font-semibold uppercase tracking-wider -mt-0.5 pointer-events-none ${canSync ? 'text-[var(--accent)]/70' : 'text-[var(--accent)]/35'}`}>Synced</span>
             </div>
 
             <div className="h-4 w-px bg-[var(--surface-2)] mx-1" />
@@ -493,25 +493,25 @@ function PlaybackControls({ canControl, canSync, onSeek, onSynced }) {
                 <button onClick={() => onSeek(5)} className="p-1 hover:bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] rounded-lg transition-colors" title="Forward 5s">
                     <ChevronRight className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-[7px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">5S</span>
+                <span className="text-[9px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">5S</span>
             </div>
             <div className="flex flex-col items-center">
                 <button onClick={() => onSeek(10)} className="p-1 hover:bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] rounded-lg transition-colors" title="Forward 10s">
                     <RotateCw className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-[7px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">10S</span>
+                <span className="text-[9px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">10S</span>
             </div>
             <div className="flex flex-col items-center">
                 <button onClick={() => onSeek(30)} className="p-1 hover:bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] rounded-lg transition-colors" title="Forward 30s">
                     <ChevronsRight className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-[7px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">30S</span>
+                <span className="text-[9px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">30S</span>
             </div>
             <div className="flex flex-col items-center">
                 <button onClick={() => onSeek(60)} className="p-1 hover:bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] rounded-lg transition-colors" title="Forward 1m">
                     <FastForward className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-[7px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">1M</span>
+                <span className="text-[9px] font-semibold text-[var(--text-faint)] uppercase tracking-wider -mt-0.5 pointer-events-none">1M</span>
             </div>
         </div>
     );
@@ -702,39 +702,32 @@ function MatchCard({ match, onJump, canJump, highlightTeam }) {
     };
 
     return (
-        <div className="bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--border-strong)] rounded-lg p-3 transition-colors">
-            <div className="flex justify-between items-start mb-2">
-                <div>
-                    <span className="font-semibold text-[var(--accent)]">{matchName}</span>
-                    {timeStr && <span className="text-[var(--text-faint)] text-xs ml-2">{timeStr}</span>}
+        <div className="jmp-row">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+                <div className="flex items-baseline gap-2 min-w-0">
+                    <span className="text-[13px] font-semibold text-[var(--text)] truncate">{matchName}</span>
+                    {timeStr && <span className="jmp-label shrink-0">{timeStr}</span>}
                 </div>
-                <div className="flex gap-1">
-                    <button
-                        onClick={() => onJump(match)}
-                        disabled={!canJump}
-                        className={`p-1.5 rounded-md transition-colors ${canJump
-                            ? 'bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20'
-                            : 'text-[var(--text-faint)] cursor-not-allowed'
-                        }`}
-                        title={canJump ? 'Jump to match' : 'Jump unavailable'}
-                    >
-                        <Play className="w-3 h-3 fill-current" />
-                    </button>
-                </div>
+                <button
+                    onClick={() => onJump(match)}
+                    disabled={!canJump}
+                    className="jmp-iconbtn shrink-0"
+                    title={canJump ? 'Jump to match' : 'Jump unavailable'}
+                >
+                    <Play className="w-3 h-3 fill-current" />
+                </button>
             </div>
-            <div className="grid grid-cols-2 gap-4 text-xs">
+            <div className="grid grid-cols-2 gap-1.5">
                 {match.alliances?.map((alliance) => (
-                    <div key={alliance.color} className={`flex flex-col ${alliance.color === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
-                        <div className="flex items-end border-b border-[var(--border)] pb-1 mb-1">
-                            <span className="font-mono text-lg font-semibold opacity-90">
-                                {alliance.score !== undefined && alliance.score !== null ? alliance.score : '—'}
-                            </span>
-                        </div>
-                        <div className="flex flex-col gap-0.5">
-                            {alliance.teams?.map((t) => (
+                    <div key={alliance.color} className={`jmp-alliance ${alliance.color === 'red' ? 'red' : 'blue'}`}>
+                        <span className="jmp-alliance-score">
+                            {alliance.score !== undefined && alliance.score !== null ? alliance.score : '—'}
+                        </span>
+                        <div className="flex flex-col gap-0.5 min-w-0">
+                            {alliance.teams?.map((t, i) => (
                                 <span
-                                    key={t.team?.id ?? Math.random()}
-                                    className={`${isSearchedTeam(t) ? 'bg-white/10 rounded px-1 -mx-1 font-semibold text-[var(--text)]' : ''}`}
+                                    key={t.team?.id ?? `${alliance.color}-${i}`}
+                                    className={`jmp-alliance-team ${isSearchedTeam(t) ? 'hit' : ''}`}
                                 >
                                     {t.team?.number || t.team?.name || '—'}
                                 </span>
@@ -749,52 +742,24 @@ function MatchCard({ match, onJump, canJump, highlightTeam }) {
 
 function TeamCard({ ranking, onSelect }) {
     const teamNum = ranking.team?.name || ranking.team?.number || '—';
-    const stats = [
-        { label: 'WP', value: ranking.wp },
-        { label: 'AP', value: ranking.ap },
-        { label: 'SP', value: ranking.sp },
-    ];
 
     return (
         <button
             onClick={() => onSelect && onSelect(teamNum)}
-            className="w-full text-left bg-[var(--surface-2)]/50 hover:bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--border)] rounded-lg p-3.5 group transition-all"
+            className="jmp-row group"
         >
-            <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                        <span className="font-semibold text-lg text-[var(--accent)] tracking-tight">{teamNum}</span>
-                    </div>
-                    <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[var(--surface-2)]/40 border border-[var(--border)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-2)]">
-                        <span className="text-[var(--text-faint)]">Record</span>
-                        <span className="text-green-400">{ranking.wins}W</span>
-                        <span className="text-red-400">{ranking.losses}L</span>
-                        <span className="text-[var(--text-muted)]">{ranking.ties}T</span>
-                    </div>
+            <div className="flex items-center gap-2.5">
+                <span className="jmp-rank">#{ranking.rank ?? '—'}</span>
+                <span className="text-[15px] font-semibold text-[var(--text)] tracking-tight">{teamNum}</span>
+                <span className="jmp-record ml-0.5">
+                    <span className="w">{ranking.wins}</span>-<span className="l">{ranking.losses}</span>-<span className="t">{ranking.ties}</span>
+                </span>
+                <div className="ml-auto flex items-center gap-3">
+                    <span className="jmp-stat"><span className="jmp-label">WP</span><b>{ranking.wp ?? '—'}</b></span>
+                    <span className="jmp-stat"><span className="jmp-label">AP</span><b>{ranking.ap ?? '—'}</b></span>
+                    <span className="jmp-stat"><span className="jmp-label">SP</span><b>{ranking.sp ?? '—'}</b></span>
+                    <Search className="w-3.5 h-3.5 text-[var(--text-faint)] opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
-                <div className="flex flex-col items-end gap-2 shrink-0">
-                    <div className="flex items-center gap-1.5 rounded-full bg-[var(--accent)]/12 border border-[var(--accent)]/30 px-2.5 py-1 text-[11px] font-semibold text-[var(--accent)]">
-                        <Trophy className="w-3 h-3" />
-                        #{ranking.rank ?? '—'}
-                    </div>
-                    <Search className="w-4 h-4 text-[var(--text-faint)] opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-            </div>
-
-            <div className="mt-3 grid grid-cols-3 gap-2">
-                {stats.map((stat) => (
-                    <div
-                        key={stat.label}
-                        className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/35 px-2.5 py-2"
-                    >
-                        <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-faint)]">
-                            {stat.label}
-                        </div>
-                        <div className="mt-0.5 text-sm font-semibold text-[var(--text)]">
-                            {stat.value ?? '—'}
-                        </div>
-                    </div>
-                ))}
             </div>
         </button>
     );
@@ -1656,9 +1621,11 @@ export default function Worlds() {
     return (
         <div className="jumper-worlds font-sans flex flex-col text-[var(--text)]">
             {error && (
-                <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-red-500/90 text-[var(--text)] px-6 py-3 rounded-lg z-50  flex items-center gap-3">
+                <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-[var(--surface)] border border-[var(--danger)] text-[var(--text)] px-4 py-2.5 rounded-lg z-50 shadow-lg flex items-center gap-3">
                     <span className="text-sm">{error}</span>
-                    <button onClick={() => setError(null)} className="font-semibold hover:text-[var(--accent-ink)]">✕</button>
+                    <button onClick={() => setError(null)} className="text-[var(--text-muted)] hover:text-[var(--text)]" title="Dismiss">
+                        <X className="w-4 h-4" />
+                    </button>
                 </div>
             )}
 
@@ -1713,6 +1680,15 @@ export default function Worlds() {
                                     </div>
                                 )}
                             </div>
+                            {/* Playback transport — lives with the player it controls */}
+                            <div className="flex items-center justify-center border-t border-[var(--border)] px-2 py-1.5 mt-1">
+                                <PlaybackControls
+                                    canControl={!!playlist}
+                                    canSync={!!lastJumpContext}
+                                    onSeek={handleSeek}
+                                    onSynced={handleJumpToSynced}
+                                />
+                            </div>
                         </div>
 
                         {/* Division switcher */}
@@ -1721,14 +1697,6 @@ export default function Worlds() {
                                 <Globe className="w-5 h-5 text-[var(--accent)]" />
                                 <h2 className="text-lg font-semibold text-[var(--text)]">Divisions</h2>
                                 {broadcastsLoading && <Loader className="w-3.5 h-3.5 text-[var(--text-faint)] animate-spin ml-1" />}
-                                <div className="ml-auto">
-                                    <PlaybackControls
-                                        canControl={!!playlist}
-                                        canSync={!!lastJumpContext}
-                                        onSeek={handleSeek}
-                                        onSynced={handleJumpToSynced}
-                                    />
-                                </div>
                             </div>
                             {!isConfigured ? (
                                 <p className="text-sm text-[var(--text-faint)] py-2">Division schedule for {year} will appear here once announced.</p>
@@ -1741,7 +1709,7 @@ export default function Worlds() {
                                             className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-all border ${
                                                 selectedDivName === name
                                                     ? 'bg-[var(--accent)] text-[var(--accent-ink)] border-[var(--accent)]  shadow-[var(--accent)]/20'
-                                                    : 'bg-[var(--surface-2)]/40 text-[var(--text-2)] border-[var(--border)] hover:border-gray-500 hover:text-[var(--text)]'
+                                                    : 'bg-[var(--surface-2)]/40 text-[var(--text-2)] border-[var(--border)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
                                             }`}
                                         >
                                             {name}
@@ -1821,10 +1789,10 @@ export default function Worlds() {
                         </div>
 
                         {/* Tab panel — always visible */}
-                        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg flex flex-col flex-shrink-0 p-3">
+                        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg flex flex-col flex-1 min-h-0 p-3">
 
                             {/* Tab bar */}
-                            <div className="seg-toggle" style={{ marginBottom: 16 }}>
+                            <div className="seg-toggle" style={{ marginBottom: 12 }}>
                                 <TabButton id="findTeam" label="Find Team" />
                                 <TabButton id="rankings" label="Rankings" />
                                 <TabButton id="matches" label="Matches" />
@@ -1859,18 +1827,14 @@ export default function Worlds() {
                                             <p className="text-[11px] text-[var(--text-faint)]">Search a team and it will auto-find division.</p>
                                         ) : null}
                                     </div>
-                                    <div className="overflow-y-auto h-[520px] px-4 pb-4">
+                                    <div className="overflow-y-auto flex-1 min-h-[440px] px-4 pb-4">
                                         {findTeamQuery && findTeamMatches.length > 0 ? (
                                             <div className="space-y-6 pt-4">
                                                 <p className="text-xs text-[var(--text-faint)] mb-3">{findTeamMatches.length} matches for <span className="text-[var(--accent)] font-semibold">{findTeamQuery.toUpperCase()}</span> in <span className="text-[var(--text-2)]">{selectedDivName}</span></p>
                                                 {groupedFindTeamMatches.map((group) => (
                                                     <div key={group.dayIndex}>
-                                                        <div className="flex items-center gap-2 mb-2 sticky top-0 bg-[var(--surface)]/95 backdrop-blur py-2 z-10 -mx-4 px-4">
-                                                            <div className="flex-1 h-px bg-[var(--surface-3)]"></div>
-                                                            <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
-                                                                {group.label}
-                                                            </span>
-                                                            <div className="flex-1 h-px bg-[var(--surface-3)]"></div>
+                                                        <div className="jmp-daysep sticky top-0 z-10 -mx-4 px-4 mb-2 bg-[var(--surface)]/95 backdrop-blur">
+                                                            <span className="jmp-label">{group.label}</span>
                                                         </div>
                                                         <div className="space-y-2">
                                                             {group.matches.map((m) => (
@@ -1887,19 +1851,17 @@ export default function Worlds() {
                                                 ))}
                                             </div>
                                         ) : findTeamLookupLoading || (findTeamQuery && matchesLoading) ? (
-                                            <div className="h-full flex flex-col items-center justify-center text-[var(--text-faint)] space-y-2">
+                                            <div className="jmp-empty">
                                                 <Loader className="w-5 h-5 animate-spin" />
                                                 <p className="text-sm">{findTeamLookupLoading ? 'Finding division…' : 'Loading matches…'}</p>
                                             </div>
                                         ) : findTeamQuery ? (
-                                            <div className="h-full flex flex-col items-center justify-center text-[var(--text-faint)] space-y-2">
+                                            <div className="jmp-empty">
                                                 <p className="text-sm">No matches found for <span className="text-[var(--accent)]">{findTeamQuery.toUpperCase()}</span>.</p>
                                             </div>
                                         ) : (
-                                            <div className="h-full flex flex-col items-center justify-center text-[var(--text-faint)] space-y-2">
-                                                <div className="p-3 bg-[var(--surface-2)]/50 rounded-full">
-                                                    <Zap className="w-6 h-6 opacity-50" />
-                                                </div>
+                                            <div className="jmp-empty">
+                                                <Zap />
                                                 <p className="text-sm">Search for a team to see matches</p>
                                             </div>
                                         )}
@@ -1922,25 +1884,25 @@ export default function Worlds() {
                                                 className="bg-transparent border-none focus:outline-none text-xs w-full text-[var(--text)] placeholder-[var(--text-faint)]"
                                             />
                                         </div>
-                                        {/* Sort pills */}
-                                        <div className="flex gap-1.5">
+                                        {/* Sort — one house toggle idiom */}
+                                        <div className="seg-toggle">
                                             <button
                                                 onClick={() => setRankSortState('rank')}
-                                                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${rankSort === 'rank' ? 'bg-[var(--accent)] text-[var(--accent-ink)]' : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]'}`}
+                                                className={rankSort === 'rank' ? 'active' : ''}
                                             >
-                                                <Trophy className="w-3 h-3" /> Rank
+                                                Rank
                                             </button>
                                             <button
                                                 onClick={() => setRankSortState('number')}
-                                                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${rankSort === 'number' ? 'bg-[var(--accent)] text-[var(--accent-ink)]' : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]'}`}
+                                                className={rankSort === 'number' ? 'active' : ''}
                                             >
-                                                <Users className="w-3 h-3" /> Default
+                                                Team #
                                             </button>
                                         </div>
                                     </div>
-                                    <div className="overflow-y-auto h-[520px] p-3 space-y-2">
+                                    <div className="overflow-y-auto flex-1 min-h-[440px] p-3 space-y-2">
                                         {!selectedDivName ? (
-                                            <div className="h-full flex flex-col items-center justify-center text-[var(--text-faint)] space-y-2">
+                                            <div className="jmp-empty">
                                                 <Trophy className="w-8 h-8 opacity-20" />
                                                 <p className="text-sm">Select a division to view rankings.</p>
                                             </div>
@@ -1973,34 +1935,33 @@ export default function Worlds() {
                             {/* ── Matches tab ── */}
                             {activeTab === 'matches' && (
                                 <>
-                                    <div className="px-3 py-2 border-b border-[var(--border)] flex items-center gap-1.5">
-                                        <input
-                                            type="text"
-                                            value={matchSearch}
-                                            onChange={(e) => setMatchSearchState(e.target.value)}
-                                            placeholder="Search"
-                                            className="flex-1 min-w-0 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all"
-                                        />
-                                        <div className="flex gap-1.5 shrink-0">
+                                    <div className="px-3 py-2 border-b border-[var(--border)] space-y-1.5">
+                                        <div className="flex items-center gap-1.5 bg-[var(--surface-2)] px-2.5 py-1.5 rounded-lg">
+                                            <Search className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
+                                            <input
+                                                type="text"
+                                                value={matchSearch}
+                                                onChange={(e) => setMatchSearchState(e.target.value)}
+                                                placeholder="Search matches or teams..."
+                                                className="bg-transparent border-none focus:outline-none text-xs w-full text-[var(--text)] placeholder-[var(--text-faint)]"
+                                            />
+                                        </div>
+                                        <div className="seg-toggle">
                                             {['all', 'quals', 'elim'].map((f) => (
                                                 <button
                                                     key={f}
                                                     onClick={() => setMatchFilterState(f)}
-                                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-medium capitalize transition-colors ${
-                                                        matchFilter === f ? 'bg-[var(--accent)] text-[var(--accent-ink)]' : 'bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)]'
-                                                    }`}
+                                                    className={matchFilter === f ? 'active' : ''}
                                                 >
                                                     {f === 'quals' ? 'Quals' : f === 'elim' ? 'Elims' : 'All'}
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
-                                    <div className="overflow-y-auto h-[520px] px-4 pb-4">
+                                    <div className="overflow-y-auto flex-1 min-h-[440px] px-4 pb-4">
                                         {!selectedDivName ? (
-                                            <div className="h-full flex flex-col items-center justify-center text-[var(--text-faint)] space-y-2">
-                                                <div className="p-3 bg-[var(--surface-2)]/50 rounded-full">
-                                                    <Zap className="w-6 h-6 opacity-50" />
-                                                </div>
+                                            <div className="jmp-empty">
+                                                <Zap />
                                                 <p className="text-sm">Select a division to view matches.</p>
                                             </div>
                                         ) : matchesLoading ? (
@@ -2016,12 +1977,8 @@ export default function Worlds() {
                                             <div className="space-y-6 pt-4">
                                                 {groupedFilteredMatches.map((group) => (
                                                     <div key={group.dayIndex}>
-                                                        <div className="flex items-center gap-2 mb-2 sticky top-0 bg-[var(--surface)]/95 backdrop-blur py-2 z-10 -mx-4 px-4">
-                                                            <div className="flex-1 h-px bg-[var(--surface-3)]"></div>
-                                                            <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
-                                                                {group.label}
-                                                            </span>
-                                                            <div className="flex-1 h-px bg-[var(--surface-3)]"></div>
+                                                        <div className="jmp-daysep sticky top-0 z-10 -mx-4 px-4 mb-2 bg-[var(--surface)]/95 backdrop-blur">
+                                                            <span className="jmp-label">{group.label}</span>
                                                         </div>
                                                         <div className="space-y-2">
                                                             {group.matches.map((m) => (
@@ -2046,14 +2003,15 @@ export default function Worlds() {
                 </div>
             </main>
 
-            {/* Floating Clear All (Bottom Left) */}
+            {/* Floating reset — quiet labeled control (Bottom Left) */}
             <div className="fixed bottom-4 left-4 z-40">
                 <button
                     onClick={handleClearAll}
-                    className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-full transition-all   backdrop-blur-sm group"
-                    title="Clear All"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-[var(--surface)]/95 border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--danger)] hover:border-[var(--border-strong)] backdrop-blur transition-colors"
+                    title="Reset Worlds selections"
                 >
-                    <RotateCcw className="w-5 h-5 text-red-400 group-hover:text-red-300" />
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Reset
                 </button>
             </div>
         </div>

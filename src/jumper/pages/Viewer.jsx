@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, RefreshCw, Loader, History, AlertCircle, Tv, Zap, ChevronDown, ChevronUp, Star, Link, RotateCcw, Search, Globe, CheckCircle2, Share2 } from 'lucide-react';
+import { Play, RefreshCw, Loader, History, AlertCircle, Tv, Zap, ChevronDown, ChevronUp, Star, Link, RotateCcw, Search, Globe, CheckCircle2, Share2, X } from 'lucide-react';
 import YouTube from 'react-youtube';
 import { format } from 'date-fns';
 import { useQueryState } from 'nuqs';
@@ -1355,11 +1355,11 @@ function Viewer({ onGoToWorlds }) {
 
         return (
             <div className="flex gap-2 text-sm font-mono">
-                <span className={`font-semibold ${userAlliance.color === 'red' ? 'text-red-400' : 'text-blue-400'} ${userWon ? 'underline decoration-2' : ''}`}>
+                <span className={`font-semibold ${userAlliance.color === 'red' ? 'text-[var(--danger)]' : 'text-[var(--score-blue)]'} ${userWon ? 'underline decoration-2' : ''}`}>
                     {userScore}
                 </span>
                 <span className="text-[var(--text-faint)]">-</span>
-                <span className={`font-semibold ${opponentAlliance.color === 'red' ? 'text-red-400' : 'text-blue-400'} ${!userWon && !tie ? 'underline decoration-2' : ''}`}>
+                <span className={`font-semibold ${opponentAlliance.color === 'red' ? 'text-[var(--danger)]' : 'text-[var(--score-blue)]'} ${!userWon && !tie ? 'underline decoration-2' : ''}`}>
                     {opponentScore}
                 </span>
             </div>
@@ -1391,9 +1391,11 @@ function Viewer({ onGoToWorlds }) {
 
             {/* Error Display */}
             {error && (
-                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-500/90 text-[var(--text)] px-6 py-3 rounded-lg z-50  backdrop-blur-md">
-                    {error}
-                    <button onClick={() => setError(null)} className="ml-4 font-semibold hover:text-[var(--accent-ink)]">✕</button>
+                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-[var(--surface)] border border-[var(--danger)] text-[var(--text)] px-4 py-2.5 rounded-lg z-50 shadow-lg flex items-center gap-3">
+                    <span className="text-sm">{error}</span>
+                    <button onClick={() => setError(null)} className="text-[var(--text-muted)] hover:text-[var(--text)]" title="Dismiss">
+                        <X className="w-4 h-4" />
+                    </button>
                 </div>
             )}
 
@@ -1832,7 +1834,7 @@ function Viewer({ onGoToWorlds }) {
                                                         <p className="text-xs text-[var(--text-muted)]">{team.organization}</p>
                                                     </div>
                                                     {matches.length > 0 && matches[0].division && multiDivisionMode && (
-                                                        <span className="text-[10px] font-semibold px-2 py-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                                        <span className="text-[10px] font-semibold px-2 py-1 rounded bg-[var(--surface-3)] text-[var(--text-muted)]">
                                                             {matches[0].division.name}
                                                         </span>
                                                     )}
@@ -1928,9 +1930,9 @@ function Viewer({ onGoToWorlds }) {
                                                                             const userScore = alliance.score;
                                                                             const opponentScore = opponentAlliance.score;
                                                                             if (userScore > opponentScore) {
-                                                                                resultIndicator = <span className="text-[10px] font-semibold text-green-400 ml-1">W</span>;
+                                                                                resultIndicator = <span className="text-[10px] font-semibold text-[var(--success)] ml-1">W</span>;
                                                                             } else if (userScore < opponentScore) {
-                                                                                resultIndicator = <span className="text-[10px] font-semibold text-red-400 ml-1">L</span>;
+                                                                                resultIndicator = <span className="text-[10px] font-semibold text-[var(--danger)] ml-1">L</span>;
                                                                             } else {
                                                                                 resultIndicator = <span className="text-[10px] font-semibold text-[var(--text-muted)] ml-1">T</span>;
                                                                             }
@@ -2114,16 +2116,13 @@ function Viewer({ onGoToWorlds }) {
                                             {/* Division toggle (multi-division events only) */}
                                             {multiDivisionMode && event?.divisions?.length > 1 && (
                                                 <div className="flex items-center gap-2">
-                                                    <span className="w-16 flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Division</span>
-                                                    <div className="flex-1 flex gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5 min-w-0">
+                                                    <span className="w-16 flex-shrink-0 jmp-label">Division</span>
+                                                    <div className="seg-toggle flex-1 min-w-0">
                                                         {event.divisions.map((div) => (
                                                             <button
                                                                 key={div.id}
                                                                 onClick={() => setActiveDivisionId(div.id)}
-                                                                className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors truncate ${activeDivisionId === div.id
-                                                                    ? 'bg-purple-600 text-white'
-                                                                    : 'text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
-                                                                    }`}
+                                                                className={activeDivisionId === div.id ? 'active' : ''}
                                                             >
                                                                 {div.name}
                                                             </button>
@@ -2134,8 +2133,8 @@ function Viewer({ onGoToWorlds }) {
 
                                             {/* Sort-by toggle (match type) */}
                                             <div className="flex items-center gap-2">
-                                                <span className="w-16 flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Sort by</span>
-                                                <div className="flex-1 flex gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5 min-w-0">
+                                                <span className="w-16 flex-shrink-0 jmp-label">Sort by</span>
+                                                <div className="seg-toggle flex-1 min-w-0">
                                                     {[
                                                         { key: 'all', label: 'All Matches' },
                                                         { key: 'quals', label: 'Quals' },
@@ -2144,10 +2143,7 @@ function Viewer({ onGoToWorlds }) {
                                                         <button
                                                             key={key}
                                                             onClick={() => setMatchesTabState(prev => ({ ...prev, filter: key }))}
-                                                            className={`flex-1 min-w-0 px-2 py-1.5 rounded-md text-[11px] font-semibold whitespace-nowrap truncate transition-colors ${matchesTabState.filter === key
-                                                                ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
-                                                                : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
-                                                                }`}
+                                                            className={matchesTabState.filter === key ? 'active' : ''}
                                                         >
                                                             {label}
                                                         </button>
@@ -2310,16 +2306,16 @@ function Viewer({ onGoToWorlds }) {
 
                                                                                     <div className="grid grid-cols-2 gap-4 text-xs">
                                                                                         {match.alliances.map((alliance) => (
-                                                                                            <div key={alliance.color} className={`flex flex-col ${alliance.color === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
+                                                                                            <div key={alliance.color} className={`flex flex-col ${alliance.color === 'red' ? 'text-[var(--danger)]' : 'text-[var(--score-blue)]'}`}>
                                                                                                 {/* Score at top of column */}
                                                                                                 <div className="flex justify-between items-end border-b border-[var(--border)] pb-1 mb-1">
                                                                                                     <span className="font-mono text-lg font-semibold opacity-90">{alliance.score}</span>
                                                                                                 </div>
                                                                                                 {/* Teams list */}
                                                                                                 <div className="flex flex-col gap-1">
-                                                                                                    {alliance.teams.map((t) => (
+                                                                                                    {alliance.teams.map((t, ti) => (
                                                                                                         <button
-                                                                                                            key={t.team.id || Math.random()}
+                                                                                                            key={t.team.id ?? `${alliance.color}-${ti}`}
                                                                                                             onClick={(e) => {
                                                                                                                 e.stopPropagation();
                                                                                                                 const teamNum = t.team.number || t.team.name;
