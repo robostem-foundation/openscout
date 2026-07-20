@@ -1807,7 +1807,7 @@ function Viewer({ onGoToWorlds }) {
                             {activeTab === 'search' ? (
                                 <>
                                     {/* Search Header */}
-                                    <div className="p-5 border-b border-[var(--border)] space-y-3 flex-shrink-0 bg-[var(--surface)] z-10 rounded-t-lg">
+                                    <div className="p-5 space-y-3 flex-shrink-0 bg-[var(--surface)] z-10 rounded-t-lg">
                                         <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">Find Team</h2>
                                         <div className="flex gap-2">
                                             <input
@@ -1840,7 +1840,7 @@ function Viewer({ onGoToWorlds }) {
                                                     )}
                                                 </div>
                                                 {team.grade && (
-                                                    <p className="text-xs text-cyan-400 mt-1">
+                                                    <p className="text-xs text-[var(--accent)] mt-1">
                                                         {team.grade} {team.program?.code && `• ${team.program.code}`}
                                                     </p>
                                                 )}
@@ -1849,7 +1849,9 @@ function Viewer({ onGoToWorlds }) {
                                     </div>
 
                                     {/* Matches List */}
-                                    <div className="overflow-y-auto px-4 pb-4 flex-1 min-h-[60vh] xl:min-h-0">
+                                    <div className="relative flex-1 min-h-[60vh] xl:min-h-0 flex flex-col">
+                                    <div className="jmp-scrolltop" />
+                                    <div className="overflow-y-auto px-4 pb-4 flex-1 min-h-0">
                                         {matches.length > 0 ? (
                                             <div className="space-y-4">
                                                 <div className="flex justify-between items-center sticky top-0 bg-[var(--surface)] pb-2 z-10 pt-4">
@@ -2098,20 +2100,12 @@ function Viewer({ onGoToWorlds }) {
                                             </div>
                                         )}
                                     </div>
+                                    </div>
                                 </>
                             ) : activeTab === 'matches' ? (
                                 <>
-                                    {/* Matches Tab Header */}
-                                    <div className="p-4 border-b border-[var(--border)] space-y-3 flex-shrink-0 bg-[var(--surface)] z-10 rounded-t-lg">
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                value={matchesTabState.search}
-                                                onChange={(e) => setMatchesTabState(prev => ({ ...prev, search: e.target.value }))}
-                                                placeholder="Search matches (e.g. #10, R16, 1698, 11101B)"
-                                                className="flex-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all"
-                                            />
-                                        </div>
+                                    {/* Matches Tab Header — toggles first, then search */}
+                                    <div className="p-4 space-y-3 flex-shrink-0 bg-[var(--surface)] z-10 rounded-t-lg">
                                         <div className="space-y-2">
                                             {/* Division toggle (multi-division events only) */}
                                             {multiDivisionMode && event?.divisions?.length > 1 && (
@@ -2151,10 +2145,21 @@ function Viewer({ onGoToWorlds }) {
                                                 </div>
                                             </div>
                                         </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={matchesTabState.search}
+                                                onChange={(e) => setMatchesTabState(prev => ({ ...prev, search: e.target.value }))}
+                                                placeholder="Search matches (e.g. #10, R16, 1698, 11101B)"
+                                                className="flex-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all"
+                                            />
+                                        </div>
                                     </div>
 
                                     {/* Full Matches List */}
-                                    <div className="overflow-y-auto px-4 pb-4 flex-1 min-h-[60vh] xl:min-h-0">
+                                    <div className="relative flex-1 min-h-[60vh] xl:min-h-0 flex flex-col">
+                                    <div className="jmp-scrolltop" />
+                                    <div className="overflow-y-auto px-4 pb-4 flex-1 min-h-0">
                                         {allMatchesLoading ? (
                                             <div className="flex justify-center py-8">
                                                 <Loader className="w-8 h-8 animate-spin text-[var(--accent)]" />
@@ -2342,6 +2347,7 @@ function Viewer({ onGoToWorlds }) {
                                                 <p>No matches found for this event.</p>
                                             </div>
                                         )}
+                                    </div>
                                     </div>
                                 </>
                             ) : activeTab === 'list' ? (
