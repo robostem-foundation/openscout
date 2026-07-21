@@ -1237,7 +1237,7 @@ main {
   width: 100%;
   padding: 7px 14px;
   border: 0;
-  border-bottom: 1px solid #f2f2f2;
+  border-bottom: 1px solid var(--border-soft);
   background: transparent;
   cursor: pointer;
   text-align: left;
@@ -1282,7 +1282,7 @@ main {
   padding: 7px 14px;
   font-size: 13px;
   color: var(--text-faint);
-  border-bottom: 1px solid #f2f2f2;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 /* ---- Skills Leaderboard ---- */
@@ -4215,9 +4215,9 @@ a.team-card-num:hover {
 .match-day-divider-row td {
   height: auto;
   padding: 3px 8px;
-  border-top: 1px solid #e2d8c2;
-  background: #faf6ec;
-  color: #8a7a4f;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 400;
   text-align: center;
@@ -5322,9 +5322,18 @@ a.team-card-num:hover {
   text-align: center;
 }
 
+/* Dark mode: keep the "win" green semantic, but as a translucent tint on the
+   near-black surface (mirrors the --award-bg dark approach) instead of a bright
+   light-green box. */
+:root[data-theme="dark"] .division-win-row td {
+  border-top: 1px solid rgba(69, 165, 87, 0.32);
+  background: rgba(69, 165, 87, 0.12);
+  color: #7ccb8a;
+}
+
 .elim-alliance-notice-row td {
   padding: 3px 8px;
-  border-top: 1px solid #c8dff0;
+  border-top: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-2);
   font-size: 12px;
@@ -6351,6 +6360,24 @@ td.grade-col {
   color: var(--text-muted);
 }
 
+/* Dark mode: the HS/MS/ES grade badges use light Bootstrap-style tint fills that
+   would otherwise stay bright on the near-black surface. Keep the hue coding but
+   render it as a translucent tint + lighter ink (same approach as --award-bg). */
+:root[data-theme="dark"] .event-grade-badge.grade-HS {
+  background: rgba(49, 112, 143, 0.18);
+  color: #7db6d6;
+}
+
+:root[data-theme="dark"] .event-grade-badge.grade-MS {
+  background: rgba(60, 118, 61, 0.18);
+  color: #7ccb8a;
+}
+
+:root[data-theme="dark"] .event-grade-badge.grade-ES {
+  background: rgba(234, 179, 8, 0.16);
+  color: #e8c971;
+}
+
 /* Event name as a button (when onViewMatches is wired — team view tabs) */
 .event-group-name-btn {
   display: inline;
@@ -6414,6 +6441,14 @@ td.quick-look-col {
   background: #e8f0fb;
   color: #1a5f9e;
   border-color: #b0caec;
+}
+
+/* Dark mode: selected/active state as a translucent accent tint rather than a
+   stuck light-blue box. */
+:root[data-theme="dark"] .quick-look-btn.active {
+  background: rgba(34, 211, 238, 0.14);
+  color: var(--link);
+  border-color: rgba(34, 211, 238, 0.4);
 }
 
 .quick-look-close {
