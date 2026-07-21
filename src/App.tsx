@@ -16247,37 +16247,46 @@ function MyTeamDashboard() {
     </div>
   );
 
-  // Three "important" crowns: overall Champion (full/half), Robot Skills Champion,
-  // Excellence. Grey by default; lit gold when the team won that award at the event.
-  // Any other award won just half-fills a 4th crown (count doesn't matter — 1 other
-  // award looks the same as 6). If all three important crowns are already full, an
-  // other award instead appends a "+" after them rather than a 4th half crown.
+  // Always exactly three crown slots — Champion (full/half), Robot Skills Champion,
+  // Excellence — grey by default, lit gold when won. Any "other" award won doesn't add
+  // a 4th crown: it half-fills whichever of the three slots is still empty (first one,
+  // left to right), regardless of how many other awards there are. If all three are
+  // already full, it instead appends a trailing "+" since there's no empty slot left.
   // Hovering the row reveals a popup listing every award won and what it qualifies for.
   const crownRow = (row: MyTeamTimelineRow, showHint?: boolean) => {
     const { champion, skills, excellence, otherAwards, all } = row.wins;
-    const allImportantFull = champion === "full" && skills && excellence;
-    const showOtherHalf = otherAwards > 0 && !allImportantFull;
-    const showOtherPlus = otherAwards > 0 && allImportantFull;
+    type CrownState = "full" | "half" | "off";
+    const states: CrownState[] = [
+      champion === "full" ? "full" : champion === "division" ? "half" : "off",
+      skills ? "full" : "off",
+      excellence ? "full" : "off",
+    ];
+    let otherIdx = -1;
+    let showOtherPlus = false;
+    if (otherAwards > 0) {
+      const offIdx = states.indexOf("off");
+      if (offIdx !== -1) { states[offIdx] = "half"; otherIdx = offIdx; }
+      else showOtherPlus = true;
+    }
+    const labels = [
+      champion === "full" ? "Tournament Champion" : champion === "division" ? "Division Champion" : "Not Tournament Champion",
+      skills ? "Robot Skills Champion" : "Not Robot Skills Champion",
+      excellence ? "Excellence Award" : "No Excellence Award",
+    ];
+    const crownEl = (state: CrownState, label: string, i: number) =>
+      state === "full" ? (
+        <Crown key={i} className="mt-crown on" aria-label={label} />
+      ) : state === "half" ? (
+        <span key={i} className="mt-crown-half" aria-label={i === otherIdx ? "Other award" : label}>
+          <Crown className="mt-crown off" />
+          <span className="mt-crown-clip"><Crown className="mt-crown on" /></span>
+        </span>
+      ) : (
+        <Crown key={i} className="mt-crown off" aria-label={label} />
+      );
     return (
       <span className="myteam-crowns" tabIndex={all.length ? 0 : -1}>
-        {champion === "full" ? (
-          <Crown className="mt-crown on" aria-label="Tournament Champion" />
-        ) : champion === "division" ? (
-          <span className="mt-crown-half" aria-label="Division Champion">
-            <Crown className="mt-crown off" />
-            <span className="mt-crown-clip"><Crown className="mt-crown on" /></span>
-          </span>
-        ) : (
-          <Crown className="mt-crown off" aria-label="Not Tournament Champion" />
-        )}
-        <Crown className={`mt-crown ${skills ? "on" : "off"}`} aria-label={skills ? "Robot Skills Champion" : "Not Robot Skills Champion"} />
-        <Crown className={`mt-crown ${excellence ? "on" : "off"}`} aria-label={excellence ? "Excellence Award" : "No Excellence Award"} />
-        {showOtherHalf && (
-          <span className="mt-crown-half" aria-label="Other award">
-            <Crown className="mt-crown off" />
-            <span className="mt-crown-clip"><Crown className="mt-crown on" /></span>
-          </span>
-        )}
+        {states.map((state, i) => crownEl(state, labels[i], i))}
         {showOtherPlus && <span className="mt-crown-plus" aria-label="Additional awards">+</span>}
         {showHint && <span className="myteam-crowns-hint">Hover for all awards</span>}
         {all.length > 0 && (
