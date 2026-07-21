@@ -15669,6 +15669,8 @@ type MyTeamTimelineWins = {
   champion: "full" | "division" | null;
   skills: boolean;
   excellence: boolean;
+  // Count of awards won that aren't Champion/Skills/Excellence ("other" awards).
+  otherAwards: number;
   // Every award the team won at this event, with what each qualifies them for.
   all: Array<{ title: string; qualifies: string[] }>;
 };
@@ -15909,6 +15911,8 @@ function MyTeamDashboard() {
         ? seasonAwards.filter((a) => a.event.id === event.id && awardTeamWinners(a).some((w) => w.team?.id === team.id))
         : [];
       const champRe = isIq ? /teamwork.*champions?/i : /world champions?|tournament champions?|event champions?/i;
+      const skillsRe = /(?:robot\s*)?skills?.*champions?/i;
+      const excellenceRe = /excellence award/i;
       const champAward = teamWonAwards.find((a) => champRe.test(a.title)) ?? null;
       let champion: MyTeamTimelineWins["champion"] = null;
       if (champAward && team) {
@@ -15921,8 +15925,10 @@ function MyTeamDashboard() {
       }
       const wins: MyTeamTimelineWins = {
         champion,
-        skills: teamWonAwards.some((a) => /(?:robot\s*)?skills?.*champions?/i.test(a.title)),
-        excellence: teamWonAwards.some((a) => /excellence award/i.test(a.title)),
+        skills: teamWonAwards.some((a) => skillsRe.test(a.title)),
+        excellence: teamWonAwards.some((a) => excellenceRe.test(a.title)),
+        // Any award that isn't one of the three "important" ones above.
+        otherAwards: teamWonAwards.filter((a) => a !== champAward && !skillsRe.test(a.title) && !excellenceRe.test(a.title)).length,
         all: teamWonAwards.map((a) => ({ title: a.title, qualifies: a.qualifications ?? [] })),
       };
       const rk = seasonRankings.find((r) => r.event.id === event.id) ?? null;
@@ -16241,11 +16247,17 @@ function MyTeamDashboard() {
     </div>
   );
 
-  // Three crowns: overall Champion (full/half), Robot Skills Champion, Excellence.
-  // Grey by default; lit gold when the team won that award at the event. Hovering the
-  // row reveals a popup listing every award won and what it qualifies for.
-  const crownRow = (row: MyTeamTimelineRow) => {
-    const { champion, skills, excellence, all } = row.wins;
+  // Three "important" crowns: overall Champion (full/half), Robot Skills Champion,
+  // Excellence. Grey by default; lit gold when the team won that award at the event.
+  // Any other award won just half-fills a 4th crown (count doesn't matter — 1 other
+  // award looks the same as 6). If all three important crowns are already full, an
+  // other award instead appends a "+" after them rather than a 4th half crown.
+  // Hovering the row reveals a popup listing every award won and what it qualifies for.
+  const crownRow = (row: MyTeamTimelineRow, showHint?: boolean) => {
+    const { champion, skills, excellence, otherAwards, all } = row.wins;
+    const allImportantFull = champion === "full" && skills && excellence;
+    const showOtherHalf = otherAwards > 0 && !allImportantFull;
+    const showOtherPlus = otherAwards > 0 && allImportantFull;
     return (
       <span className="myteam-crowns" tabIndex={all.length ? 0 : -1}>
         {champion === "full" ? (
@@ -16260,6 +16272,14 @@ function MyTeamDashboard() {
         )}
         <Crown className={`mt-crown ${skills ? "on" : "off"}`} aria-label={skills ? "Robot Skills Champion" : "Not Robot Skills Champion"} />
         <Crown className={`mt-crown ${excellence ? "on" : "off"}`} aria-label={excellence ? "Excellence Award" : "No Excellence Award"} />
+        {showOtherHalf && (
+          <span className="mt-crown-half" aria-label="Other award">
+            <Crown className="mt-crown off" />
+            <span className="mt-crown-clip"><Crown className="mt-crown on" /></span>
+          </span>
+        )}
+        {showOtherPlus && <span className="mt-crown-plus" aria-label="Additional awards">+</span>}
+        {showHint && <span className="myteam-crowns-hint">Hover for all awards</span>}
         {all.length > 0 && (
           <span className="myteam-crowns-pop">
             {all.map((a, i) => (
@@ -16274,10 +16294,11 @@ function MyTeamDashboard() {
     );
   };
 
-  const timelineNode = (row: MyTeamTimelineRow) => (
+  const timelineNode = (row: MyTeamTimelineRow, showHint?: boolean) => (
     <>
       <div className="row"><span className="nm">{row.event.name}</span><span className="dt">{myTeamDateLabel(row.event.start)}</span></div>
-      <div className="myteam-evmeta"><span className="loc">{locationLine(row.event)}</span><span className={`event-priority priority-${eventCategory(row.event).rank}`}>{eventCategory(row.event).label}</span>{crownRow(row)}</div>
+      <div className="myteam-evmeta"><span className="loc">{locationLine(row.event)}</span></div>
+      <div className="myteam-evtags"><span className={`event-priority priority-${eventCategory(row.event).rank}`}>{eventCategory(row.event).label}</span>{crownRow(row, showHint)}</div>
       <div className="myteam-resline">{renderPieces(row)}</div>
     </>
   );
@@ -16287,8 +16308,8 @@ function MyTeamDashboard() {
       <h2><span className="ttl">Season timeline</span><span className="myteam-act muted-act">{timeline.length} events</span></h2>
       <div className="myteam-tl-scroll">
         <div className="myteam-timeline">
-          {timeline.map((row) => (
-            <Link key={row.event.id} href={eventPath(row.event)} className={`myteam-node ${row.state}`}>{timelineNode(row)}</Link>
+          {timeline.map((row, i) => (
+            <Link key={row.event.id} href={eventPath(row.event)} className={`myteam-node ${row.state}`}>{timelineNode(row, i === 0)}</Link>
           ))}
         </div>
       </div>
@@ -16306,7 +16327,7 @@ function MyTeamDashboard() {
         <div className="myteam-timeline2">
           {timeline.map((row, i) => (
             <div key={row.event.id} className={`myteam-tnode ${i % 2 ? "right" : "left"} ${row.state} ${row.isNext ? "next" : ""}`}>
-              <Link href={eventPath(row.event)} className="myteam-tcard">{timelineNode(row)}</Link>
+              <Link href={eventPath(row.event)} className="myteam-tcard">{timelineNode(row, i === 0)}</Link>
             </div>
           ))}
           {!timeline.length && <div className="myteam-upnext-empty">No events this season yet.</div>}
