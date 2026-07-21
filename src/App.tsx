@@ -16247,47 +16247,45 @@ function MyTeamDashboard() {
     </div>
   );
 
-  // Always exactly three crown slots — Champion (full/half), Robot Skills Champion,
-  // Excellence — grey by default, lit gold when won. Any "other" award won doesn't add
-  // a 4th crown: it half-fills whichever of the three slots is still empty (first one,
-  // left to right), regardless of how many other awards there are. If all three are
-  // already full, it instead appends a trailing "+" since there's no empty slot left.
-  // Hovering the row reveals a popup listing every award won and what it qualifies for.
+  // Crowns show an accumulated award "value" that fills LEFT TO RIGHT across three
+  // crowns. Each important award (Tournament Champion, Robot Skills Champion, Excellence)
+  // adds a full crown; a division-only champion adds a half; any number of "other" awards
+  // together add a half. The total is rendered as N full crowns + an optional trailing
+  // half, left-packed, and capped at 3 crowns. If the value exceeds 3, a "+" trails the
+  // three full crowns. The hover popup always lists every award in full.
   const crownRow = (row: MyTeamTimelineRow, showHint?: boolean) => {
     const { champion, skills, excellence, otherAwards, all } = row.wins;
+    let value = 0;
+    if (champion === "full") value += 1;
+    else if (champion === "division") value += 0.5;
+    if (skills) value += 1;
+    if (excellence) value += 1;
+    if (otherAwards > 0) value += 0.5;
+
+    const capped = Math.min(value, 3);
+    const fulls = Math.floor(capped);
+    const hasHalf = capped - fulls >= 0.5;
+    const showOtherPlus = value > 3;
     type CrownState = "full" | "half" | "off";
-    const states: CrownState[] = [
-      champion === "full" ? "full" : champion === "division" ? "half" : "off",
-      skills ? "full" : "off",
-      excellence ? "full" : "off",
-    ];
-    let otherIdx = -1;
-    let showOtherPlus = false;
-    if (otherAwards > 0) {
-      const offIdx = states.indexOf("off");
-      if (offIdx !== -1) { states[offIdx] = "half"; otherIdx = offIdx; }
-      else showOtherPlus = true;
-    }
-    const labels = [
-      champion === "full" ? "Tournament Champion" : champion === "division" ? "Division Champion" : "Not Tournament Champion",
-      skills ? "Robot Skills Champion" : "Not Robot Skills Champion",
-      excellence ? "Excellence Award" : "No Excellence Award",
-    ];
-    const crownEl = (state: CrownState, label: string, i: number) =>
-      state === "full" ? (
-        <Crown key={i} className="mt-crown on" aria-label={label} />
-      ) : state === "half" ? (
-        <span key={i} className="mt-crown-half" aria-label={i === otherIdx ? "Other award" : label}>
-          <Crown className="mt-crown off" />
-          <span className="mt-crown-clip"><Crown className="mt-crown on" /></span>
-        </span>
-      ) : (
-        <Crown key={i} className="mt-crown off" aria-label={label} />
-      );
+    const slots: CrownState[] = Array.from({ length: 3 }, (_, i) =>
+      i < fulls ? "full" : i === fulls && hasHalf ? "half" : "off",
+    );
+    const crownsLabel = value > 0 ? `Awards won: ${all.length}` : "No awards won";
     return (
-      <span className="myteam-crowns" tabIndex={all.length ? 0 : -1}>
-        {states.map((state, i) => crownEl(state, labels[i], i))}
-        {showOtherPlus && <span className="mt-crown-plus" aria-label="Additional awards">+</span>}
+      <span className="myteam-crowns" tabIndex={all.length ? 0 : -1} aria-label={crownsLabel}>
+        {slots.map((state, i) =>
+          state === "full" ? (
+            <Crown key={i} className="mt-crown on" aria-hidden="true" />
+          ) : state === "half" ? (
+            <span key={i} className="mt-crown-half" aria-hidden="true">
+              <Crown className="mt-crown off" />
+              <span className="mt-crown-clip"><Crown className="mt-crown on" /></span>
+            </span>
+          ) : (
+            <Crown key={i} className="mt-crown off" aria-hidden="true" />
+          ),
+        )}
+        {showOtherPlus && <span className="mt-crown-plus" aria-hidden="true">+</span>}
         {showHint && <span className="myteam-crowns-hint">Hover for all awards</span>}
         {all.length > 0 && (
           <span className="myteam-crowns-pop">
