@@ -283,7 +283,8 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                                         )}
                                     </div>
 
-                                    <div className="flex items-center gap-3 shrink-0">
+                                    <div className="flex items-center shrink-0">
+                                        <div className="flex items-center gap-3">
                                         {viewMode === 'rank' && rankingData ? (
                                             <>
                                                 <span className="jmp-record">
@@ -309,12 +310,15 @@ const TeamList = ({ event, onTeamSelect, multiDivisionMode, divisionsFromPreset 
                                                 {skillScore !== undefined && (
                                                     <span className="jmp-stat"><Gauge className="w-3 h-3 text-[var(--text-faint)]" /><b>{skillScore}</b></span>
                                                 )}
-                                                {worldRank && (
-                                                    <span className="jmp-stat"><Globe className="w-3 h-3 text-[var(--text-faint)]" /><b>#{worldRank}</b></span>
-                                                )}
                                             </>
                                         )}
-                                        <Search className="w-3.5 h-3.5 text-[var(--text-faint)] opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                        {/* Search affordance slides in on hover, easing the stats left to make room */}
+                                        <div className="grid grid-cols-[0fr] group-hover:grid-cols-[1fr] transition-[grid-template-columns] duration-200 ease-out">
+                                            <div className="overflow-hidden">
+                                                <Search className="w-3.5 h-3.5 text-[var(--text-faint)] ml-2.5" />
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </button>

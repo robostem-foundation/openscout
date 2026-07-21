@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, RefreshCw, Loader, History, AlertCircle, Tv, Zap, ChevronDown, ChevronUp, Star, Link, RotateCcw, Search, Globe, CheckCircle2, Share2, X } from 'lucide-react';
+import { Play, RefreshCw, Loader, History, AlertCircle, Tv, Zap, ChevronDown, ChevronUp, Star, Link, RotateCcw, Search, Globe, CheckCircle2, Share2, X, MapPin, CalendarDays, ExternalLink, PanelBottom } from 'lucide-react';
 import YouTube from 'react-youtube';
 import { format } from 'date-fns';
 import { useQueryState } from 'nuqs';
@@ -1064,6 +1064,33 @@ function Viewer({ onGoToWorlds }) {
     };
 
     // Searching Team Logic
+    // "Open full view" — the team's full OpenScout page in a new tab.
+    const openTeamFullView = (t) => {
+        if (!t?.number) return;
+        const code = t.program?.code;
+        const href = code ? `/team/${code}/${t.number}` : `/team/${t.number}`;
+        window.open(href, '_blank', 'noopener,noreferrer');
+    };
+
+    // "Open quick view" — the shared team quick view, forced to the bottom sheet.
+    // Bridged through window since JumperPage is mounted without app props.
+    const openTeamQuickView = (t) => {
+        if (!t?.number) return;
+        const open = window.__osOpenTeamQuickView;
+        if (typeof open === 'function') {
+            open({
+                teamId: t.id,
+                teamNumber: t.number,
+                programCode: t.program?.code,
+                teamName: t.team_name,
+                eventId: event?.id ?? null,
+            });
+        } else {
+            // Fallback: no bridge (e.g. Jumper opened standalone) → full page.
+            openTeamFullView(t);
+        }
+    };
+
     const handleTeamSearch = async (overrideTeamNum) => {
         const teamNumToSearch = overrideTeamNum || teamNumber;
         if (!teamNumToSearch.trim()) return;
@@ -1401,9 +1428,9 @@ function Viewer({ onGoToWorlds }) {
 
 
             <main className="w-full">
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 jmp-fit">
-                    {/* Left Column: Stream & Stream Manager */}
-                    <div className="xl:col-span-8 flex flex-col gap-6 xl:h-full xl:min-h-0">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 xl:items-stretch">
+                    {/* Left Column: Stream & Stream Manager — defines the row height */}
+                    <div className="xl:col-span-8 flex flex-col gap-6">
                         {/* Stream Player */}
                         <div className="bg-[var(--surface)] border border-[var(--border)] p-1 rounded-lg overflow-hidden flex-shrink-0">
                             <div className="bg-black rounded-lg overflow-hidden aspect-video relative group">
@@ -1518,24 +1545,44 @@ function Viewer({ onGoToWorlds }) {
                             the two columns form a clean rectangle; on narrow screens the event
                             card collapses to a "Change event" button. */}
                         <div
-                            className="grid w-full items-stretch xl:flex-1 xl:min-h-0"
-                            style={{
-                                gridTemplateColumns: event ? '1fr 1fr' : '1fr 0fr',
-                                columnGap: event ? '1rem' : 0,
-                                transition: 'grid-template-columns 450ms cubic-bezier(0.16, 1, 0.3, 1)'
-                            }}
+                            className="grid w-full items-stretch gap-4"
+                            style={{ gridTemplateColumns: '1fr 1fr' }}
                         >
                             {/* Card A: Find Event — expanded (name/place + pickers) when there's
                                 room; on narrow screens it collapses to a Change-event button. */}
                             <div className="relative bg-[var(--surface)] border border-[var(--border)] rounded-lg overflow-y-auto min-w-0 flex flex-col">
                                 {event && (
                                     <>
-                                        {/* Static name/place header — shown on wide screens */}
-                                        <div className="hidden xl:block px-3 py-2 border-b border-[var(--border)] flex-shrink-0">
-                                            <p className="text-[var(--text)] font-semibold text-[13px] leading-tight line-clamp-1" title={event.name}>{event.name}</p>
-                                            <p className="text-[11px] text-[var(--text-muted)] mt-0.5 line-clamp-1">
-                                                {event.location?.venue}{event.location?.city ? `, ${event.location.city}` : ''}
+                                        {/* Static event header — editorial: program tag inline with name, then place + dates */}
+                                        <div className="hidden xl:block px-3.5 py-2 border-b border-[var(--border)] flex-shrink-0">
+                                            <p className="text-[13px] font-semibold text-[var(--text)] leading-[1.3]">
+                                                {event.program?.code && (
+                                                    <span className="float-right ml-2 mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-[var(--accent)]/10 text-[var(--accent)]">
+                                                        {event.program.code}
+                                                    </span>
+                                                )}
+                                                <a
+                                                    href={`/event/${event.sku || event.id}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    title="Open event in OpenScout (new tab)"
+                                                    className="hover:text-[var(--accent)] hover:underline underline-offset-2 transition-colors"
+                                                >
+                                                    {event.name}
+                                                </a>
                                             </p>
+                                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[var(--text-muted)]">
+                                                <span className="flex items-center gap-1.5 min-w-0">
+                                                    <MapPin className="w-3 h-3 shrink-0 text-[var(--text-faint)]" />
+                                                    <span className="truncate">{event.location?.venue}{event.location?.city ? `, ${event.location.city}` : ''}</span>
+                                                </span>
+                                                {event.start && (
+                                                    <span className="flex items-center gap-1.5 shrink-0">
+                                                        <CalendarDays className="w-3 h-3 shrink-0 text-[var(--text-faint)]" />
+                                                        <span>{format(new Date(event.start), 'MMM d')}{event.end && event.end !== event.start ? ` – ${format(new Date(event.end), 'MMM d, yyyy')}` : format(new Date(event.start), ', yyyy')}</span>
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                         {/* Narrow-screen collapse toggle */}
                                         <button
@@ -1555,23 +1602,35 @@ function Viewer({ onGoToWorlds }) {
 
                                 {/* Pickers: always visible on xl; on narrow screens hidden while collapsed */}
                                 <div className={`p-3 space-y-2 flex-shrink-0 ${event && isEventSearchCollapsed ? 'hidden xl:block' : 'block'}`}>
+                                        {/* Card title — Find Event before load, Change event after */}
+                                        {!event ? (
+                                            <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-1.5">
+                                                <Search className="w-4 h-4" /> Find Event
+                                            </h2>
+                                        ) : (
+                                            <div className="hidden xl:flex items-center gap-1.5 text-[10px] font-semibold text-[var(--text-faint)] uppercase tracking-widest">
+                                                <RefreshCw className="w-3 h-3" /> Change event
+                                            </div>
+                                        )}
                                         {/* Presets Dropdown */}
                                         {presets.length > 0 && (
                                             <div className="space-y-1.5">
-                                                <label className="flex items-center gap-1.5 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ml-1">
-                                                    <Star className="w-3 h-3 text-yellow-500" />
-                                                    Featured Events
-                                                </label>
+                                                {!event && (
+                                                    <label className="block text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ml-1">
+                                                        Featured Events
+                                                    </label>
+                                                )}
                                                 <div className="relative group">
+                                                    <Star className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-yellow-500 pointer-events-none" />
                                                     <select
                                                         onChange={(e) => {
                                                             const preset = presets.find(p => p.sku === e.target.value);
                                                             if (preset) handleLoadPreset(preset);
                                                         }}
                                                         value={selectedPresetSku}
-                                                        className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all appearance-none cursor-pointer hover:border-[var(--border-strong)] shadow-inner"
+                                                        className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg pl-8 pr-8 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all appearance-none cursor-pointer hover:border-[var(--border-strong)]"
                                                     >
-                                                        <option value="">Select an event...</option>
+                                                        <option value="">Switch to another event...</option>
                                                         {presets.map((p, idx) => (
                                                             <option key={idx} value={p.sku}>{p.label}</option>
                                                         ))}
@@ -1584,24 +1643,28 @@ function Viewer({ onGoToWorlds }) {
                                         )}
 
                                         <div className="space-y-1.5">
-                                            <label className="flex items-center gap-1.5 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ml-1">
-                                                <Link className="w-3 h-3 text-[var(--text-faint)]" />
-                                                Search by URL
-                                            </label>
+                                            {!event && (
+                                                <label className="block text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ml-1">
+                                                    Search by URL
+                                                </label>
+                                            )}
                                             <div className="flex gap-2">
-                                                <input
-                                                    type="text"
-                                                    value={eventUrl}
-                                                    onChange={(e) => {
-                                                        const newUrl = e.target.value;
-                                                        setEventUrl(newUrl);
-                                                        if (urlPreset) setUrlPreset(null);
-                                                        if (selectedPresetSku) setSelectedPresetSku('');
-                                                    }}
-                                                    placeholder="Paste RobotEvents URL..."
-                                                    className="flex-1 min-w-0 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all"
-                                                    onKeyDown={(e) => e.key === 'Enter' && handleEventSearch()}
-                                                />
+                                                <div className="relative flex-1 min-w-0">
+                                                    <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-faint)] pointer-events-none" />
+                                                    <input
+                                                        type="text"
+                                                        value={eventUrl}
+                                                        onChange={(e) => {
+                                                            const newUrl = e.target.value;
+                                                            setEventUrl(newUrl);
+                                                            if (urlPreset) setUrlPreset(null);
+                                                            if (selectedPresetSku) setSelectedPresetSku('');
+                                                        }}
+                                                        placeholder={event ? 'Or paste a RobotEvents URL…' : 'Paste RobotEvents URL...'}
+                                                        className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg pl-8 pr-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all"
+                                                        onKeyDown={(e) => e.key === 'Enter' && handleEventSearch()}
+                                                    />
+                                                </div>
                                                 <button
                                                     onClick={handleEventSearch}
                                                     disabled={eventLoading}
@@ -1614,13 +1677,23 @@ function Viewer({ onGoToWorlds }) {
                                 </div>
                             </div>
 
-                            {/* Card B: Livestream (0 width until an event loads, then expands) */}
+                            {/* Card B: Livestream — always shown; greyed/disabled until an event loads.
+                                flex-col so the paste box can be pinned to the bottom of the card. */}
                             <div
-                                className={`bg-[var(--surface)] border border-[var(--border)] rounded-lg min-w-0 overflow-y-auto ${event ? 'p-4 opacity-100' : 'opacity-0 pointer-events-none'}`}
+                                className={`bg-[var(--surface)] border border-[var(--border)] rounded-lg min-w-0 overflow-y-auto p-4 flex flex-col ${event ? 'opacity-100' : 'opacity-60 pointer-events-none select-none'}`}
                                 style={{ transition: 'opacity 300ms ease' }}
                             >
-                                {event && (
+                                {event ? (
                                     <>
+                                        <div className="flex items-center gap-1.5 mb-3">
+                                            <Tv className="w-4 h-4 text-[var(--text-muted)]" />
+                                            <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">Livestream</h2>
+                                            {streams.filter(s => s.videoId).length > 0 && (
+                                                <span className="ml-auto text-[10px] font-semibold text-[var(--text-faint)] tabular-nums">
+                                                    {streams.filter(s => s.videoId).length} stream{streams.filter(s => s.videoId).length === 1 ? '' : 's'}
+                                                </span>
+                                            )}
+                                        </div>
                                         {webcastCandidates.length > 0 ? (
                                             <WebcastSelector
                                                 candidates={webcastCandidates}
@@ -1628,15 +1701,17 @@ function Viewer({ onGoToWorlds }) {
                                                 event={event}
                                             />
                                         ) : (
-                                            <LivestreamPanel
-                                                event={event}
-                                                streams={streams}
-                                                onStreamsChange={setStreams}
-                                                multiDivisionMode={multiDivisionMode}
-                                                onMultiDivisionModeChange={setMultiDivisionMode}
-                                                activeDivisionId={activeDivisionId}
-                                                onActiveDivisionIdChange={setActiveDivisionId}
-                                            />
+                                            <div className="flex-1 min-h-0 flex flex-col">
+                                                <LivestreamPanel
+                                                    event={event}
+                                                    streams={streams}
+                                                    onStreamsChange={setStreams}
+                                                    multiDivisionMode={multiDivisionMode}
+                                                    onMultiDivisionModeChange={setMultiDivisionMode}
+                                                    activeDivisionId={activeDivisionId}
+                                                    onActiveDivisionIdChange={setActiveDivisionId}
+                                                />
+                                            </div>
                                         )}
                                         {noWebcastsFound && !isDetecting && !showStreamSuccess && !streams.some(s => s.videoId) && (
                                             <p className="text-yellow-500 text-xs mt-3 animate-fade-in">
@@ -1651,16 +1726,36 @@ function Viewer({ onGoToWorlds }) {
                                             </div>
                                         )}
                                     </>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-1.5">
+                                            <Tv className="w-4 h-4" /> Livestream
+                                        </h2>
+                                        <input
+                                            type="text"
+                                            disabled
+                                            placeholder="Paste a YouTube link…"
+                                            className="w-full min-w-0 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] outline-none"
+                                        />
+                                        <p className="text-[11px] text-[var(--text-faint)]">Load an event first to add stream links.</p>
+                                    </div>
                                 )}
                             </div>
                         </div>
                     </div>
 
-                    {/* Right Column: Controls */}
-                    <div className="xl:col-span-4 flex flex-col gap-4 xl:h-full xl:min-h-0">
+                    {/* Right Column: Controls. On xl the inner wrapper is absolutely
+                        positioned to fill this column — the column itself contributes no
+                        intrinsic height, so the grid row is sized purely by the LEFT column
+                        and the sidebar always matches the left's total height (scrolling
+                        internally instead of stretching the page). */}
+                    <div className="xl:col-span-4 xl:relative xl:overflow-hidden">
+                      <div className="flex flex-col gap-4 xl:absolute xl:inset-0">
 
-                        {/* Top row: playback controls (left) + Worlds switch filling the rest (right) */}
-                        <div className="flex flex-wrap items-center gap-2">
+                        {/* Top row: playback controls (kept intact, left) + Worlds switch
+                            that always shares the line — it shrinks first (dropping the
+                            globe icon via a container query), then truncates its label. */}
+                        <div className="flex items-center gap-2 min-w-0">
                             {event && streams.length > 0 && (
                                 <SeekControls
                                     onSeek={handleSeek}
@@ -1671,11 +1766,11 @@ function Viewer({ onGoToWorlds }) {
                             )}
                             <button
                                 onClick={() => onGoToWorlds && onGoToWorlds()}
-                                className="flex-1 min-w-[100px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--surface-2)] hover:bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text)] transition-colors"
+                                className="@container/worlds flex-1 min-w-0 overflow-hidden flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--surface-2)] hover:bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text)] transition-colors"
                                 title="Switch to VEX Worlds"
                             >
-                                <Globe className="w-4 h-4" />
-                                Worlds
+                                <Globe className="w-4 h-4 shrink-0 hidden @min-[100px]/worlds:block" />
+                                <span className="truncate">Worlds</span>
                             </button>
                         </div>
 
@@ -1812,7 +1907,7 @@ function Viewer({ onGoToWorlds }) {
                             {activeTab === 'search' ? (
                                 <>
                                     {/* Search Header */}
-                                    <div className="p-5 space-y-3 flex-shrink-0 bg-[var(--surface)] z-10 rounded-t-lg">
+                                    <div className="px-5 pt-5 pb-3 space-y-3 flex-shrink-0 bg-[var(--surface)] z-10 rounded-t-lg">
                                         <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">Find Team</h2>
                                         <div className="flex gap-2">
                                             <input
@@ -1832,23 +1927,32 @@ function Viewer({ onGoToWorlds }) {
                                             </button>
                                         </div>
                                         {team && (
-                                            <div className="p-3 bg-[var(--surface)] border border-[var(--border)] rounded-lg">
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <p className="text-[var(--text)] font-semibold text-sm">{team.number} - {team.team_name}</p>
-                                                        <p className="text-xs text-[var(--text-muted)]">{team.organization}</p>
+                                            <div className="p-3 bg-[var(--surface)] border border-[var(--border)] rounded-lg space-y-2.5">
+                                                <div className="flex justify-between items-start gap-3">
+                                                    <div className="min-w-0">
+                                                        <p className="text-[var(--text)] font-semibold text-sm truncate">{team.number} - {team.team_name}</p>
+                                                        <p className="text-xs text-[var(--text-muted)] truncate">{team.organization}</p>
                                                     </div>
                                                     {matches.length > 0 && matches[0].division && multiDivisionMode && (
-                                                        <span className="text-[10px] font-semibold px-2 py-1 rounded bg-[var(--surface-3)] text-[var(--text-muted)]">
+                                                        <span className="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-muted)]">
                                                             {matches[0].division.name}
                                                         </span>
                                                     )}
                                                 </div>
-                                                {team.grade && (
-                                                    <p className="text-xs text-[var(--accent)] mt-1">
-                                                        {team.grade} {team.program?.code && `• ${team.program.code}`}
-                                                    </p>
-                                                )}
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => openTeamFullView(team)}
+                                                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-semibold bg-[var(--accent)] text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors whitespace-nowrap"
+                                                    >
+                                                        <ExternalLink className="w-3 h-3" /> Full View
+                                                    </button>
+                                                    <button
+                                                        onClick={() => openTeamQuickView(team)}
+                                                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-semibold border border-[var(--border)] text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:border-[var(--border-strong)] transition-colors whitespace-nowrap"
+                                                    >
+                                                        <PanelBottom className="w-3 h-3" /> Quick View
+                                                    </button>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
@@ -1858,28 +1962,7 @@ function Viewer({ onGoToWorlds }) {
                                     <div className="jmp-scrolltop" />
                                     <div className="overflow-y-auto px-4 pb-4 flex-1 min-h-0">
                                         {matches.length > 0 ? (
-                                            <div className="space-y-4">
-                                                <div className="flex justify-between items-center sticky top-0 bg-[var(--surface)] pb-2 z-10 pt-4">
-                                                    <h2 className="text-sm font-semibold text-[var(--text)]">Matches</h2>
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="flex items-center gap-2 text-[10px]">
-                                                            {(() => {
-                                                                const syncedStreams = streams.filter(s => s.streamStartTime);
-                                                                // If manual mode but not confirmed, treat as NOT synced
-                                                                const isSynced = (syncMode && !manualSyncConfirmed) ? false : syncedStreams.length > 0;
-                                                                return (
-                                                                    <>
-                                                                        <div className={`w-1.5 h-1.5 rounded-full ${isSynced ? 'bg-[var(--accent)] shadow-[0_0_8px_rgba(79,206,236,0.6)]' : 'bg-red-500'}`} />
-                                                                        <span className="text-[var(--text-muted)]">
-                                                                            {isSynced ? 'Synced' : 'Not Synced'}
-                                                                        </span>
-                                                                    </>
-                                                                );
-                                                            })()}
-                                                        </div>
-                                                    </div>
-                                                </div>
-
+                                            <div className="space-y-4 pt-1">
                                                 {(() => {
                                                     // Group matches by day
                                                     const matchesByDay = {};
@@ -2458,6 +2541,7 @@ function Viewer({ onGoToWorlds }) {
                                 )
                             ) : null}
                         </div>
+                      </div>
                     </div>
                 </div>
 

@@ -24,21 +24,6 @@
   .jumper-root textarea::placeholder { color: var(--text-faint); }
 }
 
-/* App-shell fit: on wide screens the whole tool fills the viewport exactly —
-   no page scroll, only the footer sits below the fold. The two columns become
-   equal-height (a perfect rectangle) and their inner lists scroll internally.
-   Offset = topbar (12 + 58 + 24 margins) + .page bottom padding (30) = 124px.
-   Below xl the layout returns to normal document flow (stacks and page-scrolls). */
-@media (min-width: 1280px) {
-  /* Trim the page's default 30px bottom padding so the fitted grid gets that
-     room back — offset = topbar (94) + this reduced bottom padding (8) = 102px. */
-  .page.jumper-root { padding-bottom: 8px; }
-  .jumper-root .jmp-fit {
-    height: calc(100dvh - 102px);
-    overflow: hidden;
-  }
-}
-
 /* Match Jumper / VEX Worlds switch — uses OpenScout's .seg-toggle, kept
    compact (auto width instead of full-bleed) at the top of the tab. The
    .jumper-root ancestor raises specificity above .seg-toggle's width:100%. */
@@ -217,20 +202,16 @@
   cursor: not-allowed;
 }
 
-/* Soft upward blur where a scrolling list meets the controls above it —
-   replaces the hard divider. Sits over the top edge of the scroll viewport
-   (its parent must be position:relative) and blurs content scrolling under it,
-   fading out downward so the effect is subtle. */
-.jumper-root .jmp-scrolltop {
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 16px;
-  pointer-events: none;
-  z-index: 5;
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
-  -webkit-mask-image: linear-gradient(to top, transparent, black 90%);
-  mask-image: linear-gradient(to top, transparent, black 90%);
+/* Soft top-edge fade where a scrolling list meets the controls above it —
+   replaces the hard divider. Matches the season picker's mask-fade on the
+   other screens: the list content itself fades to transparent as it scrolls
+   under the top edge (no hard line, no blur smear). The empty .jmp-scrolltop
+   marker sits immediately before each scroll container; the mask is applied to
+   that adjacent scroll container. */
+.jumper-root .jmp-scrolltop { display: none; }
+.jumper-root .jmp-scrolltop + div {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
 }
 
 /* Day-group divider label inside scrolling lists. */

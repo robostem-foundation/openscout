@@ -1636,10 +1636,10 @@ export default function Worlds() {
             )}
 
             <main className="w-full">
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 jmp-fit">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 xl:items-stretch">
 
                     {/* ── Left Column ─────────────────────────────────────────── */}
-                    <div className="xl:col-span-8 flex flex-col gap-6 xl:h-full xl:min-h-0">
+                    <div className="xl:col-span-8 flex flex-col gap-6">
 
                         {/* Player */}
                         <div className="bg-[var(--surface)] border border-[var(--border)] p-1 rounded-lg overflow-hidden flex-shrink-0">
@@ -1698,7 +1698,7 @@ export default function Worlds() {
                         </div>
 
                         {/* Division switcher */}
-                        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 xl:flex-1 xl:min-h-0 xl:overflow-y-auto">
+                        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4">
                             <div className="flex items-center gap-2 mb-4">
                                 <Globe className="w-5 h-5 text-[var(--accent)]" />
                                 <h2 className="text-lg font-semibold text-[var(--text)]">Divisions</h2>
@@ -1726,8 +1726,10 @@ export default function Worlds() {
                         </div>
                     </div>
 
-                    {/* ── Right Column ─────────────────────────────────────────── */}
-                    <div className="xl:col-span-4 flex flex-col gap-2.5 xl:h-full xl:min-h-0">
+                    {/* ── Right Column ─── inner wrapper absolutely fills on xl so the
+                        sidebar matches the LEFT column's total height and scrolls internally. */}
+                    <div className="xl:col-span-4 xl:relative xl:overflow-hidden">
+                      <div className="flex flex-col gap-2.5 xl:absolute xl:inset-0">
 
                         {/* Program / Year selectors */}
                         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 flex-shrink-0">
@@ -2018,6 +2020,7 @@ export default function Worlds() {
                                 </>
                             )}
                         </div>
+                      </div>
                     </div>
                 </div>
             </main>
