@@ -67,7 +67,7 @@ import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } 
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
-import { fade, slideInLeft } from "@/lib/motion";
+import { fade, revealUp, slideInLeft } from "@/lib/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -2177,7 +2177,38 @@ function eventWindowDates(eventWindow: EventWindow) {
 }
 
 function Empty({ children = "Nothing here yet." }: { children?: ReactNode }) {
-  return <div className="empty">{children}</div>;
+  return (
+    <motion.div className="empty" variants={revealUp} initial="initial" animate="animate">
+      {children}
+    </motion.div>
+  );
+}
+
+// Crossfades a skeleton out and content in when `loading` flips, so data never
+// pops in abruptly. Both `skeleton` and `children` must be block-level nodes
+// (not <tbody>/<tr>) since each render is wrapped in a motion.div.
+function LoadingSwap({
+  loading,
+  skeleton,
+  children,
+}: {
+  loading: boolean;
+  skeleton: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.div
+        key={loading ? "skeleton" : "content"}
+        variants={loading ? fade : revealUp}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+      >
+        {loading ? skeleton : children}
+      </motion.div>
+    </AnimatePresence>
+  );
 }
 
 function LoadingTable({ columns = 4 }: { columns?: number }) {
@@ -3969,34 +4000,40 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
   const current = Math.min(page, totalPages);
   const otherSlice = otherEvents.slice((current - 1) * HOME_EVENTS_PAGE_SIZE, current * HOME_EVENTS_PAGE_SIZE);
 
-  if (loading) return <EventTable events={[]} loading compact showPriority showProgram />;
-  if (!sections.length) return <Empty>No upcoming events for this program yet.</Empty>;
-
   return (
-    <div className="home-events-groups">
-      <EventsPager page={current} totalPages={totalPages} onPage={setPage} placement="top" />
-      {sections.map((section) =>
-        section.collapsible ? (
-          <HomeUpcomingTier key={section.category} label={section.label} events={section.events} />
-        ) : (
-          <div className="tier-section" key={section.category}>
-            <EventTable
-              events={otherSlice}
-              loading={false}
-              compact
-              showPriority
-              showProgram
-              headerLabel={
-                <>
-                  {section.label} <span className="tier-count">({section.events.length})</span>
-                </>
-              }
-            />
-          </div>
-        ),
+    <LoadingSwap
+      loading={loading}
+      skeleton={<EventTable events={[]} loading compact showPriority showProgram />}
+    >
+      {!sections.length ? (
+        <Empty>No upcoming events for this program yet.</Empty>
+      ) : (
+        <div className="home-events-groups">
+          <EventsPager page={current} totalPages={totalPages} onPage={setPage} placement="top" />
+          {sections.map((section) =>
+            section.collapsible ? (
+              <HomeUpcomingTier key={section.category} label={section.label} events={section.events} />
+            ) : (
+              <div className="tier-section" key={section.category}>
+                <EventTable
+                  events={otherSlice}
+                  loading={false}
+                  compact
+                  showPriority
+                  showProgram
+                  headerLabel={
+                    <>
+                      {section.label} <span className="tier-count">({section.events.length})</span>
+                    </>
+                  }
+                />
+              </div>
+            ),
+          )}
+          <EventsPager page={current} totalPages={totalPages} onPage={setPage} placement="bottom" />
+        </div>
       )}
-      <EventsPager page={current} totalPages={totalPages} onPage={setPage} placement="bottom" />
-    </div>
+    </LoadingSwap>
   );
 }
 
