@@ -59,6 +59,7 @@ import {
 } from "lucide-react";
 import { Component, createContext, Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Dispatch, ErrorInfo, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
+import DOMPurify from "dompurify";
 import { api } from "./api";
 import JumperPage from "./jumper/JumperPage.jsx";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
@@ -6835,8 +6836,14 @@ function EventInfoTab({
           {loading ? (
             <div className="empty">Loading agenda…</div>
           ) : infoData?.agenda?.html ? (
+            // Defense-in-depth: the HTML is already allowlist-sanitized server-side
+            // (eventInfoScraper.sanitizeAgendaHtml); DOMPurify is a client backstop so
+            // this sink can never render raw remote HTML if the scraper path regresses.
             // eslint-disable-next-line react/no-danger
-            <div className="event-info-agenda-html" dangerouslySetInnerHTML={{ __html: infoData.agenda.html }} />
+            <div
+              className="event-info-agenda-html"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(infoData.agenda.html, { ADD_ATTR: ["target"] }) }}
+            />
           ) : (
             <div className="empty">
               {infoData ? "No agenda posted yet." : "Click this tab to load agenda."}

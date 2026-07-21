@@ -22,3 +22,5 @@ mockups/
 
 # Feedback docs (local only)
 docs/feedback/
+.vercel
+.env*.local

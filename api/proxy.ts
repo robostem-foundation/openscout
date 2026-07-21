@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { clientIpFromForwardedFor, guardProxyRequest } from "../server/proxy.js";
 
 // Proxies every /api/* request to the upstream VEX/RoboStem/Jumper APIs,
 // keeping secret keys server-side.
@@ -70,6 +71,21 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.statusCode = 404;
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify({ message: "Unknown proxy source" }));
+    return;
+  }
+
+  // Abuse guard: reject foreign origins (403) and rate-limited IPs (429) before
+  // spending the shared upstream API key. No-op when APP_ORIGIN / Upstash unset.
+  const guard = await guardProxyRequest({
+    origin: (req.headers.origin as string) ?? null,
+    referer: (req.headers.referer as string) ?? null,
+    ip: clientIpFromForwardedFor(req.headers["x-forwarded-for"]),
+  });
+  if (!guard.ok) {
+    res.statusCode = guard.status;
+    if (guard.retryAfter) res.setHeader("retry-after", String(guard.retryAfter));
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ message: guard.message }));
     return;
   }
 

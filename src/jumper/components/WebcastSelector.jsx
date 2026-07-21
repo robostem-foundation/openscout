@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ExternalLink, Play, Loader, ChevronDown, ChevronUp } from 'lucide-react';
 import { getChannelLivestreams, getPlaylistVideos } from '../services/youtubeAdvanced';
+import { isHttpUrl } from '../../safeUrl';
 
 const WebcastSelector = ({ candidates, event, onSelect, inline = false }) => {
     const [expandedChannels, setExpandedChannels] = useState({});
@@ -204,9 +205,17 @@ const WebcastSelector = ({ candidates, event, onSelect, inline = false }) => {
                     <div className="space-y-1">
                         {others.map((candidate, idx) => (
                             <div key={idx} className="bg-[var(--surface)] border border-[var(--border)] p-2 rounded-lg">
-                                <a href={candidate.url} target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline text-xs font-mono break-all flex items-center gap-1">
-                                    <ExternalLink className="w-3 h-3 shrink-0" /> {candidate.url}
-                                </a>
+                                {/* Only render http(s) as a clickable link; anything else (a
+                                    javascript:/data: URL from stream detection) shows as inert text. */}
+                                {isHttpUrl(candidate.url) ? (
+                                    <a href={candidate.url} target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline text-xs font-mono break-all flex items-center gap-1">
+                                        <ExternalLink className="w-3 h-3 shrink-0" /> {candidate.url}
+                                    </a>
+                                ) : (
+                                    <span className="text-[var(--text-muted)] text-xs font-mono break-all flex items-center gap-1">
+                                        <ExternalLink className="w-3 h-3 shrink-0" /> {candidate.url}
+                                    </span>
+                                )}
                                 <p className="text-[10px] text-[var(--text-faint)] mt-1">Platform: {candidate.platform} • From: {candidate.source}</p>
                             </div>
                         ))}
