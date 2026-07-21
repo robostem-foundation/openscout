@@ -36,6 +36,8 @@
   --award-border: #f3d69c;
   --award-text: #8a6d3b;
   --award-inset: rgba(255, 255, 255, 0.65);
+  /* filled award crowns — bright gold, distinct from the muted --award-text brown */
+  --crown-gold: #cc9a1f;
   /* text on light-colored solid badges (cyan/amber meta pills). White in light
      mode keeps the original look; dark mode swaps to dark ink for contrast. */
   --badge-ink: #ffffff;
@@ -95,6 +97,7 @@
   --award-border: rgba(234, 179, 8, 0.32);
   --award-text: #e8c971;
   --award-inset: transparent;
+  --crown-gold: #f2bc3e;
   /* dark ink on the light cyan/amber badges so their text is legible on dark */
   --badge-ink: #06232b;
   /* team numbers in accent (cyan), bright for the dark row tints */
@@ -11453,16 +11456,20 @@ a.myteam-tcard:hover { border-color: var(--accent); }
 .myteam-node .dt, .myteam-tcard .dt { font-family: var(--font-geist-mono); font-size: 11.5px; color: var(--text-faint); white-space: nowrap; }
 .myteam-evmeta { display: flex; align-items: center; gap: 9px; margin-top: 4px; flex-wrap: wrap; }
 .myteam-evmeta .loc { color: var(--text-muted); font-size: 12.5px; }
+/* Tag + award crowns sit on their own line below the location. */
+.myteam-evtags { display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
 /* Award crowns beside the event-category tag: Champion / Robot Skills / Excellence.
    Grey by default, gold when won. Hover reveals a popup of every award + qualification. */
-.myteam-crowns { position: relative; display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
+.myteam-crowns { position: relative; display: inline-flex; align-items: center; gap: 3px; }
 .mt-crown { width: 14px; height: 14px; }
 .mt-crown.off { color: var(--text-muted); opacity: 0.5; }
-.mt-crown.on { color: var(--award-text); fill: var(--award-text); }
+.mt-crown.on { color: var(--crown-gold); fill: var(--crown-gold); }
 .mt-crown-half { position: relative; display: inline-flex; width: 14px; height: 14px; }
 .mt-crown-half .mt-crown { position: absolute; inset: 0; }
 .mt-crown-clip { position: absolute; inset: 0; width: 50%; overflow: hidden; }
 .mt-crown-clip .mt-crown { width: 14px; height: 14px; }
+.mt-crown-plus { font-size: 12px; font-weight: 700; color: var(--crown-gold); line-height: 1; margin-left: 1px; }
+.myteam-crowns-hint { font-size: 11px; color: var(--text-faint); white-space: nowrap; margin-left: 2px; }
 .myteam-crowns-pop {
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 20;
   min-width: 200px; max-width: 280px; padding: 8px 10px;
