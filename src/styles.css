@@ -10777,14 +10777,13 @@ a.shared-team-note-row:hover { background: var(--surface-2); }
   }
   .mobile-nav-root.open { pointer-events: auto; }
 
+  /* Scrim opacity + drawer transform are driven by Framer Motion
+     (see MobileNavDrawer). CSS only owns static appearance/layout. */
   .mobile-nav-scrim {
     position: absolute;
     inset: 0;
     background: rgba(0, 0, 0, 0.4);
-    opacity: 0;
-    transition: opacity 0.22s ease;
   }
-  .mobile-nav-root.open .mobile-nav-scrim { opacity: 1; }
 
   .mobile-nav-drawer {
     position: absolute;
@@ -10801,11 +10800,8 @@ a.shared-team-note-row:hover { background: var(--surface-2); }
     box-shadow: 8px 0 30px rgba(0, 0, 0, 0.18);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    transform: translateX(-100%);
-    transition: transform 0.24s ease;
     outline: none;
   }
-  .mobile-nav-root.open .mobile-nav-drawer { transform: translateX(0); }
 
   .mobile-nav-head {
     display: flex;
@@ -10946,15 +10942,8 @@ a.shared-team-note-row:hover { background: var(--surface-2); }
     color: var(--text-muted);
   }
 
-  /* Respect reduced motion: fade instead of slide. */
-  @media (prefers-reduced-motion: reduce) {
-    .mobile-nav-drawer {
-      transition: opacity 0.15s ease;
-      transform: none;
-      opacity: 0;
-    }
-    .mobile-nav-root.open .mobile-nav-drawer { opacity: 1; }
-  }
+  /* Reduced motion is handled by Framer's MotionConfig reducedMotion="user"
+     (see MobileNavDrawer) — no CSS override needed here. */
 
   /* Reserve space so the floating island never hides the footer / last content. */
   body {
