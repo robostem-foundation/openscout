@@ -6000,12 +6000,12 @@ function TeamRowMatchesPreview({ teamId, eventId }: { teamId: number; eventId?: 
                 <td>
                   <AllianceTeamLinks teams={red?.teams} focusTeamId={teamId} />
                 </td>
-                <td>
-                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={teamId} />
-                </td>
-                <td>
+                <td className="score-cell">
                   <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
                   <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
+                </td>
+                <td>
+                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={teamId} />
                 </td>
               </tr>
             );
@@ -9602,9 +9602,6 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
                 <td className={`red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
                   <AllianceTeamLinks teams={red?.teams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "red"} />
                 </td>
-                <td className={`blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
-                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "blue"} />
-                </td>
                 {isIq ? (
                   <td className="score-cell">
                     <span className={`score iq-score${iqTierClass(scoreTier?.(iqResult?.score) ?? null)}`}>{iqResult?.score ?? "-"}</span>
@@ -9615,6 +9612,9 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
                     <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
                   </td>
                 )}
+                <td className={`blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
+                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "blue"} />
+                </td>
               </tr>
               {!isIq && divisionWin && (
                 <tr className="division-win-row">
@@ -9657,8 +9657,8 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDiv
         <tr>
           <th>Match</th>
           <th>{isIq ? "Team" : <><span className="alliance-th-full">Red Alliance</span><span className="alliance-th-short">Red</span></>}</th>
-          <th>{isIq ? "Team" : <><span className="alliance-th-full">Blue Alliance</span><span className="alliance-th-short">Blue</span></>}</th>
           <th>Score</th>
+          <th>{isIq ? "Team" : <><span className="alliance-th-full">Blue Alliance</span><span className="alliance-th-short">Blue</span></>}</th>
         </tr>
       </thead>
       <tbody>
@@ -9689,19 +9689,19 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDiv
                 <td className={`red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
                   <AllianceTeamLinks teams={red?.teams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "red"} />
                 </td>
-                <td className={`blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
-                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "blue"} />
-                </td>
                 {isIq ? (
-                  <td>
+                  <td className="score-cell">
                     <span className={`score iq-score${iqTierClass(scoreTier?.(iqResult?.score) ?? null)}`}>{iqResult?.score ?? "-"}</span>
                   </td>
                 ) : (
-                  <td>
+                  <td className="score-cell">
                     <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
                     <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
                   </td>
                 )}
+                <td className={`blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
+                  <AllianceTeamLinks teams={blue?.teams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "blue"} />
+                </td>
               </tr>
               {!isIq && divisionWin && (
                 <tr className="division-win-row">
@@ -11134,8 +11134,8 @@ function ResultsMatchTable({
         <col className="results-play-col" />
         <col className="results-match-col" />
         <col className="results-alliance-col" />
-        <col className="results-alliance-col" />
         <col className="results-score-col" />
+        <col className="results-alliance-col" />
       </colgroup>
       <thead>
         <tr>
@@ -11164,8 +11164,8 @@ function ResultsMatchTable({
             </span>
           </th>
           <th>{isIq ? "Team" : <><span className="alliance-th-full">Red Alliance</span><span className="alliance-th-short">Red</span></>}</th>
-          <th>{isIq ? "Team" : <><span className="alliance-th-full">Blue Alliance</span><span className="alliance-th-short">Blue</span></>}</th>
           <th>Score</th>
+          <th>{isIq ? "Team" : <><span className="alliance-th-full">Blue Alliance</span><span className="alliance-th-short">Blue</span></>}</th>
         </tr>
       </thead>
       <tbody
@@ -11242,9 +11242,6 @@ function ResultsMatchTable({
               <td className={`alliance-cell red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
                 <AllianceTeamLinks teams={hideOpponent && !focusInRed ? undefined : redTeams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "red"} />
               </td>
-              <td className={`alliance-cell blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
-                <AllianceTeamLinks teams={hideOpponent && !focusInBlue ? undefined : blueTeams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "blue"} />
-              </td>
               {isIq ? (
                 <td className="score-cell">
                   <span className={`score iq-score${winningIqScore != null && iqResult?.score != null && iqResult.score === winningIqScore ? " score-win" : iqTierClass(scoreTier?.(iqResult?.score) ?? null)}`}>{iqResult?.score ?? "-"}</span>
@@ -11255,6 +11252,9 @@ function ResultsMatchTable({
                   <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
                 </td>
               )}
+              <td className={`alliance-cell blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
+                <AllianceTeamLinks teams={hideOpponent && !focusInBlue ? undefined : blueTeams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "blue"} />
+              </td>
               </tr>
             </Fragment>
           );
@@ -16273,10 +16273,10 @@ function MyTeamDashboard() {
           <col className="results-play-col" />
           <col className="results-match-col" />
           <col className="results-alliance-col" />
-          <col className="results-alliance-col" />
           <col className="results-score-col" />
+          <col className="results-alliance-col" />
         </colgroup>
-        <thead><tr><th aria-label="Play" /><th>Match</th><th>Red Alliance</th><th>Blue Alliance</th><th>Score</th></tr></thead>
+        <thead><tr><th aria-label="Play" /><th>Match</th><th>Red Alliance</th><th>Score</th><th>Blue Alliance</th></tr></thead>
         <tbody>
           {liveMatches.map((m) => {
             const { red, blue, redScore, blueScore, winner } = matchWinner(m);
@@ -16301,7 +16301,6 @@ function MyTeamDashboard() {
                   </span>
                 </td>
                 <td className={`alliance-cell red-alliance-cell ${winner === "Red" ? "winning-alliance-cell" : ""}`}><AllianceTeamLinks teams={red?.teams} focusTeamId={team.id} /></td>
-                <td className={`alliance-cell blue-alliance-cell ${winner === "Blue" ? "winning-alliance-cell" : ""}`}><AllianceTeamLinks teams={blue?.teams} focusTeamId={team.id} /></td>
                 <td className="score-cell">
                   {hasScore ? (
                     <>
@@ -16314,6 +16313,7 @@ function MyTeamDashboard() {
                     <span className="result-match-time">{clock}</span>
                   )}
                 </td>
+                <td className={`alliance-cell blue-alliance-cell ${winner === "Blue" ? "winning-alliance-cell" : ""}`}><AllianceTeamLinks teams={blue?.teams} focusTeamId={team.id} /></td>
               </tr>
             );
           })}
