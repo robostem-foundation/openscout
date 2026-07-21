@@ -1,51 +1,96 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Pencil, Youtube, Loader } from 'lucide-react';
+import { X, Pencil, Loader, Copy, Check } from 'lucide-react';
 import { format } from 'date-fns';
 import { extractVideoId, getStreamStartTime } from '../services/youtube';
 import { getMatchDayIndex } from '../utils/streamMatching';
+
+/** The real YouTube logo mark (red rounded-rect + white play triangle). */
+function YouTubeLogo({ className = '' }) {
+    return (
+        <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+            <path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z" />
+            <path fill="#fff" d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+        </svg>
+    );
+}
 
 /**
  * A single livestream, shown as a compact pill: YouTube glyph + detected date
  * (e.g. "Jul 17"). Hovering expands the pill to reveal edit + remove actions.
  */
 function StreamPill({ stream, loading, greyed, onEdit, onRemove }) {
-    const dateLabel = stream.streamStartTime
+    const synced = !!stream.streamStartTime;
+    const dateLabel = synced
         ? format(new Date(stream.streamStartTime), 'MMM d')
         : (loading ? 'Detecting' : 'Stream');
-    const undated = !stream.streamStartTime && !loading;
+    const link = stream.url || (stream.videoId ? `https://www.youtube.com/watch?v=${stream.videoId}` : null);
+    const [copied, setCopied] = useState(false);
+    const copyLink = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+            await navigator.clipboard.writeText(link);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+        } catch { /* clipboard unavailable */ }
+    };
 
     return (
-        <div className={`group/pill relative inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all bg-[var(--surface-2)]/60 border-[var(--border)] text-[var(--text)] hover:border-[var(--border-strong)] ${greyed ? 'opacity-40 border-dashed' : ''}`}>
-            <Youtube className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
-            <span className="tabular-nums whitespace-nowrap flex items-center gap-1">
-                {loading && <Loader className="w-3 h-3 animate-spin text-[var(--accent)]" />}
-                {dateLabel}
-                {undated && (
+        <div className={`group/pill flex items-center gap-2.5 px-3 py-2 rounded-lg border text-xs font-medium transition-all bg-[var(--surface-2)]/60 border-[var(--border)] text-[var(--text)] hover:border-[var(--border-strong)] ${greyed ? 'opacity-40 border-dashed' : ''}`}>
+            <YouTubeLogo className="w-[18px] h-[18px] flex-shrink-0" />
+            <span className="tabular-nums whitespace-nowrap font-semibold flex-shrink-0">{dateLabel}</span>
+            {link && (
+                <button
+                    onClick={copyLink}
+                    title={copied ? 'Copied!' : 'Copy link'}
+                    className="flex-shrink-0 p-0.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-muted)] hover:text-[var(--text)]"
+                >
+                    {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+            )}
+            {link && (
+                <a
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={link}
+                    onClick={(e) => e.stopPropagation()}
+                    className="min-w-0 flex-1 truncate font-normal text-[var(--text-muted)] hover:text-[var(--text)] underline-offset-2 hover:underline"
+                >
+                    {link}
+                </a>
+            )}
+            {/* Sync status at the edge; edit/remove slide in on hover, easing it left */}
+            <div className="flex items-center flex-shrink-0">
+                {loading ? (
+                    <Loader className="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />
+                ) : (
                     <span
-                        className="w-1.5 h-1.5 rounded-full bg-yellow-500"
-                        title="No livestream start time detected — jumping to matches will need a manual sync"
+                        className={`w-2 h-2 rounded-full ${synced ? 'bg-green-500' : 'bg-yellow-500'}`}
+                        title={synced ? 'Synced — livestream start time detected' : 'Not synced — no start time detected; jumping will need a manual sync'}
                     />
                 )}
-            </span>
-            {/* Hover actions: width animates from 0 -> auto so the pill "expands" */}
-            <span className="grid grid-cols-[0fr] group-hover/pill:grid-cols-[1fr] transition-all duration-200 overflow-hidden">
-                <span className="flex items-center gap-0.5 min-w-0">
-                    <button
-                        onClick={() => onEdit(stream)}
-                        title="Edit URL"
-                        className="p-0.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-muted)] hover:text-[var(--text)]"
-                    >
-                        <Pencil className="w-3 h-3" />
-                    </button>
-                    <button
-                        onClick={() => onRemove(stream)}
-                        title="Remove"
-                        className="p-0.5 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400"
-                    >
-                        <X className="w-3 h-3" />
-                    </button>
-                </span>
-            </span>
+                <div className="grid grid-cols-[0fr] group-hover/pill:grid-cols-[1fr] transition-[grid-template-columns] duration-200 ease-out">
+                    <div className="overflow-hidden">
+                        <span className="flex items-center gap-0.5 pl-1.5">
+                            <button
+                                onClick={() => onEdit(stream)}
+                                title="Edit URL"
+                                className="p-0.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-muted)] hover:text-[var(--text)]"
+                            >
+                                <Pencil className="w-3 h-3" />
+                            </button>
+                            <button
+                                onClick={() => onRemove(stream)}
+                                title="Remove"
+                                className="p-0.5 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400"
+                            >
+                                <X className="w-3 h-3" />
+                            </button>
+                        </span>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
@@ -135,23 +180,23 @@ export default function LivestreamPanel({
         onStreamsChange(next);
     };
 
-    const handlePaste = (value) => {
+    // Explicit submit — triggered by the Add Link / Confirm button or Enter.
+    // No auto-recognition on typing/paste, so editing is never "sticky".
+    const submitLink = () => {
+        const value = pasteValue.trim();
         const videoId = extractVideoId(value);
-        if (videoId) {
-            if (editingId) {
-                // Replace the pill currently being edited, in place.
-                const target = editingId;
-                setEditingId(null);
-                setPasteValue('');
-                onStreamsChange(prevS => prevS.map(s => s.id === target
-                    ? { ...s, url: value, videoId, streamStartTime: null }
-                    : s));
-            } else {
-                setPasteValue('');
-                fillWithVideo(value, videoId);
-            }
+        if (!videoId) return;
+        if (editingId) {
+            // Replace the pill currently being edited, in place.
+            const target = editingId;
+            setEditingId(null);
+            setPasteValue('');
+            onStreamsChange(prevS => prevS.map(s => s.id === target
+                ? { ...s, url: value, videoId, streamStartTime: null }
+                : s));
         } else {
-            setPasteValue(value);
+            setPasteValue('');
+            fillWithVideo(value, videoId);
         }
     };
 
@@ -164,73 +209,96 @@ export default function LivestreamPanel({
             : prevS.map(s => s.id === stream.id ? { ...s, url: '', videoId: null, streamStartTime: null } : s));
     };
 
-    // Edit: grey the pill and lift its URL back into the paste box. Submitting a
-    // new link replaces it; blurring the box without a change cancels the edit.
+    // Edit: grey the pill and lift its URL back into the paste box. Confirm
+    // replaces it; Cancel exits edit mode, leaving the original untouched.
     const handleEdit = (stream) => {
         setEditingId(stream.id);
         setPasteValue(stream.url || `https://www.youtube.com/watch?v=${stream.videoId}`);
     };
 
-    const handleBlur = () => {
-        if (editingId && !extractVideoId(pasteValue)) {
-            setEditingId(null);
-            setPasteValue('');
-        }
+    const cancelEdit = () => {
+        setEditingId(null);
+        setPasteValue('');
     };
 
     return (
-        <div className="space-y-3">
-            {/* Row 1: stream pills (left) + division selector pinned to the far right */}
-            <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2 min-h-[32px] min-w-0">
-                    {visibleStreams.length > 0
-                        ? visibleStreams.map(s => (
-                            <StreamPill
-                                key={s.id}
-                                stream={s}
-                                loading={loadingIds[s.id]}
-                                greyed={editingId === s.id}
-                                onEdit={handleEdit}
-                                onRemove={clearStream}
-                            />
-                        ))
-                        : <span className="text-xs text-[var(--text-faint)]">No streams yet — paste a YouTube link below.</span>}
+        <div className="flex flex-col gap-3 h-full">
+            {/* Division selector — the division names themselves are the toggle */}
+            {hasDivisions && (
+                <div className="inline-flex flex-wrap gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5">
+                    {event.divisions.map(div => {
+                        const active = targetDivisionId === div.id;
+                        return (
+                            <button
+                                key={div.id}
+                                onClick={() => onActiveDivisionIdChange(div.id)}
+                                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${active
+                                    ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
+                                    : 'text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:text-[var(--text)]'}`}
+                            >
+                                {div.name}
+                            </button>
+                        );
+                    })}
                 </div>
+            )}
 
-                {/* Division selector — the division names themselves are the toggle */}
-                {hasDivisions && (
-                    <div className="inline-flex flex-wrap gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 p-0.5 flex-shrink-0">
-                        {event.divisions.map(div => {
-                            const active = targetDivisionId === div.id;
-                            return (
-                                <button
-                                    key={div.id}
-                                    onClick={() => onActiveDivisionIdChange(div.id)}
-                                    className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${active
-                                        ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
-                                        : 'text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:text-[var(--text)]'}`}
-                                >
-                                    {div.name}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
+            {/* Stream pills — one per row; each card holds its clickable YouTube link */}
+            <div className="flex flex-col gap-2 min-h-[32px]">
+                {visibleStreams.length > 0
+                    ? visibleStreams.map(s => (
+                        <StreamPill
+                            key={s.id}
+                            stream={s}
+                            loading={loadingIds[s.id]}
+                            greyed={editingId === s.id}
+                            onEdit={handleEdit}
+                            onRemove={clearStream}
+                        />
+                    ))
+                    : <span className="text-xs text-[var(--text-faint)]">No streams yet — paste a YouTube link below.</span>}
             </div>
 
-            {/* Row 2: paste box */}
-            <input
-                type="text"
-                value={pasteValue}
-                onChange={(e) => handlePaste(e.target.value)}
-                onPaste={(e) => {
-                    const t = e.clipboardData.getData('text');
-                    if (extractVideoId(t)) { e.preventDefault(); handlePaste(t); }
-                }}
-                onBlur={handleBlur}
-                placeholder={editingId ? 'Paste the corrected YouTube link…' : 'Paste a YouTube link…'}
-                className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all"
-            />
+            {/* Row 2: paste box + action buttons (Add Link, or Confirm / Cancel while
+                editing). mt-auto pins it to the bottom of the livestream card. */}
+            <div className="flex gap-2 mt-auto">
+                <input
+                    type="text"
+                    value={pasteValue}
+                    onChange={(e) => setPasteValue(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); submitLink(); }
+                        else if (e.key === 'Escape' && editingId) cancelEdit();
+                    }}
+                    placeholder={editingId ? 'Paste the corrected YouTube link…' : 'Paste a YouTube link…'}
+                    className="flex-1 min-w-0 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] outline-none transition-all"
+                />
+                {editingId ? (
+                    <>
+                        <button
+                            onClick={submitLink}
+                            disabled={!extractVideoId(pasteValue)}
+                            className="flex-shrink-0 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--accent-ink)] px-3 py-2 rounded-lg font-semibold text-sm transition-colors"
+                        >
+                            Confirm
+                        </button>
+                        <button
+                            onClick={cancelEdit}
+                            className="flex-shrink-0 bg-[var(--surface-2)] hover:bg-[var(--surface-3)] text-[var(--text)] px-3 py-2 rounded-lg font-semibold text-sm transition-colors"
+                        >
+                            Cancel
+                        </button>
+                    </>
+                ) : (
+                    <button
+                        onClick={submitLink}
+                        disabled={!extractVideoId(pasteValue)}
+                        className="flex-shrink-0 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--accent-ink)] px-3 py-2 rounded-lg font-semibold text-sm transition-colors whitespace-nowrap"
+                    >
+                        Add Link
+                    </button>
+                )}
+            </div>
         </div>
     );
 }

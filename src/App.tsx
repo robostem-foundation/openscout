@@ -48,6 +48,7 @@ import {
   StickyNote,
   Clock,
   Trophy,
+  Tv,
   Tv2,
   Unlink,
   User,
@@ -264,6 +265,10 @@ type QuickViewState = {
   // Which half of the viewport the opening click landed on — feeds the
   // "adaptive" sidebar-side setting. Absent (e.g. keyboard) → right.
   pointerSide?: "left" | "right";
+  // Force the bottom-sheet placement regardless of the user's dock-side
+  // setting. Used by the Jumper page, whose two-column layout has no room to
+  // dock a sidebar quick view.
+  forceSheet?: boolean;
 } | null;
 let _quickView: QuickViewState = null;
 // Bumped on every open; keys the panel so each open mounts a FRESH instance.
@@ -295,6 +300,21 @@ function pointerSideFromEvent(e: { clientX: number }): "left" | "right" {
   return e.clientX < window.innerWidth / 2 ? "left" : "right";
 }
 function closeQuickView() { _quickView = null; _emitQuickView(); }
+// Bridge for the Jumper page (mounted without props) to open the shared team
+// quick view. Sets the context event so event-scoped stats resolve, and forces
+// the bottom-sheet placement so it never tries to dock into the Jumper layout.
+if (typeof window !== "undefined") {
+  (window as unknown as { __osOpenTeamQuickView?: (p: NonNullable<QuickViewState> & { eventId?: number | null }) => void }).__osOpenTeamQuickView = (payload) => {
+    if (payload.eventId != null) _currentEventId = payload.eventId;
+    openQuickView({
+      teamId: payload.teamId,
+      teamNumber: payload.teamNumber,
+      programCode: payload.programCode,
+      teamName: payload.teamName,
+      forceSheet: true,
+    });
+  };
+}
 function subscribeQuickView(l: () => void) { _quickViewListeners.add(l); return () => _quickViewListeners.delete(l); }
 function getQuickView() { return _quickView; }
 function useQuickView() { return useSyncExternalStore(subscribeQuickView, getQuickView, getQuickView); }
@@ -3236,6 +3256,9 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
           <nav>
             {nav.slice(1).map(([href, label]) => (
               <Link key={href} href={href} className={path === href ? "active" : ""}>
+                {href === "/jumper" && (
+                  <Tv size={15} style={{ display: "inline", verticalAlign: "-2px", marginRight: 5, color: "var(--text-muted)" }} />
+                )}
                 {label}
               </Link>
             ))}
@@ -8526,7 +8549,7 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   // above the video dialog (see the `in-video` styles), ignoring the mode/side
   // settings so it never docks behind the darkened dialog backdrop.
   const inVideo = useRef(_videoOverlayOpen).current;
-  const mode = inVideo ? "sheet" : modeSetting;
+  const mode = (inVideo || state.forceSheet) ? "sheet" : modeSetting;
   const side: "left" | "right" = sideSetting === "adaptive" ? (state.pointerSide ?? "right") : sideSetting;
   // Animated close: drop `.open` so the slide-out transition plays, then tell
   // the store to unmount once it finishes. Every close path funnels through here.
