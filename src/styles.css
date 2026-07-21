@@ -4368,16 +4368,23 @@ a.team-card-num:hover {
 }
 
 .score-cell {
-  padding-inline: 12px !important;
-  text-align: left !important;
+  padding-inline: 4px !important;
+  text-align: center !important;
   white-space: nowrap;
 }
 
+/* Both score chips sit centered in the cell — drop the trailing chip's margin
+   so the pair is optically centered with equal space on each side. */
+.score-cell .score:last-child {
+  margin-right: 0;
+}
+
 .results-match-table .score {
-  min-width: 34px;
+  min-width: 42px;
   margin-right: 4px;
   color: var(--on-accent);
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 1200px) {
@@ -5543,13 +5550,14 @@ a.team-card-num:hover {
 
 .score {
   display: inline-block;
-  min-width: 34px;
+  min-width: 42px;
   margin-right: 4px;
   padding: 2px 6px;
   border: 1px solid transparent;
   border-radius: 3px;
   color: var(--on-accent);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   text-align: center;
 }
 
@@ -11683,3 +11691,43 @@ td.col-muted { color: var(--text-2); }
 /* …but full-strength when that column is the active sort or hovered. */
 .sortable-th.col-muted:hover,
 .sortable-th.col-muted.sorted { color: var(--text); }
+
+/* ── Popper overlay spring pop-in ───────────────────────────────────────────
+   Radix popper overlays (dropdown menu, select, popover, submenu) get a
+   visible spring "pop" on open. Loaded after tw-animate-css so this animation
+   wins over the default `enter` on the open state; close keeps tw-animate-css's
+   crisp fade/zoom-out. The content's transform-origin is already set by the
+   component's `origin-(--radix-*-transform-origin)` class, so the pop grows
+   from the trigger edge. */
+@keyframes overlay-pop-in {
+  0%   { opacity: 0; transform: scale(0.94); }
+  60%  { opacity: 1; transform: scale(1.02); }
+  100% { opacity: 1; transform: scale(1); }
+}
+[data-slot="dropdown-menu-content"][data-state="open"],
+[data-slot="dropdown-menu-sub-content"][data-state="open"],
+[data-slot="select-content"][data-state="open"],
+[data-slot="popover-content"][data-state="open"] {
+  animation: overlay-pop-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Custom (non-Radix) dropdowns. Only the high-traffic, conditionally-mounted
+   panels are listed — the region/sort/team filter menus and global search.
+   Hover tooltips and always-mounted panels are intentionally excluded so they
+   don't animate on page load. These mount on open, so the animation plays as
+   an entrance; transform-origin keeps the pop anchored to the trigger edge. */
+.picker-menu-list,
+.global-search-popup {
+  animation: overlay-pop-in 190ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: top;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="dropdown-menu-content"][data-state="open"],
+  [data-slot="dropdown-menu-sub-content"][data-state="open"],
+  [data-slot="select-content"][data-state="open"],
+  [data-slot="popover-content"][data-state="open"],
+  .picker-menu-list,
+  .global-search-popup {
+    animation: none;
+  }
+}
