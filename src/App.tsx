@@ -66,7 +66,8 @@ import JumperPage from "./jumper/JumperPage.jsx";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
-import { MotionConfig } from "motion/react";
+import { AnimatePresence, motion, MotionConfig } from "motion/react";
+import { fade, slideInLeft } from "@/lib/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -3076,16 +3077,33 @@ function MobileNavDrawer({ path, open, onClose }: { path: string; open: boolean;
   const team = profile?.team_number ? `${programLabel(profile.team_program)} ${profile.team_number}`.trim() : null;
 
   return (
-    <div className={`mobile-nav-root ${open ? "open" : ""}`} aria-hidden={!open}>
-      <div className="mobile-nav-scrim" onClick={onClose} />
-      <div
-        className="mobile-nav-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Navigation"
-        ref={panelRef}
-        tabIndex={-1}
-      >
+    <AnimatePresence>
+      {open && (
+        <div className="mobile-nav-root open" aria-hidden={false}>
+          <motion.div
+            className="mobile-nav-scrim"
+            onClick={onClose}
+            variants={fade}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          />
+          <motion.div
+            className="mobile-nav-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation"
+            ref={panelRef}
+            tabIndex={-1}
+            variants={slideInLeft}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            drag="x"
+            dragConstraints={{ left: -320, right: 0 }}
+            dragElastic={0.15}
+            onDragEnd={(_event, info) => { if (info.offset.x < -80) onClose(); }}
+          >
         <div className="mobile-nav-head">
           <span className="mobile-nav-title">Menu</span>
           <button type="button" className="mobile-nav-close" onClick={onClose} aria-label="Close menu">
@@ -3165,8 +3183,10 @@ function MobileNavDrawer({ path, open, onClose }: { path: string; open: boolean;
           )}
           <div className="mobile-nav-copy">© 2026 RoboSTEM Foundation</div>
         </div>
-      </div>
-    </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }
 
