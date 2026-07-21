@@ -6349,6 +6349,18 @@ function EventDetail({ param }: { param: string }) {
     );
   }, [matches.data, searchQ, teamRefMatches]);
 
+  // When the F-search narrows to exactly one team, elimination matches focus on
+  // that team (own alliance only). Multiple matching teams → no focus (full matches).
+  const searchFocusTeamId = useMemo(() => {
+    if (!searchQ) return undefined;
+    const ids = new Set<number>();
+    for (const m of filteredMatches)
+      for (const a of m.alliances)
+        for (const t of a.teams)
+          if (teamRefMatches(t.team)) ids.add(t.team.id);
+    return ids.size === 1 ? [...ids][0] : undefined;
+  }, [searchQ, filteredMatches, teamRefMatches]);
+
   const filteredRankings = useMemo(() => {
     const all = rankings.data?.data ?? [];
     if (!searchQ) return all;
@@ -6565,6 +6577,7 @@ function EventDetail({ param }: { param: string }) {
           eventId={event.id}
           focusMatchId={focusMatchId}
           rankings={filteredRankings}
+          focusTeamId={searchFocusTeamId}
         />
       )}
       {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} allMatches={matches.data?.data ?? []} sharedTeamId={primarySharedTeam?.sharedTeamId} eventId={String(event.id)} />}
@@ -10190,6 +10203,7 @@ function MatchesTable({
   eventId,
   focusMatchId,
   rankings = [],
+  focusTeamId,
 }: {
   matches: Match[];
   timestampMap: Map<number, MatchTimestamp>;
@@ -10202,6 +10216,9 @@ function MatchesTable({
   eventId?: number;
   focusMatchId?: string | null;
   rankings?: Ranking[];
+  // Searched team (F-search resolving to a single team) — elimination matches
+  // then show only its alliance side rather than the full opposing alliance.
+  focusTeamId?: number;
 }) {
   const [qualificationDirection, setQualificationDirection] = useState<DateDirection>("asc");
   const [bracketOpen, setBracketOpen] = useState(false);
@@ -10263,6 +10280,7 @@ function MatchesTable({
                   eventId={eventId}
                   eventTeams={eventTeams}
                   focusMatchId={focusMatchId}
+                  focusTeamId={focusTeamId}
                 />
               </div>
             </ScheduleCollapse>
@@ -10936,6 +10954,7 @@ function ResultsMatchTable({
   eventId,
   eventTeams,
   focusMatchId,
+  focusTeamId,
 }: {
   matches: Match[];
   emptyText: string;
@@ -10958,6 +10977,9 @@ function ResultsMatchTable({
   // When arriving from a scouting-note deep link (`/event/{id}?match={matchId}`),
   // the matching row is scrolled into view and briefly flashed.
   focusMatchId?: string | null;
+  // When the F-search narrows to one team, show only that team's alliance side
+  // (partner kept, opposing alliance hidden) — set only for elimination tables.
+  focusTeamId?: number;
 }) {
   const tbodyRef = useRef<HTMLTableSectionElement>(null);
   const rafRef = useRef(0);
@@ -11090,6 +11112,11 @@ function ResultsMatchTable({
           const { red, blue, redScore, blueScore, winner } = matchWinner(match);
           const redTeams = red?.teams ?? [];
           const blueTeams = blue?.teams ?? [];
+          // F-search focus: when this match contains the searched team, show only
+          // its alliance side and blank out the opposing alliance's chips.
+          const focusInRed = focusTeamId != null && redTeams.some((t) => t.team.id === focusTeamId);
+          const focusInBlue = focusTeamId != null && blueTeams.some((t) => t.team.id === focusTeamId);
+          const hideOpponent = focusInRed || focusInBlue;
           const iqResult = isIq ? iqMatchResult(match) : null;
           const timestamp = timestampMap?.get(match.id);
           const matchClock = formatMatchClock(match);
@@ -11150,10 +11177,10 @@ function ResultsMatchTable({
                 </span>
               </td>
               <td className={`alliance-cell red-alliance-cell ${!isIq && winner === "Red" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "red" ? "dq-alliance-cell" : ""}`}>
-                <AllianceTeamLinks teams={redTeams} dq={iqResult?.dqColor === "red"} />
+                <AllianceTeamLinks teams={hideOpponent && !focusInRed ? undefined : redTeams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "red"} />
               </td>
               <td className={`alliance-cell blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
-                <AllianceTeamLinks teams={blueTeams} dq={iqResult?.dqColor === "blue"} />
+                <AllianceTeamLinks teams={hideOpponent && !focusInBlue ? undefined : blueTeams} focusTeamId={focusTeamId} dq={iqResult?.dqColor === "blue"} />
               </td>
               {isIq ? (
                 <td className="score-cell">
