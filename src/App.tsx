@@ -5861,32 +5861,37 @@ function TeamGrid({ teams, loading, localPageSize }: { teams: Team[]; loading: b
   return (
     <>
       <ComparePickHint />
-      {loading ? (
-        <div className="team-grid">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="team-card team-card-skeleton">
-              <div className="team-card-top">
-                <Skeleton className="h-6 w-16" />
-                <div className="team-card-id">
-                  <Skeleton className="h-3.5 w-32" />
-                  <Skeleton className="h-3 w-24" />
+      <LoadingSwap
+        loading={loading}
+        skeleton={
+          <div className="team-grid">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} className="team-card team-card-skeleton">
+                <div className="team-card-top">
+                  <Skeleton className="h-6 w-16" />
+                  <div className="team-card-id">
+                    <Skeleton className="h-3.5 w-32" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
                 </div>
+                <Skeleton className="h-3 w-full" />
               </div>
-              <Skeleton className="h-3 w-full" />
-            </div>
-          ))}
-        </div>
-      ) : !teams.length ? (
-        <div className="team-grid-empty">
-          <Empty>No teams found.</Empty>
-        </div>
-      ) : (
-        <div className="team-grid">
-          {visibleTeams.map((team) => (
-            <TeamCard key={team.id} team={team} compareMode={compareMode} />
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        }
+      >
+        {!teams.length ? (
+          <div className="team-grid-empty">
+            <Empty>No teams found.</Empty>
+          </div>
+        ) : (
+          <div className="team-grid">
+            {visibleTeams.map((team) => (
+              <TeamCard key={team.id} team={team} compareMode={compareMode} />
+            ))}
+          </div>
+        )}
+      </LoadingSwap>
       {!loading && localPageSize && (
         <div className="pager-with-total">
           <span>{teams.length.toLocaleString()} teams loaded</span>
@@ -14301,11 +14306,13 @@ function SharedTeamDashboardTab({ sharedTeamId, onNavigate }: { sharedTeamId: st
           <h3>Recent activity</h3>
           <button type="button" className="panel-action-link" onClick={() => onNavigate("activity")}>View all</button>
         </div>
-        {activity === null
-          ? <Skeleton className="h-24 w-full" />
-          : activity.length === 0
-            ? <p className="shared-team-ws-empty">No shared activity yet.</p>
-            : <div className="shared-team-activity-list">{activity.map((a, i) => <SharedTeamActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>}
+        <LoadingSwap loading={activity === null} skeleton={<Skeleton className="h-24 w-full" />}>
+          {activity !== null && activity.length === 0 ? (
+            <p className="shared-team-ws-empty">No shared activity yet.</p>
+          ) : (
+            <div className="shared-team-activity-list">{(activity ?? []).map((a, i) => <SharedTeamActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>
+          )}
+        </LoadingSwap>
       </div>
     </div>
   );
@@ -14407,15 +14414,19 @@ function SharedTeamPicklistRow({ summary, eventName, eventSku }: { summary: Shar
 function SharedTeamPicklistsTab({ sharedTeamId }: { sharedTeamId: string }) {
   const { data, loading } = useSharedTeamPicklistEvents(sharedTeamId);
   const names = useEventNames(data.map((d) => d.eventId));
-  if (loading) return <Skeleton className="h-28 w-full" />;
-  if (data.length === 0) return <p className="shared-team-ws-empty">No picklists yet. Build one from an event's Picklist tab and it will show up here.</p>;
   return (
-    <div className="shared-team-picklist-grid">
-      {data.map((s) => {
-        const ev = names.get(s.eventId);
-        return <SharedTeamPicklistRow key={s.eventId} summary={s} eventName={ev?.name ?? null} eventSku={ev?.sku ?? null} />;
-      })}
-    </div>
+    <LoadingSwap loading={loading} skeleton={<Skeleton className="h-28 w-full" />}>
+      {data.length === 0 ? (
+        <p className="shared-team-ws-empty">No picklists yet. Build one from an event's Picklist tab and it will show up here.</p>
+      ) : (
+        <div className="shared-team-picklist-grid">
+          {data.map((s) => {
+            const ev = names.get(s.eventId);
+            return <SharedTeamPicklistRow key={s.eventId} summary={s} eventName={ev?.name ?? null} eventSku={ev?.sku ?? null} />;
+          })}
+        </div>
+      )}
+    </LoadingSwap>
   );
 }
 
@@ -14428,9 +14439,15 @@ function SharedTeamActivityTab({ sharedTeamId }: { sharedTeamId: string }) {
   }, [sharedTeamId]);
   const names = useEventNames((items ?? []).map((a) => a.eventId));
   const nameOf = (id: string | null) => { const ev = id ? names.get(id) : null; return ev?.name ?? null; };
-  if (items === null) return <Skeleton className="h-40 w-full" />;
-  if (items.length === 0) return <p className="shared-team-ws-empty">No shared activity yet.</p>;
-  return <div className="shared-team-activity-list">{items.map((a, i) => <SharedTeamActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>;
+  return (
+    <LoadingSwap loading={items === null} skeleton={<Skeleton className="h-40 w-full" />}>
+      {items !== null && items.length === 0 ? (
+        <p className="shared-team-ws-empty">No shared activity yet.</p>
+      ) : (
+        <div className="shared-team-activity-list">{(items ?? []).map((a, i) => <SharedTeamActivityRow key={i} item={a} eventName={nameOf(a.eventId)} />)}</div>
+      )}
+    </LoadingSwap>
+  );
 }
 
 function SharedTeamExportTab({ sharedTeamId, sharedTeamName }: { sharedTeamId: string; sharedTeamName: string }) {
