@@ -3017,6 +3017,23 @@ a.team-card-num:hover {
   }
 }
 
+/* Skeleton shimmer sweep — reuses the existing @keyframes shimmer. */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--surface-3),
+    color-mix(in srgb, var(--foreground) 8%, var(--surface-3)),
+    var(--surface-3)
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.1s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+  }
+}
+
 .pager {
   display: flex;
   align-items: center;
