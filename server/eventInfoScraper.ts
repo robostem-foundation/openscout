@@ -4,6 +4,7 @@
 
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
+import sanitizeHtml from "sanitize-html";
 
 export interface WebcastLink {
   url: string;
@@ -61,6 +62,10 @@ async function fetchWithStrategy(url: string): Promise<string> {
 
   const fetchProxy = async (): Promise<string> => {
     await new Promise((r) => setTimeout(r, 100));
+    // NOTE: this fallback relays the request through the third-party corsproxy.io.
+    // The only thing disclosed is `url` — a public events.vex.com event page — so
+    // there is no sensitive data leak. If corsproxy.io reliability/trust becomes a
+    // concern, drop this strategy or self-host a small fetch proxy.
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
     const res = await fetch(proxyUrl, {
       headers: {
@@ -96,6 +101,31 @@ function nodeText($el: cheerio.Cheerio<AnyNode>): string {
   return $el.text().replace(/ /g, " ").trim();
 }
 
+// Allowlist-based sanitizer for the scraped agenda HTML. Only structural /
+// text-formatting tags survive; the sole attribute kept is `href` on <a>, and
+// only for safe schemes (http/https/mailto). This replaces a hand-rolled
+// attribute-stripper whose `!href.startsWith("javascript:")` blocklist could be
+// bypassed with control chars or entity-encoding (e.g. `java\tscript:`).
+// Exported so it can be unit-tested directly against known XSS payloads.
+export function sanitizeAgendaHtml(dirty: string): string {
+  return sanitizeHtml(dirty, {
+    allowedTags: [
+      "p", "br", "hr", "ul", "ol", "li", "b", "strong", "i", "em", "u",
+      "h1", "h2", "h3", "h4", "h5", "h6", "a", "span", "div", "blockquote",
+      "code", "pre", "table", "thead", "tbody", "tr", "td", "th",
+    ],
+    allowedAttributes: { a: ["href", "target", "rel"] },
+    allowedSchemes: ["http", "https", "mailto"],
+    allowedSchemesAppliedToAttributes: ["href"],
+    // Drop disallowed tags entirely (their text content is preserved by default).
+    // <script>/<style> contents are stripped by sanitize-html regardless.
+    disallowedTagsMode: "discard",
+    transformTags: {
+      a: sanitizeHtml.simpleTransform("a", { target: "_blank", rel: "noopener noreferrer" }),
+    },
+  });
+}
+
 function parseAgenda($: cheerio.CheerioAPI): EventInfoData["agenda"] {
   const section = findSection($, "Agenda", "Schedule");
   if (!section.length) return null;
@@ -106,25 +136,10 @@ function parseAgenda($: cheerio.CheerioAPI): EventInfoData["agenda"] {
     return t === "agenda" || t === "schedule";
   }).remove();
 
-  // Remove scripts, styles, and iframes (webcasts are handled separately)
-  section.find("script, style, iframe").remove();
+  const raw = section.html()?.trim() ?? "";
+  if (!raw) return null;
 
-  // Sanitize: strip all HTML attributes except href on <a> tags.
-  // This removes Vue template attrs (@on-register, v-bind, etc.) and any
-  // on* event handlers while keeping the human-readable structure intact.
-  section.find("*").each((_, el) => {
-    const anyEl = el as { tagName?: string; attribs?: Record<string, string> };
-    if (!anyEl.attribs) return;
-    const href = anyEl.tagName === "a" ? anyEl.attribs["href"] : undefined;
-    for (const attr of Object.keys(anyEl.attribs)) {
-      $(el).removeAttr(attr);
-    }
-    if (href && !href.startsWith("javascript:")) {
-      $(el).attr("href", href).attr("target", "_blank").attr("rel", "noopener noreferrer");
-    }
-  });
-
-  const html = section.html()?.trim() ?? "";
+  const html = sanitizeAgendaHtml(raw).trim();
   return html ? { html } : null;
 }
 

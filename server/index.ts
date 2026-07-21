@@ -3,7 +3,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
-import { proxyRequest, type ProxySource } from "./proxy.js";
+import { clientIpFromForwardedFor, guardProxyRequest, proxyRequest, type ProxySource } from "./proxy.js";
 import { scrapeEventInfo } from "./eventInfoScraper.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21,6 +21,18 @@ if (!process.env.ROBOTEVENTS_API_KEY) {
 
 function proxyRoute(source: ProxySource) {
   return async (req: express.Request, res: express.Response) => {
+    // Abuse guard (no-op locally unless APP_ORIGIN / Upstash are configured).
+    const guard = await guardProxyRequest({
+      origin: req.headers.origin ?? null,
+      referer: req.headers.referer ?? null,
+      ip: clientIpFromForwardedFor(req.headers["x-forwarded-for"], req.socket.remoteAddress ?? "unknown"),
+    });
+    if (!guard.ok) {
+      if (guard.retryAfter) res.setHeader("retry-after", String(guard.retryAfter));
+      res.status(guard.status).json({ message: guard.message });
+      return;
+    }
+
     const endpoint = Array.isArray(req.params.endpoint) ? req.params.endpoint.join("/") : (req.params.endpoint ?? "");
     const queryIndex = req.originalUrl.indexOf("?");
     const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : "";
@@ -62,8 +74,29 @@ app.get("/api/re-root/*endpoint", proxyRoute("re-root"));
 app.get("/api/jumper/*endpoint", proxyRoute("jumper"));
 
 if (process.env.NODE_ENV === "production") {
+  // Security headers for the self-hosted/`npm run preview` path. Kept in sync with
+  // the `headers` block in vercel.json (production on Vercel uses that instead).
+  // Applied only in production so Vite's dev server (which needs unsafe-eval/inline
+  // for HMR) is not broken in development.
+  const CSP =
+    "default-src 'self'; script-src 'self' https://va.vercel-scripts.com https://www.youtube.com; " +
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; " +
+    "media-src 'self' https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co " +
+    "https://www.googleapis.com https://api.boxcast.com https://*.boxcast.com https://vitals.vercel-insights.com; " +
+    "frame-src https://www.youtube.com https://www.youtube-nocookie.com; " +
+    "object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+  app.use((_req, res, next) => {
+    res.setHeader("Content-Security-Policy", CSP);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+    res.setHeader("X-Frame-Options", "DENY");
+    next();
+  });
   app.use(express.static(path.join(root, "dist")));
-  app.get("*", (_req, res) => {
+  // SPA fallback. Express 5 (path-to-regexp v8) rejects a bare "*" path string,
+  // so use a path-less middleware as the catch-all instead.
+  app.use((_req, res) => {
     res.sendFile(path.join(root, "dist", "index.html"));
   });
 } else {

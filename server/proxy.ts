@@ -3,6 +3,9 @@
 // Environment variables are read lazily (per request) so it works whether
 // they come from dotenv (local) or Vercel's injected env (production).
 
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+
 export const PROXY_SOURCES = ["rse", "re", "re-root", "jumper"] as const;
 export type ProxySource = (typeof PROXY_SOURCES)[number];
 
@@ -72,4 +75,109 @@ export async function proxyRequest(
     cacheControl: CACHE_CONTROL[source],
     body: await upstream.text(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Abuse protection: Origin/Referer allowlist + per-IP rate limiting.
+// The proxy attaches secret upstream API keys to every request, so without a
+// guard anyone who finds the deployed URL can drive it as a free public relay
+// (quota/cost abuse — not key theft; the key value never reaches the browser).
+// Both guards degrade to no-ops when unconfigured so local dev is unaffected.
+// ---------------------------------------------------------------------------
+
+function hostOf(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+
+// APP_ORIGIN is a comma-separated allowlist of full origins. When it is unset,
+// origin enforcement is DISABLED (allow-all) so a missing env var can never take
+// production down — the per-IP rate limit is the backstop in that case.
+function allowedHosts(): Set<string> | null {
+  const configured = (process.env.APP_ORIGIN ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (configured.length === 0) return null; // enforcement disabled
+  const hosts = new Set<string>();
+  for (const origin of configured) {
+    const h = hostOf(origin);
+    if (h) hosts.add(h);
+  }
+  // Always tolerate local dev hosts alongside a configured production origin.
+  hosts.add("localhost:5173");
+  hosts.add("localhost:5175");
+  return hosts;
+}
+
+/**
+ * True if the request may use the proxy. Same-origin browser GETs omit `Origin`
+ * but send `Referer`, so either matching the allowlist is accepted. A request
+ * with neither header (e.g. a raw script) is rejected once APP_ORIGIN is set.
+ */
+export function isAllowedOrigin(headers: { origin?: string | null; referer?: string | null }): boolean {
+  const allow = allowedHosts();
+  if (allow === null) return true; // enforcement disabled
+  const originHost = hostOf(headers.origin);
+  if (originHost) return allow.has(originHost);
+  const refererHost = hostOf(headers.referer);
+  if (refererHost) return allow.has(refererHost);
+  return false;
+}
+
+let cachedLimiter: Ratelimit | null | undefined;
+function getLimiter(): Ratelimit | null {
+  if (cachedLimiter !== undefined) return cachedLimiter;
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) {
+    cachedLimiter = null; // no Upstash configured (e.g. local dev) → no-op
+    return null;
+  }
+  cachedLimiter = new Ratelimit({
+    redis: new Redis({ url, token }),
+    limiter: Ratelimit.slidingWindow(60, "10 s"),
+    prefix: "proxy",
+    analytics: false,
+  });
+  return cachedLimiter;
+}
+
+export type GuardResult =
+  | { ok: true }
+  | { ok: false; status: number; message: string; retryAfter?: number };
+
+/**
+ * Combined proxy guard: rejects disallowed origins (403) and IPs over the rate
+ * limit (429). Both checks are skipped when their env config is absent, so
+ * `npm run dev` works with no extra setup.
+ */
+export async function guardProxyRequest(input: {
+  origin?: string | null;
+  referer?: string | null;
+  ip: string;
+}): Promise<GuardResult> {
+  if (!isAllowedOrigin(input)) {
+    return { ok: false, status: 403, message: "Forbidden: origin not allowed" };
+  }
+  const limiter = getLimiter();
+  if (limiter) {
+    const { success, reset } = await limiter.limit(input.ip);
+    if (!success) {
+      const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000));
+      return { ok: false, status: 429, message: "Too many requests", retryAfter };
+    }
+  }
+  return { ok: true };
+}
+
+/** Extract the client IP from an x-forwarded-for header value (first hop). */
+export function clientIpFromForwardedFor(value: string | string[] | null | undefined, fallback = "unknown"): string {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const first = (raw ?? "").split(",")[0]?.trim();
+  return first || fallback;
 }
