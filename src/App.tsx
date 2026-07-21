@@ -16045,6 +16045,7 @@ function MyTeamDashboard() {
       if (row.nextMatch) pieces.push(<>Next <b>{row.nextMatch}</b></>);
       if (!pieces.length) pieces.push("In progress");
     } else {
+      if (row.rank != null) pieces.push(<>Rank <b>#{row.rank}</b></>);
       if (row.record) pieces.push(<b>{row.record}</b>);
       else if (row.avgScore != null) pieces.push(<>Avg <b>{row.avgScore}</b></>);
       if (row.skills) pieces.push(<>Skills <b>{row.skills}</b></>);
