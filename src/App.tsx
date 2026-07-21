@@ -66,6 +66,7 @@ import JumperPage from "./jumper/JumperPage.jsx";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
+import { MotionConfig } from "motion/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -16569,18 +16570,20 @@ export default function App() {
   }, []); // intentionally stable — reads module-level _spotlightOpen directly
 
   return (
-    <ErrorBoundary>
-      <Layout path={path}>
-        {/* Keyed by route so a caught error clears automatically when the user
-            navigates elsewhere; the nav shell (Layout) stays mounted. */}
-        <ErrorBoundary key={path}>{route(path)}</ErrorBoundary>
-      </Layout>
-      <ErrorBoundary silent><OnboardingModal /></ErrorBoundary>
-      {spotlightOpen && <ErrorBoundary silent><CommandPalette onClose={closeSpotlight} /></ErrorBoundary>}
-      {shortcutsOpen && <ErrorBoundary silent><ShortcutsOverlay onClose={() => setShortcutsOpen(false)} /></ErrorBoundary>}
-      {trayEntries.length > 0 && <ErrorBoundary silent><CompareTray entries={trayEntries} /></ErrorBoundary>}
-      {compareModalOpen && <ErrorBoundary silent><ComparisonModal entries={trayEntries} onClose={closeCompareModal} /></ErrorBoundary>}
-      {quickView && <ErrorBoundary silent><TeamQuickView key={_quickViewSeq} state={quickView} onClose={closeQuickView} /></ErrorBoundary>}
-    </ErrorBoundary>
+    <MotionConfig reducedMotion="user">
+      <ErrorBoundary>
+        <Layout path={path}>
+          {/* Keyed by route so a caught error clears automatically when the user
+              navigates elsewhere; the nav shell (Layout) stays mounted. */}
+          <ErrorBoundary key={path}>{route(path)}</ErrorBoundary>
+        </Layout>
+        <ErrorBoundary silent><OnboardingModal /></ErrorBoundary>
+        {spotlightOpen && <ErrorBoundary silent><CommandPalette onClose={closeSpotlight} /></ErrorBoundary>}
+        {shortcutsOpen && <ErrorBoundary silent><ShortcutsOverlay onClose={() => setShortcutsOpen(false)} /></ErrorBoundary>}
+        {trayEntries.length > 0 && <ErrorBoundary silent><CompareTray entries={trayEntries} /></ErrorBoundary>}
+        {compareModalOpen && <ErrorBoundary silent><ComparisonModal entries={trayEntries} onClose={closeCompareModal} /></ErrorBoundary>}
+        {quickView && <ErrorBoundary silent><TeamQuickView key={_quickViewSeq} state={quickView} onClose={closeQuickView} /></ErrorBoundary>}
+      </ErrorBoundary>
+    </MotionConfig>
   );
 }
