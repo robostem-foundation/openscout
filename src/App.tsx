@@ -3204,6 +3204,7 @@ function MobileNavDrawer({ path, open, onClose }: { path: string; open: boolean;
                 aria-pressed={theme === value}
               >
                 {value.charAt(0).toUpperCase() + value.slice(1)}
+                {theme === value && <SlideIndicator id="mobile-theme" variant="pill" />}
               </button>
             ))}
           </div>
@@ -4634,6 +4635,7 @@ function EventsPageInner() {
               {PROGRAM_TOGGLE_PRIMARY.map((p) => (
                 <button key={p.value} type="button" className={activeProgramId === p.value ? "active" : ""} onClick={() => selectProgram(p.value)}>
                   {p.label}
+                  {activeProgramId === p.value && <SlideIndicator id="seg-program" variant="pill" />}
                 </button>
               ))}
               <button
@@ -4681,12 +4683,15 @@ function EventsPageInner() {
                 <div className="picker-tabs">
                   <button type="button" className={regionTab === "country" ? "active" : ""} onClick={() => setRegionTab("country")}>
                     Countries
+                    {regionTab === "country" && <SlideIndicator id="region-tabs" variant="pill" />}
                   </button>
                   <button type="button" className={regionTab === "subdivision" ? "active" : ""} onClick={() => setRegionTab("subdivision")}>
                     State / Province
+                    {regionTab === "subdivision" && <SlideIndicator id="region-tabs" variant="pill" />}
                   </button>
                   <button type="button" className={regionTab === "vex-region" ? "active" : ""} onClick={() => setRegionTab("vex-region")}>
                     Region
+                    {regionTab === "vex-region" && <SlideIndicator id="region-tabs" variant="pill" />}
                   </button>
                 </div>
                 <input className="picker-search" value={regionSearch} onChange={(event) => setRegionSearch(event.target.value)} placeholder="Search regions" />
@@ -5655,6 +5660,7 @@ function TeamsPage() {
                 aria-pressed={teamView === "grid"}
               >
                 <LayoutGrid size={14} />
+                {teamView === "grid" && <SlideIndicator id="team-view" variant="pill" />}
               </button>
               <button
                 type="button"
@@ -5665,6 +5671,7 @@ function TeamsPage() {
                 aria-pressed={teamView === "list"}
               >
                 <List size={14} />
+                {teamView === "list" && <SlideIndicator id="team-view" variant="pill" />}
               </button>
             </div>
             {!isSearchingTeams && (
@@ -6169,6 +6176,7 @@ function SearchFilters({
             onClick={() => setProgram(option.value)}
           >
             {option.value === "" ? "All" : option.label}
+            {program === option.value && <SlideIndicator id="team-prog" variant="pill" />}
           </button>
         ))}
       </div>
@@ -6612,6 +6620,7 @@ function EventDetail({ param }: { param: string }) {
               onClick={() => setSelectedDivision(item.id)}
             >
               {item.name}
+              {item.id === division && <SlideIndicator id="division-tabs" variant="pill" />}
             </button>
           ))}
         </div>
@@ -15816,6 +15825,7 @@ function MyTeamPage({ sharedTeamId }: { sharedTeamId: string | null }) {
               >
                 {t.id ? <Users size={15} /> : <Star size={15} />}
                 {t.label}
+                {isActive && <SlideIndicator id="myteam-tabs" />}
               </button>
             );
           })}

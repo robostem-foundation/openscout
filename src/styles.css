@@ -560,6 +560,8 @@ main {
 }
 
 .home-prog-toggle button.active {
+  /* Multi-select (not a single-choice segmented control) so the fill can't
+     slide between buttons — it fades in per button via the transition below. */
   background: var(--accent);
   color: var(--accent-ink);
 }
@@ -1773,9 +1775,8 @@ main {
   color: var(--text);
 }
 .seg-toggle button.active {
-  background: var(--surface);
+  /* fill + shadow drawn by the sliding .slide-pill */
   color: var(--text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 /* The "…" more-button stays compact instead of flexing to a full segment. */
 .seg-toggle-more {
@@ -2037,9 +2038,13 @@ main {
   font-size: 12px;
 }
 
-.picker-tabs button.active,
 .picker-tabs button:hover {
   background: var(--accent);
+  border-color: var(--accent-hover);
+  color: var(--accent-ink);
+}
+.picker-tabs button.active {
+  /* fill drawn by the sliding .slide-pill */
   border-color: var(--accent-hover);
   color: var(--accent-ink);
 }
@@ -2375,7 +2380,7 @@ main {
 }
 
 .team-prog-seg button.active {
-  background: var(--text);
+  /* fill drawn by the sliding .slide-pill */
   color: var(--bg);
   font-weight: 500;
 }
@@ -2669,7 +2674,7 @@ tbody tr:hover {
 }
 
 .team-view-toggle button.active {
-  background: var(--surface-3);
+  /* fill drawn by the sliding .slide-pill */
   color: var(--text);
 }
 
@@ -4822,14 +4827,36 @@ a.team-card-num:hover {
   background: var(--text);
   border-radius: 2px;
 }
-/* Filled pill for segmented toggles; sits behind the button label. */
+/* Filled pill for segmented toggles; sits behind the button label. Colours are
+   driven by per-group custom properties so one component fits every toggle.
+   z-index:-1 + isolation:isolate on the button keeps the pill behind the label
+   without wrapping the label in an extra element. */
 .slide-pill {
   position: absolute;
   inset: 0;
-  z-index: 0;
-  border-radius: 8px;
-  background: var(--surface-3);
+  z-index: -1;
+  border-radius: var(--pill-radius, 8px);
+  background: var(--pill-bg, var(--surface-3));
+  box-shadow: var(--pill-shadow, none);
 }
+.team-view-toggle button,
+.team-prog-seg button,
+.seg-toggle button,
+.division-tabs button,
+.picker-tabs button,
+.mobile-nav-seg-btn,
+.myteam-tab {
+  position: relative;
+  isolation: isolate;
+}
+/* Per-group pill colour/shape; the sliding pill replaces the old static
+   .active background (removed below) so the fill animates between segments. */
+.team-view-toggle { --pill-bg: var(--surface-3); --pill-radius: 6px; }
+.team-prog-seg { --pill-bg: var(--text); --pill-radius: 5px; }
+.seg-toggle { --pill-bg: var(--surface); --pill-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+.mobile-nav-seg { --pill-bg: var(--surface); --pill-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
+.division-tabs { --pill-bg: var(--accent); }
+.picker-tabs { --pill-bg: var(--accent); }
 
 .division-tabs {
   display: flex;
@@ -4857,9 +4884,13 @@ a.team-card-num:hover {
   color: var(--link);
 }
 
-.division-tabs button.active,
 .division-tabs button:hover {
   background: var(--accent);
+  border-color: var(--accent-hover);
+  color: var(--accent-ink);
+}
+.division-tabs button.active {
+  /* fill drawn by the sliding .slide-pill */
   border-color: var(--accent-hover);
   color: var(--accent-ink);
 }
@@ -10959,10 +10990,9 @@ a.shared-team-note-row:hover { background: var(--surface-2); }
     cursor: pointer;
   }
   .mobile-nav-seg-btn.active {
-    background: var(--surface);
+    /* fill + shadow drawn by the sliding .slide-pill */
     color: var(--text);
     font-weight: 600;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   }
 
   .mobile-nav-footer {
@@ -11578,7 +11608,7 @@ a.myteam-tcard:hover { border-color: var(--accent); }
 .myteam-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
 .myteam-tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-size: 14px; font-weight: 600; cursor: pointer; }
 .myteam-tab:hover { color: var(--text); }
-.myteam-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.myteam-tab.active { color: var(--text); /* underline drawn by sliding .slide-underline */ }
 
 /* ── My Team timeline row + recent aside ─────────────────────────────────── */
 .myteam-timeline-row { display: flex; gap: 20px; align-items: stretch; }
