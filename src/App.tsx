@@ -1241,6 +1241,44 @@ function locationLine(eventOrTeam: { location?: Event["location"] | Team["locati
   return [location.city, location.region, location.country].filter(Boolean).join(", ") || location.venue || "Unknown location";
 }
 
+// US state + Canadian province/territory names → 2-letter codes, so the events-list
+// location column stays compact ("Austin, TX" instead of "Austin, Texas").
+const US_CA_SUBDIVISION_ABBR: Record<string, string> = {
+  // United States
+  "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
+  "colorado": "CO", "connecticut": "CT", "delaware": "DE", "florida": "FL", "georgia": "GA",
+  "hawaii": "HI", "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA",
+  "kansas": "KS", "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+  "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS", "missouri": "MO",
+  "montana": "MT", "nebraska": "NE", "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
+  "new mexico": "NM", "new york": "NY", "north carolina": "NC", "north dakota": "ND", "ohio": "OH",
+  "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+  "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT",
+  "virginia": "VA", "washington": "WA", "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+  "district of columbia": "DC", "puerto rico": "PR", "guam": "GU", "u.s. virgin islands": "VI",
+  // Canada
+  "alberta": "AB", "british columbia": "BC", "manitoba": "MB", "new brunswick": "NB",
+  "newfoundland and labrador": "NL", "nova scotia": "NS", "ontario": "ON",
+  "prince edward island": "PE", "quebec": "QC", "québec": "QC", "saskatchewan": "SK",
+  "northwest territories": "NT", "nunavut": "NU", "yukon": "YT",
+};
+
+const US_CA_COUNTRIES = new Set(["united states", "united states of america", "usa", "us", "canada", "ca"]);
+
+// Compact location for the events-list column. US/Canada → "City, ST"; elsewhere →
+// "Region, Country" (per request). Returns "" when there's nothing usable to show.
+function eventLocationShort(location?: Event["location"] | null): string {
+  if (!location) return "";
+  const city = location.city?.trim() || "";
+  const region = location.region?.trim() || "";
+  const country = location.country?.trim() || "";
+  if (US_CA_COUNTRIES.has(normalizeText(country))) {
+    const subdivision = US_CA_SUBDIVISION_ABBR[normalizeText(region)] ?? region;
+    return [city, subdivision].filter(Boolean).join(", ") || country;
+  }
+  return [region, country].filter(Boolean).join(", ") || city;
+}
+
 function addDays(date: Date, days: number) {
   return new Date(date.getTime() + days * oneDay);
 }
@@ -5061,7 +5099,7 @@ function EventTable({
   const showProgram = showProgramProp ?? !compact;
   const showLevel = !compact && !showPriority;
   const columnCount =
-    2 +
+    3 +
     (showPriority ? 1 : 0) +
     (showProgram ? 1 : 0) +
     (showSeason ? 1 : 0) +
@@ -5074,6 +5112,7 @@ function EventTable({
       <thead>
         <tr>
           <th className={headerLabel ? "event-col-group" : undefined}>{headerLabel ?? "Event"}</th>
+          <th className="event-col-location">Location</th>
           {showPriority && <th className="event-col-priority">Priority</th>}
           {showProgram && <th className="event-col-program">Program</th>}
           {showGrade && <th className="grade-col">Grade</th>}
@@ -5097,6 +5136,12 @@ function EventTable({
               <td className="event-name-cell">
                 <Link href={eventPath(event)} className="event-name-link">{event.name}</Link>
                 <div className="muted event-sku-line">{event.sku}</div>
+              </td>
+              <td className="event-location-cell">
+                {(() => {
+                  const loc = eventLocationShort(event.location);
+                  return loc ? <span className="event-location">{loc}</span> : <span className="muted">—</span>;
+                })()}
               </td>
               {showPriority && (
                 <td>
