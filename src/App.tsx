@@ -2211,19 +2211,31 @@ function LoadingSwap({
   );
 }
 
-function LoadingTable({ columns = 4 }: { columns?: number }) {
+// Crossfades the loading skeleton rows and the real rows when `loading` flips,
+// inside a persistent <table>. Opacity-only (transforms on <tbody> are
+// unreliable); mode="wait" so the skeleton fades out before data fades in.
+// Both branches are <motion.tbody> — multiple bodies in one table are valid.
+function TableBodySwap({ loading, columns, children }: { loading: boolean; columns: number; children: ReactNode }) {
   return (
-    <tbody>
-      {Array.from({ length: 5 }).map((_, row) => (
-        <tr key={row}>
-          {Array.from({ length: columns }).map((__, col) => (
-            <td key={col}>
-              <Skeleton className="h-3.5 w-[min(100%,180px)]" />
-            </td>
+    <AnimatePresence mode="wait" initial={false}>
+      {loading ? (
+        <motion.tbody key="loading" variants={fade} initial="initial" animate="animate" exit="exit">
+          {Array.from({ length: 5 }).map((_, row) => (
+            <tr key={row}>
+              {Array.from({ length: columns }).map((__, col) => (
+                <td key={col}>
+                  <Skeleton className="h-3.5 w-[min(100%,180px)]" />
+                </td>
+              ))}
+            </tr>
           ))}
-        </tr>
-      ))}
-    </tbody>
+        </motion.tbody>
+      ) : (
+        <motion.tbody key="data" variants={fade} initial="initial" animate="animate" exit="exit">
+          {children}
+        </motion.tbody>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -5057,10 +5069,7 @@ function EventTable({
           {showDistance && <th className="event-col-distance">Distance</th>}
         </tr>
       </thead>
-      {loading ? (
-        <LoadingTable columns={columnCount} />
-      ) : (
-        <tbody>
+      <TableBodySwap loading={loading} columns={columnCount}>
           {events.map((event) => (
             <tr key={event.id}>
               <td className="event-name-cell">
@@ -5113,8 +5122,7 @@ function EventTable({
               </td>
             </tr>
           )}
-        </tbody>
-      )}
+      </TableBodySwap>
     </table>
   );
 }
@@ -5724,10 +5732,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divis
             {showPicklist && <th className="picklist-col">Picklist</th>}
           </tr>
         </thead>
-        {loading ? (
-          <LoadingTable columns={colCount} />
-        ) : (
-          <tbody>
+        <TableBodySwap loading={loading} columns={colCount}>
             {visibleTeams.map((team) => {
               const expanded = expandedTeamId === team.id;
               return (
@@ -5835,8 +5840,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divis
                 </td>
               </tr>
             )}
-          </tbody>
-        )}
+        </TableBodySwap>
       </table>
       {!loading && localPageSize && (
         <div className="pager-with-total">
@@ -12885,10 +12889,7 @@ function InsightsPage() {
               <th>Signature Wins</th>
             </tr>
           </thead>
-          {loading ? (
-            <LoadingTable columns={8} />
-          ) : (
-            <tbody>
+          <TableBodySwap loading={loading} columns={8}>
               {leaders.map((row) => (
                 <tr key={`${row.rank}-${row.team.id}`}>
                   <td>{row.rank}</td>
@@ -12904,8 +12905,7 @@ function InsightsPage() {
                   <td>{row.signature_wins ?? "-"}</td>
                 </tr>
               ))}
-            </tbody>
-          )}
+        </TableBodySwap>
         </table>
       </Panel>
     </section>
