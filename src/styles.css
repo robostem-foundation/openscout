@@ -4267,6 +4267,21 @@ a.team-card-num:hover {
   white-space: nowrap;
 }
 
+/* Small superscript info marker shown on a match time when the event's timezone
+   differs from the viewer's. Hovering it reveals the viewer's local equivalent. */
+.tz-info {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 1px;
+  color: var(--text-muted);
+  opacity: 0.7;
+  cursor: help;
+  line-height: 0;
+}
+.tz-info svg {
+  display: block;
+}
+
 .match-day-divider-row td {
   height: auto;
   padding: 3px 8px;

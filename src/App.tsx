@@ -121,6 +121,7 @@ import { toCsv, downloadCsv as downloadCsvFile } from "./export";
 import { computeEventOpr } from "./analytics";
 import type { TeamOpr } from "./analytics";
 import type { Alliance, Award, CountryGroup, Event, EventInfoData, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
+import tzLookup from "@photostructure/tz-lookup";
 
 const programOptions = [
   { label: "All Programs", value: "" },
@@ -1994,19 +1995,88 @@ function matchTimestampMs(match: Match) {
   return value ? new Date(value).getTime() || 0 : 0;
 }
 
-function formatMatchClock(match: Match) {
+// Match clock. With a timezone the time is shown in the event's local time (the API
+// reports every match in US Eastern, so this is what a spectator at the event sees);
+// without one it falls back to the viewer's browser timezone.
+function formatMatchClock(match: Match, tz?: string | null) {
   const value = match.scheduled ?? match.started;
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", ...(tz ? { timeZone: tz } : {}) }).format(date);
 }
 
-function matchDayKey(match: Match) {
+// Short timezone label for a match instant (e.g. "GMT+8", "EST"), used in the tooltip
+// that appears when the event's timezone differs from the viewer's.
+function matchTzLabel(match: Match, tz: string): string {
   const value = match.scheduled ?? match.started;
-  if (!value) return null;
-  const isoDate = /^(\d{4}-\d{2}-\d{2})/.exec(value);
-  return isoDate ? isoDate[1] : null;
+  if (!value) return tz;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return tz;
+  const part = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" })
+    .formatToParts(date)
+    .find((p) => p.type === "timeZoneName");
+  return part?.value ?? tz;
+}
+
+// Renders a match clock in event-local time. When the event's zone differs from the
+// viewer's (so the shown time isn't the viewer's own), a small superscript info icon
+// is appended; hovering it reveals the viewer's local equivalent.
+function MatchTime({ match, eventTz, className = "result-match-time" }: { match: Match; eventTz?: string | null; className?: string }) {
+  const clock = formatMatchClock(match, eventTz);
+  if (!clock) return null;
+  const localClock = formatMatchClock(match, null);
+  const differs = !!eventTz && localClock != null && localClock !== clock;
+  return (
+    <span className={className}>
+      {clock}
+      {differs && (
+        <sup
+          className="tz-info"
+          title={`Event local time (${matchTzLabel(match, eventTz!)}). Your local time: ${localClock}.`}
+          aria-label={`Shown in event local time. Your local time: ${localClock}.`}
+        >
+          <Info size={9} aria-hidden />
+        </sup>
+      )}
+    </span>
+  );
+}
+
+// RobotEvents serves every match time in US Eastern regardless of where the event
+// is, so slicing the raw ISO date groups western events by the wrong calendar day
+// (an evening match past midnight Eastern spills into a phantom "next day"). Resolve
+// the event's IANA zone from its coordinates so day boundaries follow the event's
+// local time. Returns null when we have no coordinates (or the lookup fails), in
+// which case callers fall back to the raw Eastern date — correct for Eastern-US events.
+function eventTimeZone(event: Event | null | undefined): string | null {
+  const coords = event?.location?.coordinates;
+  if (!coords || typeof coords.lat !== "number" || typeof coords.lon !== "number") return null;
+  try {
+    return tzLookup(coords.lat, coords.lon);
+  } catch {
+    return null;
+  }
+}
+
+// Build a match → "YYYY-MM-DD" day-key function. With a timezone, the key is the
+// match's calendar date *at the event's location*; without one it falls back to the
+// raw leading date of the API timestamp (Eastern). This drives day grouping only —
+// the displayed match clock (formatMatchClock) is unaffected.
+function makeMatchDayKey(tz?: string | null): (match: Match) => string | null {
+  const dayFormatter = tz
+    ? new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
+    : null;
+  return (match: Match) => {
+    const value = match.scheduled ?? match.started;
+    if (!value) return null;
+    if (dayFormatter) {
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) return dayFormatter.format(date);
+    }
+    const isoDate = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+    return isoDate ? isoDate[1] : null;
+  };
 }
 
 function uniqueMatches(matches: Match[]) {
@@ -6495,6 +6565,10 @@ function EventDetail({ param }: { param: string }) {
     [event, matches.data],
   );
 
+  // Event's local IANA timezone (from its coordinates) — used to group matches into
+  // days at the event's location rather than the Eastern time the API reports.
+  const eventTz = useMemo(() => eventTimeZone(event), [event]);
+
   // For multi-division events: map each teamId to its division name for the Teams tab column
   const teamDivisionNameMap = useMemo(() => {
     if (!allDivisionRankings.data || divisions.length <= 1) return null;
@@ -6756,6 +6830,7 @@ function EventDetail({ param }: { param: string }) {
           isIq={isIqProgram(event)}
           scoreTier={iqScoreTier}
           eventId={event.id}
+          eventTz={eventTz}
           focusMatchId={activeFocusMatchId}
           onFocusConsumed={() => { consumedMatchRef.current = focusMatchId; }}
           rankings={filteredRankings}
@@ -10459,6 +10534,7 @@ function MatchesTable({
   isIq = false,
   scoreTier,
   eventId,
+  eventTz,
   focusMatchId,
   onFocusConsumed,
   rankings = [],
@@ -10473,6 +10549,8 @@ function MatchesTable({
   isIq?: boolean;
   scoreTier?: (score: number | null | undefined) => ScoreTier;
   eventId?: number;
+  // IANA timezone of the event's location; day dividers are computed in this zone.
+  eventTz?: string | null;
   focusMatchId?: string | null;
   onFocusConsumed?: () => void;
   rankings?: Ranking[];
@@ -10536,6 +10614,8 @@ function MatchesTable({
                   presetUrl={presetUrl}
                   onOpenMatch={onOpenMatch}
                   dayNumbers={dayNumbers}
+                  dayKeyOf={dayKeyOf}
+                  eventTz={eventTz}
                   showNoteRail={showNoteRail}
                   eventId={eventId}
                   eventTeams={eventTeams}
@@ -10549,7 +10629,8 @@ function MatchesTable({
         );
       });
 
-  const dayKeys = [...new Set(matches.map(matchDayKey).filter((key): key is string => !!key))].sort();
+  const dayKeyOf = useMemo(() => makeMatchDayKey(eventTz), [eventTz]);
+  const dayKeys = [...new Set(matches.map(dayKeyOf).filter((key): key is string => !!key))].sort();
   const dayNumbers = dayKeys.length > 1 ? new Map(dayKeys.map((key, index) => [key, index + 1] as const)) : undefined;
 
   // IQ Teamwork: cooperative format. Finals are round 15; "alliances" are the
@@ -10596,6 +10677,8 @@ function MatchesTable({
                 presetUrl={presetUrl}
                 onOpenMatch={onOpenMatch}
                 dayNumbers={dayNumbers}
+                dayKeyOf={dayKeyOf}
+                eventTz={eventTz}
                 isIq={isIq}
                 scoreTier={scoreTier}
                 showNoteRail
@@ -10634,6 +10717,8 @@ function MatchesTable({
                 presetUrl={presetUrl}
                 onOpenMatch={onOpenMatch}
                 dayNumbers={dayNumbers}
+                dayKeyOf={dayKeyOf}
+                eventTz={eventTz}
                 isIq
                 markWinningIqScore
                 labelFor={(match) => iqFinalsLabelMap?.get(match.id)}
@@ -11209,6 +11294,8 @@ function ResultsMatchTable({
   presetUrl,
   onOpenMatch,
   dayNumbers,
+  dayKeyOf = makeMatchDayKey(),
+  eventTz,
   isIq = false,
   labelFor,
   scoreTier,
@@ -11230,6 +11317,12 @@ function ResultsMatchTable({
   presetUrl?: string | null;
   onOpenMatch?: (match: Match, timestamp: MatchTimestamp) => void;
   dayNumbers?: Map<string, number>;
+  // Resolves a match to its "YYYY-MM-DD" day key (event-local when a timezone is
+  // known). Must be the same function used to build dayNumbers so dividers align.
+  dayKeyOf?: (match: Match) => string | null;
+  // IANA timezone of the event; match times render in this zone with an info icon
+  // when it differs from the viewer's timezone.
+  eventTz?: string | null;
   isIq?: boolean;
   labelFor?: (match: Match) => string | undefined;
   scoreTier?: (score: number | null | undefined) => ScoreTier;
@@ -11403,14 +11496,13 @@ function ResultsMatchTable({
           const hideOpponent = focusInRed || focusInBlue;
           const iqResult = isIq ? iqMatchResult(match) : null;
           const timestamp = timestampMap?.get(match.id);
-          const matchClock = formatMatchClock(match);
           const canPlay = presetSupported && timestamp && timestamp.timestamp !== null && timestamp.videoId;
           const displayName = labelFor?.(match) ?? match.name;
 
           let dayDivider: ReactNode = null;
           if (dayNumbers && index > 0) {
-            const dayKey = matchDayKey(match);
-            const prevDayKey = matchDayKey(matches[index - 1]);
+            const dayKey = dayKeyOf(match);
+            const prevDayKey = dayKeyOf(matches[index - 1]);
             if (dayKey && prevDayKey && dayKey !== prevDayKey) {
               const currentDay = dayNumbers.get(dayKey);
               const prevDay = dayNumbers.get(prevDayKey);
@@ -11452,7 +11544,7 @@ function ResultsMatchTable({
               <td className="result-match-name">
                 <span className="result-match-line">
                   <span className="result-match-label">{displayName}</span>
-                  {matchClock && <span className="result-match-time">{matchClock}</span>}
+                  <MatchTime match={match} eventTz={eventTz} />
                   {match.field && (
                     <span className="result-field-name">
                       {match.field}
@@ -16569,6 +16661,7 @@ function MyTeamDashboard() {
   // Live event (running today) within the current season.
   const seasonEvents = useMemo(() => teamEvents.filter((e) => !seasonId || e.season.id === seasonId), [teamEvents, seasonId]);
   const liveEvent = useMemo(() => seasonEvents.find(eventIsLive) ?? null, [seasonEvents]);
+  const liveTz = useMemo(() => eventTimeZone(liveEvent), [liveEvent]);
   const liveRanking = useMemo(() => (liveEvent ? seasonRankings.find((r) => r.event.id === liveEvent.id) ?? null : null), [liveEvent, seasonRankings]);
   const liveSkills = useMemo(() => (liveEvent ? skillSummary(seasonSkills.filter((s) => s.event.id === liveEvent.id)) : null), [liveEvent, seasonSkills]);
   const liveMatches = useMemo(
@@ -16840,7 +16933,7 @@ function MyTeamDashboard() {
               </div>
               <div className="myteam-kvrow">
                 {nextUp.field && <div className="myteam-kv"><span className="kl">Field</span><span className="kv-v">{nextUp.field}</span></div>}
-                {formatMatchClock(nextUp) && <div className="myteam-kv"><span className="kl">Est. time</span><span className="kv-v">{formatMatchClock(nextUp)}</span></div>}
+                {formatMatchClock(nextUp, liveTz) && <div className="myteam-kv"><span className="kl">Est. time</span><MatchTime match={nextUp} eventTz={liveTz} className="kv-v" /></div>}
                 {partner && <div className="myteam-kv"><span className="kl">Partner</span><span className="kv-v">{partner.name}</span></div>}
               </div>
             </>
@@ -16922,7 +17015,6 @@ function MyTeamDashboard() {
             const ts = timestampMap.get(m.id);
             const canPlay = presetSupported && ts && ts.timestamp !== null && ts.videoId;
             const isNext = nextUp?.id === m.id;
-            const clock = formatMatchClock(m);
             return (
               <tr key={m.id} className={isNext ? "myteam-next-row" : ""}>
                 <td className="play-cell">
@@ -16945,7 +17037,7 @@ function MyTeamDashboard() {
                   ) : isNext ? (
                     <span className="myteam-nextpill">Next up</span>
                   ) : (
-                    <span className="result-match-time">{clock}</span>
+                    <MatchTime match={m} eventTz={liveTz} />
                   )}
                 </td>
                 <td className={`alliance-cell blue-alliance-cell ${winner === "Blue" ? "winning-alliance-cell" : ""}`}><AllianceTeamLinks teams={blue?.teams} focusTeamId={team.id} /></td>
