@@ -45,6 +45,11 @@
   --team-link: var(--link);
   /* Blue Alliance score badge — a true blue, not the cyan accent */
   --score-blue: #2563eb;
+  /* Team-number links tinted by alliance side: deep red / true blue instead of
+     the cyan accent, so each team reads in its own color. Reuse the themed
+     danger/score-blue tokens so both light and dark stay legible. */
+  --alliance-red-text: var(--danger-strong);
+  --alliance-blue-text: var(--score-blue);
   /* effects — soft, diffuse Geist shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.12);
@@ -4280,6 +4285,21 @@ a.team-card-num:hover {
 
 .blue-alliance-cell {
   background: rgba(51, 122, 183, 0.1);
+}
+
+/* Tint each side's team-number links in its alliance color (deep red / blue)
+   rather than the shared cyan accent. Placed after the .alliance-cell and
+   .team-match-table link rules so it wins by source order at equal specificity. */
+.red-alliance-cell .team-chip,
+.red-alliance-cell .team-mini-link,
+.red-alliance-cell a {
+  color: var(--alliance-red-text);
+}
+
+.blue-alliance-cell .team-chip,
+.blue-alliance-cell .team-mini-link,
+.blue-alliance-cell a {
+  color: var(--alliance-blue-text);
 }
 
 /* VEX IQ: a disqualified partner in a teamwork match. */
