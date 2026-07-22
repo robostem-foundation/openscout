@@ -47,6 +47,7 @@ import {
   Star,
   StickyNote,
   Clock,
+  TrendingUp,
   Trophy,
   Tv,
   Tv2,
@@ -287,6 +288,12 @@ function quickViewKey(p: NonNullable<QuickViewState>): string {
   return p.teamId != null ? `id:${p.teamId}` : `num:${(p.programCode ?? "").toLowerCase()}/${p.teamNumber.toUpperCase()}`;
 }
 function openQuickView(payload: NonNullable<QuickViewState>) {
+  // Compare pick mode overrides quick/full view everywhere: clicking a team toggles
+  // it in the comparison tray instead of opening a panel.
+  if (getComparePickMode()) {
+    if (payload.teamId != null) addOrRemoveCompareTeam(payload.teamId, payload.teamNumber, payload.programCode ?? "", payload.teamName);
+    return;
+  }
   const handle = _quickViewHandle;
   if (handle && !handle.isClosing()) {
     // Re-clicking the team that's already showing closes the panel (toggle).
@@ -2417,7 +2424,7 @@ function CompareModeButton() {
       title={active ? "Exit compare mode" : "Click team numbers to add teams to compare"}
       aria-label={active ? "Exit compare mode" : "Enter compare mode"}
     >
-      <span aria-hidden="true">A/B</span>
+      <Scale size={15} aria-hidden="true" />
     </button>
   );
 }
@@ -6074,8 +6081,7 @@ function TeamRowMatchesPreview({ teamId, eventId }: { teamId: number; eventId?: 
                   <AllianceTeamLinks teams={red?.teams} focusTeamId={teamId} />
                 </td>
                 <td className="score-cell">
-                  <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
-                  <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
+                  <FocusScorePair match={match} focusTeamId={teamId} redScore={redScore} blueScore={blueScore} winner={winner} />
                 </td>
                 <td>
                   <AllianceTeamLinks teams={blue?.teams} focusTeamId={teamId} />
@@ -6285,7 +6291,7 @@ function EventDetail({ param }: { param: string }) {
   const [tab, setTab] = useState<EventDetailTab>(() => eventInitialTab(!!new URLSearchParams(window.location.search).get("focusTeam")));
   // Match to scroll to + flash when deep-linked from a scouting note. Read once
   // then stripped from the URL so refresh/scroll-restore doesn't re-trigger it.
-  const [focusMatchId] = useState<string | null>(() => {
+  const [focusMatchId, setFocusMatchId] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search);
     const match = params.get("match");
     if (match) {
@@ -6310,6 +6316,31 @@ function EventDetail({ param }: { param: string }) {
   const event = lookup.data ?? null;
   const loading = lookup.loading;
   const error = lookup.error ?? (!loading && !event ? "Event not found" : null);
+  // Which focus id has already had its scroll+flash "spent". Recorded in a ref (not
+  // state) so recording it never re-renders / cancels the in-flight scroll. Gating
+  // the id passed to the Results table on this makes the jump fire exactly once —
+  // leaving and returning to the tab won't repeat it.
+  const consumedMatchRef = useRef<string | null>(null);
+  // Jump from the team score chart to that match on the Results tab: switch tabs,
+  // set the one-shot focus id, and sync the hash so the tab bar reflects it.
+  const jumpToResultsMatch = useCallback(
+    (matchId: number) => {
+      consumedMatchRef.current = null; // re-arm so pressing Enter again re-jumps
+      setFocusMatchId(String(matchId));
+      setTab("matches");
+      if (event) window.history.replaceState(null, "", urlWithHash(eventPath(event), "matches"));
+    },
+    [event],
+  );
+  const activeFocusMatchId = focusMatchId && focusMatchId !== consumedMatchRef.current ? focusMatchId : null;
+  // Switch tabs while preserving the current URL (keeps ?focusTeam so the team tab
+  // stays available); used by the "See all" links on the team cards.
+  const goToTab = useCallback((t: EventDetailTab) => {
+    setTab(t);
+    const url = new URL(window.location.href);
+    url.hash = t;
+    window.history.replaceState(null, "", url.toString());
+  }, []);
   const id = event ? String(event.id) : "";
   const divisions = useMemo(() => [...(event?.divisions ?? [])].sort((a, b) => (a.order ?? a.id) - (b.order ?? b.id)), [event]);
   const division = selectedDivision ?? divisions[0]?.id ?? 1;
@@ -6693,11 +6724,23 @@ function EventDetail({ param }: { param: string }) {
       )}
       <Status loading={activeStatus.loading} error={activeStatus.error} />
       {tab === "team-matches" && focusTeam && (
-        <Panel title={`${focusTeam.number}'s Matches at this Event`} icon={<Gamepad2 />}>
-          <div className="results-table-scroll">
-            <TeamMatchTable matches={focusTeamEventMatches.data?.data ?? []} focusTeamId={focusTeam.id} isIq={isIqProgram(event)} scoreTier={iqScoreTier} multiDivision={(event.divisions?.length ?? 0) > 1} />
-          </div>
-        </Panel>
+        <TeamMatchesTab
+          matches={focusTeamEventMatches.data?.data ?? []}
+          rankings={rankings.data?.data ?? []}
+          skills={skills.data?.data ?? []}
+          teams={teams.data?.data ?? []}
+          focusTeam={focusTeam}
+          isIq={isIqProgram(event)}
+          scoreTier={iqScoreTier}
+          multiDivision={(event.divisions?.length ?? 0) > 1}
+          onJumpToMatch={jumpToResultsMatch}
+          onOpenTab={goToTab}
+          presetSupported={!!preset.data?.exists}
+          presetLoading={preset.loading || (preset.data?.exists ? matchTimestamps.loading : false)}
+          presetUrl={presetUrl}
+          timestampMap={timestampMap}
+          onOpenMatch={(match, timestamp) => setPlayback({ match, timestamp })}
+        />
       )}
       {tab === "info" && (
         <EventInfoTab event={event} infoData={eventInfo.data ?? null} loading={eventInfo.loading} />
@@ -6713,13 +6756,14 @@ function EventDetail({ param }: { param: string }) {
           isIq={isIqProgram(event)}
           scoreTier={iqScoreTier}
           eventId={event.id}
-          focusMatchId={focusMatchId}
+          focusMatchId={activeFocusMatchId}
+          onFocusConsumed={() => { consumedMatchRef.current = focusMatchId; }}
           rankings={filteredRankings}
           focusTeamId={searchFocusTeamId}
         />
       )}
       {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} allMatches={matches.data?.data ?? []} sharedTeamId={primarySharedTeam?.sharedTeamId} eventId={String(event.id)} />}
-      {tab === "skills" && <SkillsTable skills={filteredSkills} focusTeamId={focusTeam?.id} />}
+      {tab === "skills" && <SkillsTable skills={filteredSkills} />}
       {tab === "awards" && <AwardsList awards={filteredAwards} />}
       {tab === "teams" && divisions.length > 1 && (
         <div className="division-tabs" aria-label="Filter teams by division">
@@ -9256,6 +9300,48 @@ function teamMatchOutcome(match: Match, teamId: number) {
   return winner.toLowerCase() === color.toLowerCase() ? "W" : "L";
 }
 
+// Score pair for a TEAM-FOCUSED match list: only the focus team's own alliance
+// gets a box (filled when they won, outlined when they lost); the opponent is a
+// plain coloured number. Undecidable without a focus team, so this is never used
+// in the full event match list. Falls back to two boxes if the team isn't found.
+function FocusScorePair({ match, focusTeamId, redScore, blueScore, winner }: {
+  match: Match;
+  focusTeamId: number;
+  redScore: number | null | undefined;
+  blueScore: number | null | undefined;
+  winner: string;
+}) {
+  const focusColor = teamAllianceColor(match, focusTeamId);
+  // A tie isn't a win or a loss — show both sides as plain numbers (no box).
+  const tie = winner === "Tie";
+  const redSlot =
+    tie ? (
+      <span className="score-plain red">{redScore ?? "-"}</span>
+    ) : focusColor === "red" ? (
+      <span className={`score red ${winner === "Red" ? "" : "score-loser"}`}>{redScore ?? "-"}</span>
+    ) : focusColor === "blue" ? (
+      <span className="score-plain red">{redScore ?? "-"}</span>
+    ) : (
+      <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
+    );
+  const blueSlot =
+    tie ? (
+      <span className="score-plain blue">{blueScore ?? "-"}</span>
+    ) : focusColor === "blue" ? (
+      <span className={`score blue ${winner === "Blue" ? "" : "score-loser"}`}>{blueScore ?? "-"}</span>
+    ) : focusColor === "red" ? (
+      <span className="score-plain blue">{blueScore ?? "-"}</span>
+    ) : (
+      <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
+    );
+  return (
+    <>
+      {redSlot}
+      {blueSlot}
+    </>
+  );
+}
+
 function teamNameFromMatch(match: Match, teamId: number) {
   for (const alliance of match.alliances) {
     const entry = alliance.teams.find((team) => team.team.id === teamId);
@@ -9669,7 +9755,11 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
               <tr>
                 <td className="truncate-cell">
                   <span className="team-match-name">
-                    {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
+                    {outcome ? (
+                      <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>
+                    ) : !isIq && winner === "Tie" ? (
+                      <span className="team-result-badge result-t">T</span>
+                    ) : null}
                     <span className="team-match-label">{displayName}</span>
                     <DivisionTag match={match} multiDivision={multiDivision} />
                   </span>
@@ -9683,8 +9773,7 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
                   </td>
                 ) : (
                   <td className="score-cell">
-                    <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
-                    <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
+                    <FocusScorePair match={match} focusTeamId={focusTeamId} redScore={redScore} blueScore={blueScore} winner={winner} />
                   </td>
                 )}
                 <td className={`blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
@@ -9720,16 +9809,32 @@ function DivisionTag({ match, multiDivision }: { match: Match; multiDivision: bo
   return <span className="division-tag">{match.division.name}</span>;
 }
 
-function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDivision = false, multiDivision = true }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; hideDivision?: boolean; multiDivision?: boolean }) {
+function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDivision = false, multiDivision = true, showPlay = false, presetSupported = false, presetLoading = false, presetUrl, timestampMap, onOpenMatch }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; hideDivision?: boolean; multiDivision?: boolean; showPlay?: boolean; presetSupported?: boolean; presetLoading?: boolean; presetUrl?: string | null; timestampMap?: Map<number, MatchTimestamp>; onOpenMatch?: (match: Match, timestamp: MatchTimestamp) => void }) {
   const sortedMatches = [...matches].sort((a, b) => compareMatchesDisplay(a, b, preferredTeamDivisionId(matches, focusTeamId)));
   const divisionWins = divisionFinalWins(sortedMatches, focusTeamId);
   const lastFinalIds = lastFinalIdsByDivision(sortedMatches);
   const elimAllianceNotice = isIq ? null : firstElimAllianceNotice(sortedMatches, focusTeamId);
+  const colSpan = showPlay ? 5 : 4;
 
   return (
-    <table className="team-match-table">
+    <table className={`team-match-table${showPlay ? " has-play-col" : ""}`}>
       <thead>
         <tr>
+          {showPlay && (
+            <th className="play-cell" aria-label="Open match">
+              {presetLoading ? (
+                <span className="play-header-icon loading" />
+              ) : presetSupported ? (
+                <a href={presetUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="play-header-link active" title="Open in Jumper">
+                  <LinkIcon size={14} />
+                </a>
+              ) : (
+                <span className="play-header-link disabled" title="No livestream preset">
+                  <Unlink size={14} />
+                </span>
+              )}
+            </th>
+          )}
           <th>Match</th>
           <th>{isIq ? "Team" : <><span className="alliance-th-full">Red Alliance</span><span className="alliance-th-short">Red</span></>}</th>
           <th>Score</th>
@@ -9743,20 +9848,35 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDiv
           const outcome = isIq ? null : teamMatchOutcome(match, focusTeamId);
           const divisionWin = lastFinalIds.get(match.division.id) === match.id ? divisionWins.get(match.division.id) : undefined;
           const displayName = shortMatchName(isIq && isIqFinalsMatch(match) ? "Finals" : match.name);
+          const timestamp = showPlay ? timestampMap?.get(match.id) : undefined;
+          const canPlay = showPlay && presetSupported && timestamp && timestamp.timestamp !== null && timestamp.videoId;
 
           return (
             <Fragment key={match.id}>
               {elimAllianceNotice?.matchId === match.id && (
                 <tr className="elim-alliance-notice-row">
-                  <td colSpan={4}>
+                  <td colSpan={colSpan}>
                     <ElimAllianceNotice alliance={elimAllianceNotice.alliance} focusTeamId={focusTeamId} />
                   </td>
                 </tr>
               )}
               <tr>
+                {showPlay && (
+                  <td className="play-cell">
+                    {canPlay ? (
+                      <button className="play-dot active" onClick={() => onOpenMatch?.(match, timestamp!)} title={`Play ${displayName}`} />
+                    ) : (
+                      <span className="play-dot disabled" />
+                    )}
+                  </td>
+                )}
                 <td>
                   <span className="team-match-name">
-                    {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
+                    {outcome ? (
+                      <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>
+                    ) : !isIq && winner === "Tie" ? (
+                      <span className="team-result-badge result-t">T</span>
+                    ) : null}
                     <span className="team-match-label">{displayName}</span>
                     {!hideDivision && <DivisionTag match={match} multiDivision={multiDivision} />}
                   </span>
@@ -9770,8 +9890,7 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDiv
                   </td>
                 ) : (
                   <td className="score-cell">
-                    <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore ?? "-"}</span>
-                    <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore ?? "-"}</span>
+                    <FocusScorePair match={match} focusTeamId={focusTeamId} redScore={redScore} blueScore={blueScore} winner={winner} />
                   </td>
                 )}
                 <td className={`blue-alliance-cell ${!isIq && winner === "Blue" ? "winning-alliance-cell" : ""} ${iqResult?.dqColor === "blue" ? "dq-alliance-cell" : ""}`}>
@@ -9780,7 +9899,7 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDiv
               </tr>
               {!isIq && divisionWin && (
                 <tr className="division-win-row">
-                  <td colSpan={4}>{divisionWin.teamName} won {divisionWin.division.name} division!</td>
+                  <td colSpan={colSpan}>{divisionWin.teamName} won {divisionWin.division.name} division!</td>
                 </tr>
               )}
             </Fragment>
@@ -10341,6 +10460,7 @@ function MatchesTable({
   scoreTier,
   eventId,
   focusMatchId,
+  onFocusConsumed,
   rankings = [],
   focusTeamId,
 }: {
@@ -10354,6 +10474,7 @@ function MatchesTable({
   scoreTier?: (score: number | null | undefined) => ScoreTier;
   eventId?: number;
   focusMatchId?: string | null;
+  onFocusConsumed?: () => void;
   rankings?: Ranking[];
   // Searched team (F-search resolving to a single team) — elimination matches
   // then show only its alliance side rather than the full opposing alliance.
@@ -10419,6 +10540,7 @@ function MatchesTable({
                   eventId={eventId}
                   eventTeams={eventTeams}
                   focusMatchId={focusMatchId}
+                  onFocusConsumed={onFocusConsumed}
                   focusTeamId={focusTeamId}
                 />
               </div>
@@ -10480,6 +10602,7 @@ function MatchesTable({
                 eventId={eventId}
                 eventTeams={eventTeams}
                 focusMatchId={focusMatchId}
+                onFocusConsumed={onFocusConsumed}
               />
             </div>
           </ScheduleCollapse>
@@ -10515,6 +10638,7 @@ function MatchesTable({
                 markWinningIqScore
                 labelFor={(match) => iqFinalsLabelMap?.get(match.id)}
                 focusMatchId={focusMatchId}
+                onFocusConsumed={onFocusConsumed}
               />
             </div>
           </ScheduleCollapse>
@@ -11093,6 +11217,7 @@ function ResultsMatchTable({
   eventId,
   eventTeams,
   focusMatchId,
+  onFocusConsumed,
   focusTeamId,
 }: {
   matches: Match[];
@@ -11116,6 +11241,9 @@ function ResultsMatchTable({
   // When arriving from a scouting-note deep link (`/event/{id}?match={matchId}`),
   // the matching row is scrolled into view and briefly flashed.
   focusMatchId?: string | null;
+  // Called once after the focus row is scrolled + flashed, so the parent can clear
+  // the focus id — leaving and returning to the tab then won't re-trigger it.
+  onFocusConsumed?: () => void;
   // When the F-search narrows to one team, show only that team's alliance side
   // (partner kept, opposing alliance hidden) — set only for elimination tables.
   focusTeamId?: number;
@@ -11143,12 +11271,29 @@ function ResultsMatchTable({
     const row = tbodyRef.current?.querySelector<HTMLElement>(`#match-row-${CSS.escape(focusMatchId)}`);
     if (!row) return; // target isn't on this table/tab — no-op gracefully
     focusConsumedRef.current = true;
-    const raf = requestAnimationFrame(() => row.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" }));
+    // Record consumption immediately (parent stores it in a ref — no re-render), so
+    // it holds even if the user leaves before the flash finishes.
+    onFocusConsumed?.();
     row.classList.add("match-row-flash");
-    const timer = window.setTimeout(() => row.classList.remove("match-row-flash"), 2000);
+    const isCentered = () => {
+      const r = row.getBoundingClientRect();
+      return Math.abs(r.top + r.height / 2 - window.innerHeight / 2) < 40;
+    };
+    const scroll = (smooth: boolean) => row.scrollIntoView({ block: "center", behavior: smooth ? "smooth" : "auto" });
+    scroll(!reduceMotion);
+    // Arriving via a tab switch (score-chart jump) the tall results layout keeps
+    // settling for a few hundred ms, so the first scroll lands short. Re-snap while
+    // it settles, stopping once the row is actually centered (so we never fight a
+    // user who scrolls away).
+    const settleTimers = [120, 260, 450, 700].map((delay) =>
+      window.setTimeout(() => {
+        if (!isCentered()) scroll(false);
+      }, delay),
+    );
+    const flashTimer = window.setTimeout(() => row.classList.remove("match-row-flash"), 2000);
     return () => {
-      cancelAnimationFrame(raf);
-      window.clearTimeout(timer);
+      settleTimers.forEach((t) => window.clearTimeout(t));
+      window.clearTimeout(flashTimer);
     };
   }, [focusMatchId, matches, reduceMotion]);
 
@@ -11938,6 +12083,450 @@ function SortableTh({ col, label, sort, onSort, title, className }: { col: strin
   );
 }
 
+// Scrolls an internally-scrollable card so the focus team's row lands centered,
+// WITHOUT nudging the page. Uses rect math (works regardless of positioning) and
+// only moves the container's own scrollTop. Re-centers when `key` changes (team
+// switch or data arriving late).
+function useCenterFocusRow(key: string) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    let raf = 0;
+    let tries = 0;
+    // The tab animates in, so the card isn't laid out (or scrollable) on the first
+    // frame. Retry until it has real height and overflows, then center — a shared
+    // entrance transform cancels out since we diff the row against the container.
+    const attempt = () => {
+      const c = containerRef.current;
+      const r = rowRef.current;
+      if (!c || !r) return;
+      if (c.clientHeight === 0 || c.scrollHeight <= c.clientHeight) {
+        if (tries++ < 30) raf = requestAnimationFrame(attempt);
+        return;
+      }
+      const cRect = c.getBoundingClientRect();
+      const rRect = r.getBoundingClientRect();
+      const delta = rRect.top - cRect.top - (c.clientHeight / 2 - r.clientHeight / 2);
+      c.scrollTop += delta;
+    };
+    raf = requestAnimationFrame(attempt);
+    return () => cancelAnimationFrame(raf);
+  }, [key]);
+  return { containerRef, rowRef };
+}
+
+// Group raw skill runs into one row per team (best driver + best programming run,
+// combined total, best rank). Shared by the full Skills tab and the compact team
+// card so both read identically.
+function aggregateSkillRows(skills: Skill[]) {
+  return Object.values(
+    skills.reduce<Record<string, { rank: number | null; team: Skill["team"]; entries: Skill[] }>>((groups, skill) => {
+      const key = String(skill.team.id ?? skill.team.name);
+      const existing = groups[key];
+      if (!existing) {
+        groups[key] = { rank: skill.rank ?? null, team: skill.team, entries: [skill] };
+        return groups;
+      }
+      existing.rank =
+        existing.rank === null
+          ? skill.rank ?? null
+          : skill.rank === null || skill.rank === undefined
+            ? existing.rank
+            : Math.min(existing.rank, skill.rank);
+      const sameTypeIndex = existing.entries.findIndex((entry) => entry.type.toLowerCase() === skill.type.toLowerCase());
+      if (sameTypeIndex >= 0) {
+        const previous = existing.entries[sameTypeIndex];
+        existing.entries[sameTypeIndex] = (skill.score ?? -1) > (previous.score ?? -1) ? skill : previous;
+      } else {
+        existing.entries.push(skill);
+      }
+      return groups;
+    }, {}),
+  ).sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) || a.team.name.localeCompare(b.team.name));
+}
+
+// A skills score with its attempt count trailing in grey, e.g. `45 3×`.
+function TmSkillCell({ entry }: { entry?: Skill }) {
+  if (!entry || entry.score === null || entry.score === undefined) return <span className="tm-dash">–</span>;
+  return (
+    <span>
+      {entry.score}
+      {entry.attempts ? <span className="tm-attempts">{entry.attempts}×</span> : null}
+    </span>
+  );
+}
+
+// "See all …" link shown top-right of a card header; jumps to the full tab.
+function TmSeeAll({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" className="tm-seeall" onClick={onClick}>
+      See all {label}
+      <ChevronRight size={13} />
+    </button>
+  );
+}
+
+// Team-number link stacked over its (muted, truncated) descriptive name, for the
+// rank/skills card team column.
+function TmTeamCell({ id, number, name, programCode }: { id: number; number: string; name?: string; programCode?: string }) {
+  return (
+    <div className="tm-team">
+      <CompareTeamLink teamId={id} teamNumber={number} teamName={name} programCode={programCode} className="tm-team-num" />
+      {name ? <span className="tm-team-name">{name}</span> : null}
+    </div>
+  );
+}
+
+type ScorePoint = { matchId: number; label: string; mine: number; opp: number | null; outcome: string | null };
+
+// Area chart of the focus team's score across their matches (in play order), with
+// the opponent score as a dashed reference line for non-IQ events. Hovering shows
+// the scores; Enter (or a click) jumps to that match on the Results tab.
+function TeamScoreChart({ points, isIq, onJump }: { points: ScorePoint[]; isIq: boolean; onJump?: (matchId: number) => void }) {
+  const gid = `tm-score-${useId().replace(/:/g, "")}`;
+  const config: ChartConfig = {
+    mine: { label: "Their score", color: "var(--accent)" },
+    opp: { label: "Opponent", color: "var(--text-muted)" },
+  };
+  const data = points.map((p, i) => ({ i, ...p }));
+  // Track the hovered point so Enter — or a click — can open that match in Results.
+  const activeIndexRef = useRef<number | null>(null);
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const onJumpRef = useRef(onJump);
+  onJumpRef.current = onJump;
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      const idx = activeIndexRef.current;
+      if (idx == null) return;
+      const id = dataRef.current[idx]?.matchId;
+      if (id != null) onJumpRef.current?.(id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const jump = (index: number | string | undefined) => {
+    if (index == null) return;
+    const i = typeof index === "number" ? index : Number(index);
+    const id = dataRef.current[i]?.matchId;
+    if (id != null) onJumpRef.current?.(id);
+  };
+  return (
+    <ChartContainer config={config} className="w-full" style={{ height: 168, aspectRatio: "auto" }}>
+      <AreaChart
+        accessibilityLayer
+        data={data}
+        margin={{ left: 0, right: 8, top: 8, bottom: 0 }}
+        onClick={(state) => jump(state?.activeTooltipIndex ?? undefined)}
+        onMouseMove={(state) => {
+          const i = state?.activeTooltipIndex;
+          activeIndexRef.current = typeof i === "number" ? i : i != null ? Number(i) : null;
+        }}
+        onMouseLeave={() => {
+          activeIndexRef.current = null;
+        }}
+        className="[&_.recharts-surface]:cursor-pointer"
+      >
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-mine)" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="var(--color-mine)" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
+        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--text-faint)" }} interval="preserveStartEnd" minTickGap={18} />
+        <YAxis width={28} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--text-faint)" }} />
+        <ChartTooltip
+          cursor={{ strokeDasharray: "3 3" }}
+          content={(props) => {
+            const { active, payload } = props as unknown as {
+              active?: boolean;
+              payload?: ReadonlyArray<{ payload?: ScorePoint }>;
+            };
+            const row = active && payload?.length ? payload[0]?.payload : null;
+            if (!row) return null;
+            return (
+              <div className="tm-tip">
+                <div className="tm-tip-head">{row.label}{row.outcome ? ` · ${row.outcome === "W" ? "Win" : "Loss"}` : ""}</div>
+                <div className="tm-tip-row"><span className="tm-tip-dot tm-legend-mine" />Their score<span className="tm-tip-val">{row.mine}</span></div>
+                {!isIq && row.opp != null && (
+                  <div className="tm-tip-row"><span className="tm-tip-dot tm-legend-opp" />Opponent<span className="tm-tip-val">{row.opp}</span></div>
+                )}
+                <div className="tm-tip-hint">Enter → open in Results</div>
+              </div>
+            );
+          }}
+        />
+        {!isIq && <Area dataKey="opp" type="monotone" stroke="var(--color-opp)" strokeWidth={1.25} strokeDasharray="4 3" fill="none" isAnimationActive={false} dot={false} />}
+        <Area dataKey="mine" type="monotone" stroke="var(--color-mine)" strokeWidth={2} fill={`url(#${gid})`} isAnimationActive={false} dot={{ r: 2 }} />
+      </AreaChart>
+    </ChartContainer>
+  );
+}
+
+// Fills the space under the matches: how the team's score moved match to match.
+function TeamScoreTrendCard({ matches, focusTeamId, isIq, onJumpToMatch }: { matches: Match[]; focusTeamId: number; isIq: boolean; onJumpToMatch?: (matchId: number) => void }) {
+  const points = useMemo(
+    () =>
+      [...matches]
+        .sort((a, b) => matchRoundOrder(a) - matchRoundOrder(b) || (a.instance ?? 0) - (b.instance ?? 0) || a.matchnum - b.matchnum)
+        .map((m) => {
+          const mine = m.alliances.find((al) => isTeamInAlliance(al, focusTeamId));
+          const opp = m.alliances.find((al) => al !== mine);
+          return {
+            matchId: m.id,
+            label: shortMatchName(m.name),
+            mine: mine?.score ?? null,
+            opp: isIq ? null : opp?.score ?? null,
+            outcome: teamMatchOutcome(m, focusTeamId),
+          };
+        })
+        .filter((p): p is ScorePoint => p.mine !== null),
+    [matches, focusTeamId, isIq],
+  );
+  if (points.length < 2) return null;
+  return (
+    <Panel title="Score by match" icon={<TrendingUp />}>
+      <div className="tm-trend">
+        <div className="tm-legend">
+          <span className="tm-legend-item"><i className="tm-legend-swatch tm-legend-mine" /> Their score</span>
+          {!isIq && <span className="tm-legend-item"><i className="tm-legend-swatch tm-legend-opp" /> Opponent</span>}
+        </div>
+        <TeamScoreChart points={points} isIq={isIq} onJump={onJumpToMatch} />
+      </div>
+    </Panel>
+  );
+}
+
+// Two-column team-matches view: the team's matches (+ score trend) on the left, a
+// stack of rank / skills / best-result cards on the right. The right column is
+// height-matched to the left: rank + skills flex to fill, best result stays fixed.
+function TeamMatchesTab({
+  matches,
+  rankings,
+  skills,
+  teams,
+  focusTeam,
+  isIq,
+  scoreTier,
+  multiDivision,
+  onJumpToMatch,
+  onOpenTab,
+  presetSupported,
+  presetLoading,
+  presetUrl,
+  timestampMap,
+  onOpenMatch,
+}: {
+  matches: Match[];
+  rankings: Ranking[];
+  skills: Skill[];
+  teams: Team[];
+  focusTeam: { id: number; number: string };
+  isIq: boolean;
+  scoreTier?: (score: number | null | undefined) => ScoreTier;
+  multiDivision: boolean;
+  onJumpToMatch?: (matchId: number) => void;
+  onOpenTab?: (tab: EventDetailTab) => void;
+  presetSupported?: boolean;
+  presetLoading?: boolean;
+  presetUrl?: string | null;
+  timestampMap?: Map<number, MatchTimestamp>;
+  onOpenMatch?: (match: Match, timestamp: MatchTimestamp) => void;
+}) {
+  const teamNames = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const t of teams) if (t.team_name) map.set(t.id, t.team_name);
+    return map;
+  }, [teams]);
+  return (
+    <div className="team-matches-layout">
+      <div className="tm-col tm-col-matches">
+        <Panel title={`${focusTeam.number}'s Matches`} icon={<Gamepad2 />}>
+          <div className="results-table-scroll">
+            <TeamMatchTable
+              matches={matches}
+              focusTeamId={focusTeam.id}
+              isIq={isIq}
+              scoreTier={scoreTier}
+              multiDivision={multiDivision}
+              showPlay
+              presetSupported={presetSupported}
+              presetLoading={presetLoading}
+              presetUrl={presetUrl}
+              timestampMap={timestampMap}
+              onOpenMatch={onOpenMatch}
+            />
+          </div>
+        </Panel>
+        <TeamScoreTrendCard matches={matches} focusTeamId={focusTeam.id} isIq={isIq} onJumpToMatch={onJumpToMatch} />
+      </div>
+      <div className="tm-col tm-col-cards">
+        <div className="tm-card-fill">
+          <TeamRankCard rankings={rankings} focusTeamId={focusTeam.id} isIq={isIq} teamNames={teamNames} onSeeAll={onOpenTab ? () => onOpenTab("rankings") : undefined} />
+        </div>
+        <div className="tm-card-fill">
+          <TeamSkillsCard skills={skills} focusTeamId={focusTeam.id} teamNames={teamNames} onSeeAll={onOpenTab ? () => onOpenTab("skills") : undefined} />
+        </div>
+        <TeamBestResultCard matches={matches} focusTeamId={focusTeam.id} isIq={isIq} />
+      </div>
+    </div>
+  );
+}
+
+// Full event ranking, scrollable, auto-centered + highlighted on the focus team.
+// V5RC/VURC show record + WP/AP/SP; IQ (no win/loss) shows Avg/High instead.
+function TeamRankCard({ rankings, focusTeamId, isIq, teamNames, onSeeAll }: { rankings: Ranking[]; focusTeamId: number; isIq: boolean; teamNames: Map<number, string>; onSeeAll?: () => void }) {
+  const programCode = useContext(ProgramContext);
+  const rows = useMemo(() => [...rankings].sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity)), [rankings]);
+  const { containerRef, rowRef } = useCenterFocusRow(`${focusTeamId}:${rows.length}`);
+  const cols = isIq ? 4 : 6;
+  return (
+    <Panel title="Rankings" icon={<BarChart3 />} action={onSeeAll ? <TmSeeAll label="rankings" onClick={onSeeAll} /> : undefined}>
+      <div className="tm-scroll" ref={containerRef}>
+        <table className="tm-card-table">
+          <thead>
+            <tr>
+              <th className="tm-th-num">#</th>
+              <th className="tm-th-team">Team</th>
+              {isIq ? (
+                <>
+                  <th className="tm-th-stat">Avg</th>
+                  <th className="tm-th-stat">High</th>
+                </>
+              ) : (
+                <>
+                  <th className="tm-th-stat">Record</th>
+                  <th className="tm-th-stat" title="Win Points">WP</th>
+                  <th className="tm-th-stat" title="Autonomous Points">AP</th>
+                  <th className="tm-th-stat" title="Strength-of-Schedule Points">SP</th>
+                </>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const focus = r.team.id === focusTeamId;
+              return (
+                <tr key={r.id} ref={focus ? rowRef : undefined} className={focus ? "tm-row-focus" : undefined}>
+                  <td className="tm-rank-num">{r.rank ?? "–"}</td>
+                  <td className="tm-team-cell">
+                    <TmTeamCell id={r.team.id} number={r.team.name} name={teamNames.get(r.team.id)} programCode={programCode} />
+                  </td>
+                  {isIq ? (
+                    <>
+                      <td className="tm-stat">{formatNumber(r.average_points)}</td>
+                      <td className="tm-stat">{r.high_score ?? "–"}</td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="tm-stat tm-record">{r.wins ?? 0}–{r.losses ?? 0}–{r.ties ?? 0}</td>
+                      <td className="tm-stat">{r.wp ?? "–"}</td>
+                      <td className="tm-stat">{r.ap ?? "–"}</td>
+                      <td className="tm-stat">{r.sp ?? "–"}</td>
+                    </>
+                  )}
+                </tr>
+              );
+            })}
+            {!rows.length && (
+              <tr>
+                <td colSpan={cols}>
+                  <Empty>No rankings yet.</Empty>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+// Full event skills ranking, scrollable, auto-centered + highlighted on the team.
+function TeamSkillsCard({ skills, focusTeamId, teamNames, onSeeAll }: { skills: Skill[]; focusTeamId: number; teamNames: Map<number, string>; onSeeAll?: () => void }) {
+  const programCode = useContext(ProgramContext);
+  const rows = useMemo(() => aggregateSkillRows(skills), [skills]);
+  const { containerRef, rowRef } = useCenterFocusRow(`${focusTeamId}:${rows.length}`);
+  return (
+    <Panel title="Skills" icon={<Activity />} action={onSeeAll ? <TmSeeAll label="skills" onClick={onSeeAll} /> : undefined}>
+      <div className="tm-scroll" ref={containerRef}>
+        <table className="tm-card-table">
+          <thead>
+            <tr>
+              <th className="tm-th-num">#</th>
+              <th className="tm-th-team">Team</th>
+              <th className="tm-th-stat">Combined</th>
+              <th className="tm-th-stat">Driver</th>
+              <th className="tm-th-stat">Prog</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const { driver, programming } = bestSkillEntries(row.entries);
+              const total = row.entries.reduce((sum, entry) => sum + (entry.score ?? 0), 0);
+              const focus = row.team.id === focusTeamId;
+              return (
+                <tr key={row.team.id} ref={focus ? rowRef : undefined} className={focus ? "tm-row-focus" : undefined}>
+                  <td className="tm-rank-num">{row.rank ?? "–"}</td>
+                  <td className="tm-team-cell">
+                    <TmTeamCell id={row.team.id} number={row.team.name} name={teamNames.get(row.team.id)} programCode={programCode} />
+                  </td>
+                  <td className="tm-stat tm-skill-combined">{total || "–"}</td>
+                  <td className="tm-stat"><TmSkillCell entry={driver} /></td>
+                  <td className="tm-stat"><TmSkillCell entry={programming} /></td>
+                </tr>
+              );
+            })}
+            {!rows.length && (
+              <tr>
+                <td colSpan={5}>
+                  <Empty>No skills yet.</Empty>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+// Highest elimination round the focus team reached at this event (e.g. "R16 #3-1"),
+// or "No elims" / "No finals" when they didn't advance to a bracket.
+function TeamBestResultCard({ matches, focusTeamId, isIq }: { matches: Match[]; focusTeamId: number; isIq: boolean }) {
+  const best = useMemo(() => {
+    const elim = matches.filter((m) => playoffImportance(m) > 0 || (isIq && isIqFinalsMatch(m)));
+    if (!elim.length) return null;
+    return [...elim].sort(
+      (a, b) => matchRoundOrder(b) - matchRoundOrder(a) || (b.instance ?? 0) - (a.instance ?? 0) || b.matchnum - a.matchnum,
+    )[0];
+  }, [matches, isIq]);
+
+  const isFinals = best ? isIq && isIqFinalsMatch(best) : false;
+  const roundKey = best ? (isFinals ? "f" : playoffRoundKey(best)) : null;
+  const outcome = best ? teamMatchOutcome(best, focusTeamId) : null;
+
+  return (
+    <Panel title="Best result" icon={<Trophy />}>
+      <div className="tm-best">
+        {best ? (
+          <>
+            <div className="tm-best-round">{playoffRoundLabel(roundKey!)}</div>
+            <div className="tm-best-match">
+              <span className="tm-best-name">{shortMatchName(isFinals ? "Finals" : best.name)}</span>
+              {outcome && <span className={`team-result-badge result-${outcome.toLowerCase()}`}>{outcome}</span>}
+            </div>
+          </>
+        ) : (
+          <div className="tm-best-none">{isIq ? "No finals" : "No elims"}</div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 function RankingsTable({ rankings, isIq = false, matches = [], allMatches, sharedTeamId, eventId }: { rankings: Ranking[]; isIq?: boolean; matches?: Match[]; allMatches?: Match[]; sharedTeamId?: string; eventId?: string }) {
   const programCode = useContext(ProgramContext);
   const showPicklist = !!(sharedTeamId && eventId);
@@ -12142,34 +12731,7 @@ function SkillsTable({ skills, focusTeamId }: { skills: Skill[]; focusTeamId?: n
   useEffect(() => {
     if (focusRowRef.current) focusRowRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [focusTeamId, skills]);
-  const rows = Object.values(
-    skills.reduce<Record<string, { rank: number | null; team: Skill["team"]; entries: Skill[] }>>((groups, skill) => {
-      const key = String(skill.team.id ?? skill.team.name);
-      const existing = groups[key];
-
-      if (!existing) {
-        groups[key] = { rank: skill.rank ?? null, team: skill.team, entries: [skill] };
-        return groups;
-      }
-
-      existing.rank =
-        existing.rank === null
-          ? skill.rank ?? null
-          : skill.rank === null || skill.rank === undefined
-            ? existing.rank
-            : Math.min(existing.rank, skill.rank);
-
-      const sameTypeIndex = existing.entries.findIndex((entry) => entry.type.toLowerCase() === skill.type.toLowerCase());
-      if (sameTypeIndex >= 0) {
-        const previous = existing.entries[sameTypeIndex];
-        existing.entries[sameTypeIndex] = (skill.score ?? -1) > (previous.score ?? -1) ? skill : previous;
-      } else {
-        existing.entries.push(skill);
-      }
-
-      return groups;
-    }, {}),
-  ).sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) || a.team.name.localeCompare(b.team.name));
+  const rows = aggregateSkillRows(skills);
 
   return (
     <Panel title="Skills" icon={<Activity />}>
@@ -16379,10 +16941,7 @@ function MyTeamDashboard() {
                 <td className={`alliance-cell red-alliance-cell ${winner === "Red" ? "winning-alliance-cell" : ""}`}><AllianceTeamLinks teams={red?.teams} focusTeamId={team.id} /></td>
                 <td className="score-cell">
                   {hasScore ? (
-                    <>
-                      <span className={`score red ${winner === "Blue" ? "score-loser" : ""}`}>{redScore}</span>
-                      <span className={`score blue ${winner === "Red" ? "score-loser" : ""}`}>{blueScore}</span>
-                    </>
+                    <FocusScorePair match={m} focusTeamId={team.id} redScore={redScore} blueScore={blueScore} winner={winner} />
                   ) : isNext ? (
                     <span className="myteam-nextpill">Next up</span>
                   ) : (
