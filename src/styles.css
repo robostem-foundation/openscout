@@ -3539,6 +3539,15 @@ a.team-card-num:hover {
   vertical-align: middle;
 }
 
+/* Team match list play column — same look/width + separator as the normal event. */
+.team-match-table .play-cell {
+  width: 44px;
+  padding: 6px 10px;
+  border-right: 1px solid var(--border);
+  text-align: center;
+  vertical-align: middle;
+}
+
 .play-header-link {
   display: inline-flex;
   align-items: center;
@@ -4416,7 +4425,8 @@ a.team-card-num:hover {
 
 /* Both score chips sit centered in the cell — drop the trailing chip's margin
    so the pair is optically centered with equal space on each side. */
-.score-cell .score:last-child {
+.score-cell .score:last-child,
+.score-cell .score-plain:last-child {
   margin-right: 0;
 }
 
@@ -5379,6 +5389,15 @@ a.team-card-num:hover {
   white-space: nowrap;
 }
 
+/* Center the alliance team lists like the normal event view. */
+.team-match-table .red-alliance-cell,
+.team-match-table .blue-alliance-cell {
+  text-align: center;
+}
+.team-match-table .team-link-list {
+  justify-content: center;
+}
+
 .team-match-name > span:not(.team-result-badge) {
   min-width: 0;
   overflow: hidden;
@@ -5423,6 +5442,10 @@ a.team-card-num:hover {
 
 .team-result-badge.result-l {
   color: var(--danger);
+}
+
+.team-result-badge.result-t {
+  color: var(--crown-gold);
 }
 
 .division-win-row td {
@@ -5667,6 +5690,20 @@ a.team-card-num:hover {
   color: var(--score-blue);
 }
 
+/* Opponent score in a team-focused list — a plain coloured number, no box. Same
+   width as a .score chip so the two slots stay column-aligned. */
+.score-plain {
+  display: inline-block;
+  min-width: 42px;
+  margin-right: 4px;
+  padding: 2px 6px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.score-plain.red { color: var(--danger); }
+.score-plain.blue { color: var(--score-blue); }
+
 .capitalize {
   text-transform: capitalize;
 }
@@ -5677,6 +5714,329 @@ a.team-card-num:hover {
 }
 .skills-table tr.skills-row-focus > td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .skills-table tr.skills-row-focus > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+
+/* ── Team Matches tab: matches on the left, stat cards on the right ────────── */
+.team-matches-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  /* stretch: both columns take the taller one's height so the right stack can be
+     height-matched to the left (matches + chart). */
+  align-items: stretch;
+}
+
+/* Panels already margin themselves; the grid gap owns the spacing here. */
+.team-matches-layout .panel {
+  margin: 0;
+}
+
+/* Left column: matches then the score chart, spaced by the gap. */
+.tm-col-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* Right column fills the stretched height; rank + skills flex to fill, best
+   result stays its natural size. */
+.tm-col-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.tm-card-fill {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.tm-card-fill > .panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+}
+
+/* Inside a fill card the scroll body grows/shrinks to match the left column. */
+.tm-card-fill .tm-scroll {
+  flex: 1;
+  min-height: 120px;
+  max-height: none;
+}
+
+/* Best result: fixed height, not a flex-filler. */
+.tm-col-cards > .panel {
+  flex: 0 0 auto;
+}
+
+/* Stack below the matches on narrower viewports (height-matching no longer
+   applies once stacked). */
+@media (max-width: 900px) {
+  .team-matches-layout {
+    grid-template-columns: 1fr;
+  }
+  .tm-card-fill {
+    display: block;
+  }
+  .tm-card-fill .tm-scroll {
+    max-height: 340px;
+  }
+}
+
+/* When the two columns are cramped, drop the best-result card so the rank/skills
+   lists keep a usable height. */
+@media (min-width: 901px) and (max-width: 1150px) {
+  .tm-col-cards > .panel {
+    display: none;
+  }
+}
+
+/* Internally-scrollable card body; the focus row auto-centers here. */
+.tm-scroll {
+  position: relative;
+  max-height: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tm-card-table {
+  width: 100%;
+  /* Opt out of the global mobile `table { min-width: 720px }` (which exists to
+     horizontal-scroll wide data tables) — these compact cards must fit their box. */
+  min-width: 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tm-card-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 30px;
+  padding: 0 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tm-card-table .tm-th-num { text-align: left; width: 34px; }
+/* Stat columns shrink to their content (width:1% + nowrap); the team column with
+   no width absorbs the slack, so the table never overflows a narrow card. */
+.tm-card-table .tm-th-stat { text-align: right; width: 1%; white-space: nowrap; }
+
+.tm-card-table tbody td {
+  padding: 5px 8px;
+  border-top: 1px solid var(--border-soft);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.tm-card-table tbody tr:first-child td {
+  border-top: none;
+}
+
+.tm-card-table tbody tr:hover td {
+  background: var(--surface-2);
+}
+
+.tm-rank-num {
+  width: 34px;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* max-width:0 makes this the flexible column: it takes the table's leftover
+   width and its content truncates, instead of the long name widening the table. */
+.tm-team-cell {
+  max-width: 0;
+}
+
+.tm-team {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tm-team-num {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+.tm-team-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tm-stat {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tm-record { color: var(--text-2); }
+.tm-skill-combined { font-weight: 700; }
+.tm-dash { color: var(--text-faint); }
+
+.tm-attempts {
+  margin-left: 3px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus team: accent wash + bold, with the accent bar carried through the hover. */
+.tm-card-table tbody tr.tm-row-focus td,
+.tm-card-table tbody tr.tm-row-focus:hover td {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-weight: 600;
+}
+.tm-card-table tbody tr.tm-row-focus td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* "See all rankings/skills" link in the rank/skills card headers. */
+.tm-seeall {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 6px;
+  background: none;
+  color: var(--link);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tm-seeall:hover {
+  color: var(--link-hover);
+  background: var(--surface-2);
+}
+.tm-seeall svg {
+  margin-top: 1px;
+}
+
+/* Score-by-match trend chart body. */
+.tm-trend {
+  padding: 10px 12px 8px;
+}
+
+/* Legend above the chart: which line is theirs vs the opponent's. */
+.tm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 2px 8px;
+}
+.tm-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.tm-legend-swatch {
+  width: 14px;
+  height: 0;
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+.tm-legend-mine {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tm-legend-opp {
+  border-color: var(--text-muted);
+  border-top-style: dashed;
+  color: var(--text-muted);
+}
+
+/* Chart hover tooltip. */
+.tm-tip {
+  min-width: 128px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+}
+.tm-tip-head {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.tm-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+.tm-tip-dot {
+  width: 12px;
+  height: 0;
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+.tm-tip-val {
+  margin-left: auto;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.tm-tip-hint {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+/* Best-result card. */
+.tm-best {
+  padding: 14px 15px 18px;
+}
+.tm-best-round {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tm-best-match {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.tm-best-name {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tm-best-none {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
 
 .skill-score-attempt {
   display: inline-flex;
