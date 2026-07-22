@@ -67,7 +67,7 @@ import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } 
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { setTheme as applyTheme, useTheme } from "./theme";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
-import { fade, revealUp, slideInLeft } from "@/lib/motion";
+import { fade, revealUp, slideInLeft, springSmooth } from "@/lib/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -2208,6 +2208,23 @@ function LoadingSwap({
         {loading ? skeleton : children}
       </motion.div>
     </AnimatePresence>
+  );
+}
+
+// Sliding active-indicator for segmented controls / tab bars. Render
+// `{active && <SlideIndicator id="unique-per-group" />}` inside the active
+// button (the button must be position:relative). Framer's shared `layoutId`
+// slides the single indicator from the old button to the new one when the
+// active item changes. `variant` picks the visual: an underline (tab bars) or
+// a filled pill (segmented toggles). The id MUST be unique per control group.
+function SlideIndicator({ id, variant = "underline" }: { id: string; variant?: "underline" | "pill" }) {
+  return (
+    <motion.span
+      layoutId={id}
+      className={variant === "pill" ? "slide-pill" : "slide-underline"}
+      transition={springSmooth}
+      aria-hidden
+    />
   );
 }
 
@@ -10170,6 +10187,7 @@ function Tabs({
         <button key={id} className={active === id ? "active" : ""} onClick={() => onChange(id)}>
           {icon}
           {label}
+          {active === id && <SlideIndicator id="event-tabs" />}
           {onClose && (
             <span
               className="tab-close-btn"
@@ -12525,8 +12543,8 @@ function WorldSkillsPageInner() {
       {/* Program, season, and grade controls — one shared tab row */}
       <div className="ws-controls" onClick={(e) => e.stopPropagation()}>
         <div className="segmented ws-segmented-inline" role="group" aria-label="Program">
-          <button aria-pressed={program === "v5rc"} className={program === "v5rc" ? "active" : ""} onClick={() => setProgram("v5rc")}>V5RC</button>
-          <button aria-pressed={program === "viqrc"} className={program === "viqrc" ? "active" : ""} onClick={() => setProgram("viqrc")}>VIQRC</button>
+          <button aria-pressed={program === "v5rc"} className={program === "v5rc" ? "active" : ""} onClick={() => setProgram("v5rc")}>V5RC{program === "v5rc" && <SlideIndicator id="ws-program" />}</button>
+          <button aria-pressed={program === "viqrc"} className={program === "viqrc" ? "active" : ""} onClick={() => setProgram("viqrc")}>VIQRC{program === "viqrc" && <SlideIndicator id="ws-program" />}</button>
         </div>
 
         <span className="ws-controls-sep" aria-hidden="true" />
@@ -12574,6 +12592,7 @@ function WorldSkillsPageInner() {
               onClick={() => { setGrade(g); setPage(1); }}
             >
               {g}
+              {grade === g && <SlideIndicator id="ws-grade" />}
             </button>
           ))}
         </div>
@@ -12864,9 +12883,11 @@ function InsightsPage() {
       <div className="segmented">
         <button className={program === "v5rc" ? "active" : ""} onClick={() => setProgram("v5rc")}>
           V5RC
+          {program === "v5rc" && <SlideIndicator id="stats-program" />}
         </button>
         <button className={program === "viqrc" ? "active" : ""} onClick={() => setProgram("viqrc")}>
           VIQRC
+          {program === "viqrc" && <SlideIndicator id="stats-program" />}
         </button>
       </div>
       <div className="stats-row">

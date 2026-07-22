@@ -4806,10 +4806,29 @@ a.team-card-num:hover {
 
 .tabs button.active,
 .segmented button.active {
-  border: 0;
-  border-bottom: 2px solid var(--text);
+  /* The active underline is drawn by the sliding <SlideIndicator> (.slide-underline)
+     so it animates between tabs; keep the base transparent border for layout. */
   background: transparent;
   color: var(--text);
+}
+
+/* Sliding active-indicator (Framer layoutId). Underline for tab bars. */
+.slide-underline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+}
+/* Filled pill for segmented toggles; sits behind the button label. */
+.slide-pill {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 8px;
+  background: var(--surface-3);
 }
 
 .division-tabs {
