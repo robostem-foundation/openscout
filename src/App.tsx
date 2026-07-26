@@ -109,8 +109,8 @@ import {
 } from "./shared-teams";
 import type { SharedTeamInvite, SharedTeamMember, SharedTeamMembership, SharedTeamRole } from "./shared-teams";
 import { supabase } from "./supabase";
-import { setEventsSettings, setQuickViewFirst, setQuickViewMode, setQuickViewSide, useQuickViewFirst, useQuickViewMode, useQuickViewSide, useSettingsEpoch } from "./settings";
-import type { QuickViewMode, QuickViewSide } from "./settings";
+import { setEventsSettings, setQuickViewFirst, setQuickViewMode, setQuickViewSide, setTranslateMode, useQuickViewFirst, useQuickViewMode, useQuickViewSide, useSettingsEpoch, useTranslateMode } from "./settings";
+import type { QuickViewMode, QuickViewSide, TranslateMode } from "./settings";
 import type { TabLayout } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
@@ -14597,6 +14597,11 @@ const QUICK_VIEW_OPTIONS: Array<{ value: boolean; label: string }> = [
   { value: false, label: "Open full team view" },
 ];
 
+const TRANSLATE_MODE_OPTIONS: Array<{ value: TranslateMode; label: string }> = [
+  { value: "auto", label: "Auto-translate" },
+  { value: "manual", label: "Manual" },
+];
+
 // Mini wireframe preview: "quick view first" shows a content area with a side
 // drawer; "full" shows a plain full-page content area.
 function QuickViewWire({ value }: { value: boolean }) {
@@ -14643,6 +14648,7 @@ function AppearanceSettings() {
   const quickViewFirst = useQuickViewFirst(); // team-click behavior, synced
   const quickViewMode = useQuickViewMode(); // sidebar vs bottom sheet, synced
   const quickViewSide = useQuickViewSide(); // sidebar dock side, synced
+  const translateMode = useTranslateMode(); // auto vs manual translation, synced
 
   const choose = (value: NonNullable<Profile["theme"]>) => {
     applyTheme(value); // instant local apply + localStorage
@@ -14695,6 +14701,31 @@ function AppearanceSettings() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="settings-field">
+          <h3 className="settings-field-title">Translate mode</h3>
+          <p className="settings-section-copy">
+            Non-English event, team, and organization names can be shown in English. Either way, the translate icon
+            beside a name switches it back to the original.
+          </p>
+          <div className="seg-toggle seg-toggle-quiet" role="group" aria-label="Translate mode">
+            {TRANSLATE_MODE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={translateMode === option.value ? "active" : ""}
+                onClick={() => setTranslateMode(option.value)}
+                aria-pressed={translateMode === option.value}
+              >
+                {option.label}
+                {translateMode === option.value && <SlideIndicator id="translate-mode" variant="pill" />}
+              </button>
+            ))}
+          </div>
+          <p className="onboard-hint">
+            Manual makes no translation requests until you ask for one. Syncs across your devices.
+          </p>
         </div>
 
         {quickViewFirst && (
