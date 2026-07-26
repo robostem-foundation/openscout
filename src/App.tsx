@@ -6452,7 +6452,9 @@ function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divis
                         teamName={team.team_name}
                         className="team-number"
                       />
-                      {!splitName && team.team_name && <span>{team.team_name}</span>}
+                      {!splitName && team.team_name && (
+                        <TranslatedText text={team.team_name} country={team.location?.country} />
+                      )}
                     </td>
                     {splitName && (
                       <td className="truncate-cell team-name-cell">
@@ -7275,7 +7277,9 @@ function EventDetail({ param }: { param: string }) {
           </div>
           <h1><TranslatedText text={event.name} country={event.location?.country} /></h1>
           <p>
-            {event.location.venue ? `${event.location.venue} · ` : ""}
+            {event.location.venue ? (
+              <><TranslatedText text={event.location.venue} country={event.location?.country} /> · </>
+            ) : ""}
             {locationLine(event)}
           </p>
           <div className="meta-line">
@@ -10467,7 +10471,9 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
 // division events stay uncluttered.
 function DivisionTag({ match, multiDivision }: { match: Match; multiDivision: boolean }) {
   if (!multiDivision || !match.division?.name) return null;
-  return <span className="division-tag">{match.division.name}</span>;
+  // No country in scope here (a Match carries an IdInfo event, and a Division has
+  // no location of its own), so this relies on script detection alone.
+  return <TranslatedText className="division-tag" text={match.division.name} />;
 }
 
 function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDivision = false, multiDivision = true, showPlay = false, presetSupported = false, presetLoading = false, presetUrl, timestampMap, onOpenMatch }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; hideDivision?: boolean; multiDivision?: boolean; showPlay?: boolean; presetSupported?: boolean; presetLoading?: boolean; presetUrl?: string | null; timestampMap?: Map<number, MatchTimestamp>; onOpenMatch?: (match: Match, timestamp: MatchTimestamp) => void }) {
@@ -16057,7 +16063,7 @@ function SpotlightRow({
       <button type="button" className={cls} onMouseEnter={onMouseEnter} onClick={onClick}>
         <span className="spotlight-badge">{seasonYearLabel(ev.season?.name) ?? <CalendarDays size={11} />}</span>
         <span className="spotlight-item-text">
-          <span className="spotlight-item-main">{ev.name}</span>
+          <TranslatedText className="spotlight-item-main" text={ev.name} country={ev.location?.country} />
           <span className="spotlight-item-sub">{ev.sku} · {locationLine(ev)}</span>
         </span>
         <span className="spotlight-item-enter">↵</span>
@@ -17579,7 +17585,7 @@ function MyTeamDashboard() {
           <div className="myteam-seg-lab">Qualification</div>
           {liveRanking ? (
             <>
-              <div className="myteam-seg-rank"><span className="n">#{liveRanking.rank}</span>{liveRanking.division?.name && <span className="of">{liveRanking.division.name}</span>}</div>
+              <div className="myteam-seg-rank"><span className="n">#{liveRanking.rank}</span>{liveRanking.division?.name && <TranslatedText className="of" text={liveRanking.division.name} />}</div>
               <div className="myteam-kvrow">
                 <div className="myteam-kv"><span className="kl">Record</span><span className="kv-v">{liveRanking.wins ?? 0}–{liveRanking.losses ?? 0}{liveRanking.ties ? `–${liveRanking.ties}` : ""}</span></div>
                 <div className="myteam-kv"><span className="kl">WP</span><span className="kv-v">{liveRanking.wp ?? 0}</span></div>
