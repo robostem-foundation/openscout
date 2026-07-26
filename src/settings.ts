@@ -18,13 +18,20 @@ const TAB_LAYOUT_KEY = "vex-tab-layout";
 const QUICK_VIEW_FIRST_KEY = "vex-quick-view-first";
 const QUICK_VIEW_MODE_KEY = "vex-quick-view-mode";
 const QUICK_VIEW_SIDE_KEY = "vex-quick-view-side";
-const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY, QUICK_VIEW_FIRST_KEY, QUICK_VIEW_MODE_KEY, QUICK_VIEW_SIDE_KEY] as const;
+const TRANSLATE_MODE_KEY = "vex-translate-mode";
+const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY, QUICK_VIEW_FIRST_KEY, QUICK_VIEW_MODE_KEY, QUICK_VIEW_SIDE_KEY, TRANSLATE_MODE_KEY] as const;
 export type SyncedSettingKey = (typeof SYNCED_KEYS)[number];
 
 // Tab orientation for the event/team detail views. "horizontal" matches the
 // original look (a tab bar above the content); "vertical" mirrors the Settings
 // page's left-rail tabs.
 export type TabLayout = "horizontal" | "vertical";
+
+// How non-English names are handled. "auto" translates on render; "manual" makes
+// zero network requests until the user clicks a string's translate icon — which
+// is both the quota-saver and the "I read this language, stop rewriting my UI"
+// option.
+export type TranslateMode = "auto" | "manual";
 
 type Values = Record<string, unknown>;
 
@@ -304,3 +311,34 @@ export function setQuickViewSide(value: QuickViewSide) {
   emitQuickViewFirst();
 }
 
+
+// --- translate mode preference ------------------------------------------------
+
+// Reuses the quick-view listener set: like those values, this one must notify on
+// self-writes so every mounted <TranslatedText> re-renders the moment the mode
+// flips — not only on a cloud load.
+
+// Default "auto": only a stored literal "manual" turns it off, so a fresh user
+// (or any unset key) gets translations.
+function getTranslateMode(): TranslateMode {
+  return currentValues[TRANSLATE_MODE_KEY] === "manual" ? "manual" : "auto";
+}
+
+export function useTranslateMode(): TranslateMode {
+  return useSyncExternalStore(subscribeQuickViewFirst, getTranslateMode, getTranslateMode);
+}
+
+export function setTranslateMode(value: TranslateMode) {
+  writeLS(TRANSLATE_MODE_KEY, value);
+  const next: Values = { ...currentValues, [TRANSLATE_MODE_KEY]: value };
+  if (sameValues(next, currentValues)) return;
+  currentValues = next;
+  if (signedIn && supabase && userId) void upsertCloud(supabase, userId, next);
+  emitQuickViewFirst();
+}
+
+// Non-reactive read for module-level code (src/translate.ts consults this outside
+// a React render to decide whether to fetch).
+export function readTranslateMode(): TranslateMode {
+  return getTranslateMode();
+}

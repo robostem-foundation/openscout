@@ -6,6 +6,8 @@ server-dist/
 .DS_Store
 npm-debug.log*
 .vercel/
+# Written by `supabase link` — holds the linked project ref and pooler URL.
+supabase/.temp/
 
 .codex/environments/
 

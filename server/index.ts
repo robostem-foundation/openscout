@@ -7,6 +7,8 @@ import { clientIpFromForwardedFor, guardProxyRequest, proxyRequest, type ProxySo
 import { scrapeEventInfo } from "./eventInfoScraper.js";
 import { resolveEventGrades } from "./eventGrades.js";
 import { parseSkuParam } from "../api/event-grades.js";
+import { resolveTranslations } from "./translate.js";
+import { parseTranslateBody } from "../api/translate.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -84,6 +86,36 @@ app.get("/api/event-grades", async (req: express.Request, res: express.Response)
   } catch (err) {
     console.error("[event-grades] handler error:", err);
     res.status(500).json({ error: "Failed to resolve event grades" });
+  }
+});
+
+// Translation lookup (cache-first MyMemory) — also before the catch-alls.
+// `express.json` is mounted on this route alone rather than app-wide, so the
+// existing GET proxy routes keep their current body handling.
+app.post("/api/translate", express.json({ limit: "64kb" }), async (req: express.Request, res: express.Response) => {
+  const guard = await guardProxyRequest({
+    origin: req.headers.origin ?? null,
+    referer: req.headers.referer ?? null,
+    ip: clientIpFromForwardedFor(req.headers["x-forwarded-for"], req.socket.remoteAddress ?? "unknown"),
+  });
+  if (!guard.ok) {
+    if (guard.retryAfter) res.setHeader("retry-after", String(guard.retryAfter));
+    res.status(guard.status).json({ message: guard.message });
+    return;
+  }
+
+  const items = parseTranslateBody(req.body);
+  if (!items.length) {
+    res.status(400).json({ error: "items array is required ({ text, sourceLang })" });
+    return;
+  }
+  try {
+    const translations = await resolveTranslations(items);
+    res.setHeader("cache-control", "public, s-maxage=86400, stale-while-revalidate=604800");
+    res.json({ translations });
+  } catch (err) {
+    console.error("[translate] handler error:", err);
+    res.status(500).json({ error: "Failed to resolve translations" });
   }
 });
 
