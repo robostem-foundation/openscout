@@ -647,16 +647,15 @@ main {
   font-weight: 400;
 }
 
-/* Near me: location status + controls bar above the distance-sorted list. */
+/* Near me: location status + controls above the distance-sorted list. Plain
+   text on the page — no card — so it reads as a caption for the list rather
+   than a panel of its own. */
 .near-me-bar {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 6px;
-  padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
+  padding: 6px 12px;
   font-size: 13px;
 }
 
@@ -703,7 +702,7 @@ main {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .near-me-radius-select {
@@ -740,7 +739,7 @@ main {
 }
 
 .near-me-input {
-  width: 150px;
+  width: 190px;
   height: 28px;
   padding: 0 9px;
   border: 1px solid var(--border-strong);
@@ -756,17 +755,21 @@ main {
   border-color: var(--accent);
 }
 
-.near-me-go {
-  height: 28px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
+/* Lookup-in-flight row inside the suggestions dropdown. */
+.near-me-candidate-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.near-me-spinner {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 .near-me-cancel {
@@ -783,7 +786,7 @@ main {
   color: var(--text);
 }
 
-/* Candidate disambiguation list under the manual search input. */
+/* Type-ahead suggestions under the location input. */
 .near-me-search {
   position: relative;
 }
@@ -820,7 +823,9 @@ main {
   cursor: pointer;
 }
 
-.near-me-candidate:hover {
+/* One highlight state for both pointer and keyboard — the component keeps them
+   in sync, so :hover styling on top would let two rows look selected at once. */
+.near-me-candidate.highlighted {
   background: var(--surface-2);
 }
 
@@ -831,7 +836,19 @@ main {
 }
 
 .near-me-candidate-text {
+  flex: 1 1 auto;
   min-width: 0;
+}
+
+/* City / State / Country — tells the reader whether a radius will apply. */
+.near-me-candidate-kind {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--text-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
 .near-me-candidate-empty {
@@ -1794,6 +1811,26 @@ main {
   /* fill + shadow drawn by the sliding .slide-pill */
   color: var(--text);
 }
+/* Fixed 2×2 for groups of four — flex-wrap would leave the last segment
+   stranded on its own row at full width. */
+.seg-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* Secondary toggles (Time, Type). Grade keeps the white pill — it belongs to
+   the Program group above it. */
+/* Grey rather than the program chooser's lifted white: the pill has to sit a
+   shade DARKER than the --surface-3 track to register at all, since white at
+   any opacity just blends back into it. Doubled selector so these beat the
+   plain `.seg-toggle` pill variables declared further down the file. */
+.seg-toggle.seg-toggle-quiet {
+  --pill-bg: var(--border-strong);
+  --pill-opacity: 0.7;
+  --pill-shadow: none;
+}
+.seg-toggle-quiet button.active {
+  color: var(--text-2);
+}
 /* The "…" more-button stays compact instead of flexing to a full segment. */
 .seg-toggle-more {
   flex: 0 0 auto;
@@ -1863,6 +1900,42 @@ main {
   color: var(--text-2);
   font-size: 12px;
   font-weight: 700;
+}
+
+/* Region label row: the field name plus the "Near me" location toggle, which
+   is an alternative to picking regions by hand rather than a second filter. */
+.filter-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.near-me-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--surface);
+  padding: 2px 8px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.near-me-chip:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.near-me-chip.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 .search-field svg {
@@ -2177,6 +2250,9 @@ main {
 }
 .event-search-count {
   flex: 0 0 auto;
+  /* The search field is capped at 560px, so without this the count floats in
+     the middle of the row instead of sitting at the panel's right edge. */
+  margin-left: auto;
   font-family: var(--font-geist-mono, ui-monospace, monospace);
   font-size: 11px;
   text-transform: uppercase;
@@ -4879,6 +4955,7 @@ a.team-card-num:hover {
   border-radius: var(--pill-radius, 8px);
   background: var(--pill-bg, var(--surface-3));
   box-shadow: var(--pill-shadow, none);
+  opacity: var(--pill-opacity, 1);
 }
 .team-view-toggle button,
 .team-prog-seg button,
@@ -6812,10 +6889,17 @@ footer {
 /* Grade column in event table */
 th.grade-col,
 td.grade-col {
-  width: 52px;
-  min-width: 52px;
+  width: 74px;
+  min-width: 74px;
   text-align: center;
   white-space: nowrap;
+}
+
+/* Grade is a program-level span (V5RC → MS+HS, VIQRC → ES+MS), so a cell can
+   carry more than one badge. */
+.event-grade-badges {
+  display: inline-flex;
+  gap: 3px;
 }
 
 .event-grade-badge {
@@ -6844,9 +6928,9 @@ td.grade-col {
   color: #8a6d3b;
 }
 
-.event-grade-badge.grade-All {
-  background: var(--surface-2);
-  color: var(--text-muted);
+.event-grade-badge.grade-U {
+  background: #ede7f6;
+  color: #5b4a9c;
 }
 
 /* Dark mode: the HS/MS/ES grade badges use light Bootstrap-style tint fills that
@@ -6865,6 +6949,11 @@ td.grade-col {
 :root[data-theme="dark"] .event-grade-badge.grade-ES {
   background: rgba(234, 179, 8, 0.16);
   color: #e8c971;
+}
+
+:root[data-theme="dark"] .event-grade-badge.grade-U {
+  background: rgba(91, 74, 156, 0.22);
+  color: #b6a8e6;
 }
 
 /* Event name as a button (when onViewMatches is wired — team view tabs) */
@@ -12199,4 +12288,11 @@ td.col-muted { color: var(--text-2); }
   .global-search-popup {
     animation: none;
   }
+}
+
+/* Grade badges showing the program's span rather than the event's own level
+   (the exact level hasn't loaded, or the endpoint couldn't resolve it). Dimmed
+   so a wide pair reads as "not confirmed" instead of "blended". */
+.event-grade-badges.is-program-span {
+  opacity: 0.72;
 }

@@ -148,6 +148,15 @@ const GRADES_BY_PROGRAM: Record<string, string[]> = {
   "4": ["U"],
   "57": [],
 };
+// Grade levels an *event* covers, keyed by program id and ordered low → high.
+// Separate from GRADES_BY_PROGRAM above (which drives the World-Skills grade
+// toggle, so it deliberately omits VAIRC — that program has no skills ladder).
+const EVENT_GRADES_BY_PROGRAM: Record<string, string[]> = {
+  "1": ["MS", "HS"],
+  "41": ["ES", "MS"],
+  "4": ["U"],
+  "57": ["HS", "U"],
+};
 function gradeShortLabel(code: string): string {
   return code === "HS" ? "HS" : code === "MS" ? "MS" : code === "ES" ? "ES" : code === "U" ? "U" : code;
 }
@@ -168,8 +177,8 @@ const teamCacheRefreshMs = 24 * 60 * 60 * 1000;
 const liveEventRefreshMs = 30 * 1000;
 const globalEventSearchCacheMs = 5 * 60 * 1000;
 type EventCategory = "Worlds" | "Signature" | "Championship" | "Other";
-type EventSort = "smart" | "date" | "type" | "name" | "program" | "location" | "past-season";
-type EventWindow = "near" | "upcoming" | "next30" | "next90" | "past30" | "allSeason";
+type EventSort = "smart" | "date" | "type" | "name" | "program" | "location" | "past-season" | "distance";
+type EventWindow = "today" | "near" | "upcoming" | "next30" | "next90" | "past30" | "allSeason";
 type EventFilterLayout = "sidebar" | "inline";
 type RegionOptionKind = "country" | "subdivision" | "vex-region";
 type DateDirection = "asc" | "desc";
@@ -1596,12 +1605,141 @@ function gradeCode(grade?: string | null) {
   return grade || "-";
 }
 
-function eventGradeCode(event: Event): "HS" | "MS" | "ES" | "All" {
-  const name = event.name ?? "";
-  if (/high\s*school/i.test(name)) return "HS";
-  if (/middle\s*school/i.test(name)) return "MS";
-  if (/elementary/i.test(name)) return "ES";
-  return "All";
+// The grade span of an event's *program* — the widest it could be, and the
+// fallback whenever the exact level isn't known yet.
+//
+// No API carries a per-event grade: `/events` (v2) and the RoboSTEM mirror both
+// omit it, and both ignore grade query params. Deriving it from the event name
+// was wrong in both directions — a venue called "@ Oxley High School" made a
+// blended V5RC event read as HS-only, while "(ES)" in an IQ title didn't match
+// /elementary/ and fell through to "All". The exact level comes from
+// /api/event-grades (see useExactEventGrades below and server/eventGrades.ts).
+function eventGradeCodes(event: Event): string[] {
+  return EVENT_GRADES_BY_PROGRAM[String(event.program?.id ?? "")] ?? [];
+}
+
+// ── Exact per-event grade levels ─────────────────────────────────────────────
+// Scraped server-side from the public event page and persisted there, so a given
+// event costs one third-party proxy request across all users, ever. Locally we
+// keep the same rows in localStorage: grade level is fixed at event creation, so
+// a cached entry never goes stale and a returning visitor never re-asks.
+const EVENT_GRADE_CACHE_KEY = "vex-alliance:event-grades";
+const EVENT_GRADE_CACHE_LIMIT = 4000;
+// Only V5RC/VIQRC events can differ from their program span (ES-only, MS-only,
+// HS-only vs blended). VURC/VAIRC are unambiguous, so never spend a request.
+const EXACT_GRADE_PROGRAMS = new Set([1, 41]);
+const EVENT_GRADE_RETRY_MS = 10 * 60 * 1000;
+
+function loadExactGradeCache(): Map<string, string[]> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EVENT_GRADE_CACHE_KEY) ?? "{}");
+    if (!raw || typeof raw !== "object") return new Map();
+    return new Map(
+      Object.entries(raw as Record<string, unknown>).filter(
+        (entry): entry is [string, string[]] => Array.isArray(entry[1]) && entry[1].every((code) => typeof code === "string"),
+      ),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
+const exactEventGrades = loadExactGradeCache();
+const exactGradesInFlight = new Set<string>();
+// sku → earliest retry time, for events the server couldn't resolve (a failed
+// scrape isn't cached server-side, so without this every render would re-ask).
+const exactGradesRetryAt = new Map<string, number>();
+const exactGradeListeners = new Set<() => void>();
+
+function saveExactGradeCache() {
+  try {
+    const entries = [...exactEventGrades.entries()].slice(-EVENT_GRADE_CACHE_LIMIT);
+    localStorage.setItem(EVENT_GRADE_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    // ignore storage failures (private mode, quota)
+  }
+}
+
+async function requestExactEventGrades(items: string[]) {
+  // Backoff is applied here rather than in the caller's useMemo: reading the
+  // clock during render is impure (results would shift on an unrelated
+  // re-render), and this runs from an effect.
+  const now = Date.now();
+  const pending = items.filter(
+    (item) => !exactGradesInFlight.has(item) && (exactGradesRetryAt.get(item.split(":")[0]) ?? 0) <= now,
+  );
+  if (!pending.length) return;
+  pending.forEach((item) => exactGradesInFlight.add(item));
+  try {
+    // Chunked to stay under the endpoint's per-request cap.
+    for (let i = 0; i < pending.length; i += 20) {
+      const chunk = pending.slice(i, i + 20);
+      const { grades } = await api.eventGrades(chunk);
+      const now = Date.now();
+      chunk.forEach((item) => {
+        const sku = item.split(":")[0];
+        const codes = grades[sku];
+        if (codes?.length) exactEventGrades.set(sku, codes);
+        else exactGradesRetryAt.set(sku, now + EVENT_GRADE_RETRY_MS);
+      });
+      saveExactGradeCache();
+      exactGradeListeners.forEach((listener) => listener());
+    }
+  } catch {
+    // Endpoint down / rate-limited: back off on everything we asked about.
+    const retryAt = Date.now() + EVENT_GRADE_RETRY_MS;
+    pending.forEach((item) => exactGradesRetryAt.set(item.split(":")[0], retryAt));
+  } finally {
+    pending.forEach((item) => exactGradesInFlight.delete(item));
+  }
+}
+
+// Resolves exact grade levels for the events currently on screen. Returns a
+// lookup that falls back to the program span until (or unless) the exact answer
+// lands, so the column is never blank and never wrong — just sometimes wider.
+function useExactEventGrades(events: Event[], enabled: boolean) {
+  const [, bumpVersion] = useState(0);
+  useEffect(() => {
+    const listener = () => bumpVersion((version) => version + 1);
+    exactGradeListeners.add(listener);
+    return () => {
+      exactGradeListeners.delete(listener);
+    };
+  }, []);
+
+  const wanted = useMemo(() => {
+    if (!enabled) return [] as string[];
+    return events
+      .filter((event) => event.sku && EXACT_GRADE_PROGRAMS.has(Number(event.program?.id)) && !exactEventGrades.has(event.sku))
+      .map((event) => `${event.sku}:${event.program.id}`);
+  }, [events, enabled]);
+  const wantedKey = wanted.join(",");
+
+  useEffect(() => {
+    if (!wantedKey) return;
+    void requestExactEventGrades(wantedKey.split(","));
+  }, [wantedKey]);
+
+  return useCallback((event: Event) => eventGradeCodesBest(event), []);
+}
+
+// True when the codes shown are the event's own level rather than its program's
+// span — drives the tooltip so a wide badge pair isn't mistaken for "blended".
+function hasExactEventGrade(event: Event) {
+  return exactEventGrades.has(event.sku ?? "");
+}
+
+// Best grade info available right now: the event's own level once it has been
+// resolved, otherwise its program's span.
+function eventGradeCodesBest(event: Event): string[] {
+  return exactEventGrades.get(event.sku ?? "") ?? eventGradeCodes(event);
+}
+
+// The highest grade an event's program reaches — used where a single grade must
+// be picked (e.g. which World Skills ladder to cross-reference).
+function eventTopGradeCode(event: Event): string | null {
+  const codes = eventGradeCodesBest(event);
+  return codes.length ? codes[codes.length - 1] : null;
 }
 
 function optionKey(kind: RegionOptionKind, id: string | number) {
@@ -2276,12 +2414,17 @@ function filterAndSortEvents(events: Event[], options: {
       }
       if (!eventMatchesRegionOptions(event, options.regionOptions ?? [])) return false;
       if (options.hideCanceled && /cancel+ed|canceled/i.test(event.name)) return false;
-      if (grades.length && !grades.includes(eventGradeCode(event))) return false;
+      // An event covers every grade its program spans, so a grade filter keeps any
+      // event whose span includes one of the selected grades.
+      if (grades.length && !eventGradeCodesBest(event).some((code) => grades.includes(code))) return false;
       return vexProgramIds.includes(event.program.id);
     })
     .sort((a, b) => compareEvents(a, b, options.sort ?? "smart"));
 }
 
+// Fetch bounds for a time window. "today" has none of its own: it reuses the
+// near-today fetch (see eventWindowFetchKey) and is narrowed on the client, so
+// multi-day events that started before today still surface.
 function eventWindowDates(eventWindow: EventWindow) {
   if (eventWindow === "upcoming") return { start: dateOnly(today), end: undefined };
   if (eventWindow === "next30") return { start: dateOnly(today), end: dateOnly(addDays(today, 30)) };
@@ -2289,6 +2432,30 @@ function eventWindowDates(eventWindow: EventWindow) {
   if (eventWindow === "past30") return { start: dateOnly(addDays(today, -30)), end: dateOnly(today) };
   if (eventWindow === "allSeason") return { start: undefined, end: undefined };
   return { start: dateOnly(addDays(today, -30)), end: dateOnly(addDays(today, 120)) };
+}
+
+// The Time filter, in the order they read as a 2×2: narrowest first.
+const EVENT_WINDOW_OPTIONS: Array<{ label: string; value: EventWindow }> = [
+  { label: "Today", value: "today" },
+  { label: "Near today", value: "near" },
+  { label: "Upcoming", value: "upcoming" },
+  { label: "All", value: "allSeason" },
+];
+
+// Windows that share a fetch collapse to the same key, so switching between
+// them re-filters the cached response instead of re-querying the API.
+function eventWindowFetchKey(eventWindow: EventWindow): EventWindow {
+  return eventWindow === "today" ? "near" : eventWindow;
+}
+
+// True when today falls inside the event's date span. Matches the Home "Today"
+// tab: the end date is given a day of grace so an event still counts on its
+// final day regardless of the time-of-day component.
+function eventIsToday(event: Event) {
+  const start = new Date(event.start ?? 0).getTime();
+  const end = new Date(event.end ?? event.start ?? 0).getTime();
+  const now = today.getTime();
+  return start <= now && now <= end + oneDay;
 }
 
 function Empty({ children = "Nothing here yet." }: { children?: ReactNode }) {
@@ -2336,6 +2503,12 @@ function SlideIndicator({ id, variant = "underline" }: { id: string; variant?: "
   return (
     <motion.span
       layoutId={id}
+      // Constant dependency: only the layoutId handoff (this span unmounting on
+      // one option and mounting on another) animates. Without it every render
+      // re-measures, so anything that shifts the group — the season list
+      // arriving above the program toggle, for one — slid the indicator across
+      // the screen on page load.
+      layoutDependency={0}
       className={variant === "pill" ? "slide-pill" : "slide-underline"}
       transition={springSmooth}
       aria-hidden
@@ -3534,6 +3707,34 @@ const HOME_PROGRAM_GROUPS: Array<{ key: string; label: string; title: string; id
   { key: "ai", label: "AI", title: "VEX AI", ids: ["57"] },
 ];
 
+// The home program chips persist across reloads: whatever combination the user
+// last had selected is what they get back, including an empty one (which the
+// event query treats as "all"). Missing key = never chosen, which is what lets
+// the profile-based default seed itself exactly once.
+const HOME_PROGRAMS_KEY = "vex-alliance:home-programs";
+function allHomeProgramIds(): string[] {
+  return HOME_PROGRAM_GROUPS.flatMap((group) => group.ids);
+}
+function loadHomePrograms(): string[] | null {
+  try {
+    const raw = localStorage.getItem(HOME_PROGRAMS_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const known = new Set(allHomeProgramIds());
+    return parsed.filter((id): id is string => typeof id === "string" && known.has(id));
+  } catch {
+    return null; // ignore storage/parse failures (private mode, stale shape)
+  }
+}
+function saveHomePrograms(ids: string[]) {
+  try {
+    localStorage.setItem(HOME_PROGRAMS_KEY, JSON.stringify(ids));
+  } catch {
+    // ignore storage failures (private mode, quota)
+  }
+}
+
 function HomeProgramToggle({ selected, onChange }: { selected: string[]; onChange: (ids: string[]) => void }) {
   return (
     <div className="home-prog-toggle" role="group" aria-label="Programs">
@@ -3731,17 +3932,25 @@ function FavoritesPanel() {
 // ── Home "Near me" location resolution ───────────────────────────────────────
 // Resolves the visitor's location through a fallback chain so distance sorting
 // works without any required input: device GPS (with permission prompt) first,
-// then coarse IP geolocation, and finally a manually typed city/region geocoded
-// via OpenStreetMap Nominatim. All network calls are best-effort and keyless.
+// then coarse IP geolocation, and finally a place typed into the location box.
+// All network calls are best-effort and keyless.
 type HomeLocationSource = "gps" | "ip" | "manual";
 type HomeLocationStatus = "idle" | "locating" | "resolved" | "error";
 type BBox = { south: number; north: number; west: number; east: number };
+// How a resolved place is matched against events. A city is a point search — a
+// radius around its centre. A state/province or a country has no meaningful
+// centre (nothing is "75 mi from Texas"), so those match administratively
+// instead: every event whose own region/country says it's there.
+type GeoAreaKind = "point" | "region" | "country";
+type GeoArea = { kind: "region" | "country"; region: string | null; country: string | null };
 type HomeLocation = {
   status: HomeLocationStatus;
   coords: LatLon | null;
-  // Set when the resolved location is a broad area (e.g. a state). Events are
-  // then matched against this box instead of only the point radius, so "near
-  // California" surfaces events statewide rather than only near its centroid.
+  // Set when the resolved place is a state/province or country. The radius is
+  // ignored while it is, so "California" surfaces events statewide.
+  area: GeoArea | null;
+  // Geocoded bounds for that area, kept as a geometric backstop for events
+  // whose region/country strings don't match the geocoder's spelling.
   bbox: BBox | null;
   label: string | null;
   source: HomeLocationSource | null;
@@ -3752,18 +3961,48 @@ function coordsInBBox(coords: LatLon, bbox: BBox) {
   return coords.lat >= bbox.south && coords.lat <= bbox.north && coords.lon >= bbox.west && coords.lon <= bbox.east;
 }
 
-// Treat a geocoded box as an "area" only when it spans more than the point
-// radius — city-sized boxes stay point-radius searches.
-function isAreaBBox(bbox: BBox) {
-  const latSpanMiles = (bbox.north - bbox.south) * 69;
-  const lonSpanMiles = (bbox.east - bbox.west) * 69;
-  return latSpanMiles > NEAR_ME_RADIUS_MILES || lonSpanMiles > NEAR_ME_RADIUS_MILES;
+// Whether an event's own location fields place it inside a resolved area.
+function eventInGeoArea(event: Event, area: GeoArea) {
+  if (area.country && normalizeText(event.location?.country) !== normalizeText(area.country)) return false;
+  if (area.kind === "country") return !!area.country;
+  return !!area.region && normalizeText(event.location?.region) === normalizeText(area.region);
+}
+
+// The single Near me matching rule, shared by Home and the Events page so the
+// two can't drift. Area searches ignore the radius entirely; point searches
+// keep everything within it. Optionally re-orders nearest-first — events with
+// no coordinates (possible in an area search) sort last.
+function filterEventsNearLocation(
+  events: Event[],
+  location: { coords: LatLon | null; area: GeoArea | null; bbox: BBox | null },
+  radius: number,
+  sortByDistance: boolean,
+): Event[] {
+  const { coords, area, bbox } = location;
+  const matched = events.filter((event) => {
+    const eventPoint = eventCoords(event);
+    if (area) {
+      if (eventInGeoArea(event, area)) return true;
+      return !!bbox && !!eventPoint && coordsInBBox(eventPoint, bbox);
+    }
+    return !!coords && !!eventPoint && haversineMiles(coords, eventPoint) <= radius;
+  });
+  if (!sortByDistance || !coords) return matched;
+  const distance = (event: Event) => {
+    const eventPoint = eventCoords(event);
+    return eventPoint ? haversineMiles(coords, eventPoint) : Number.POSITIVE_INFINITY;
+  };
+  return matched
+    .map((event, index) => ({ event, index, distance: distance(event) }))
+    .sort((a, b) => a.distance - b.distance || compareEventsChronological(a.event, b.event) || a.index - b.index)
+    .map((entry) => entry.event);
 }
 
 function useHomeLocation(active: boolean) {
   const [state, setState] = useState<HomeLocation>({
     status: "idle",
     coords: null,
+    area: null,
     bbox: null,
     label: null,
     source: null,
@@ -3778,7 +4017,7 @@ function useHomeLocation(active: boolean) {
       const data = await res.json();
       if (typeof data.latitude === "number" && typeof data.longitude === "number") {
         const label = [data.city, data.region].filter(Boolean).join(", ") || "Approximate location";
-        setState({ status: "resolved", coords: { lat: data.latitude, lon: data.longitude }, bbox: null, label, source: "ip", error: null });
+        setState({ status: "resolved", coords: { lat: data.latitude, lon: data.longitude }, area: null, bbox: null, label, source: "ip", error: null });
         return true;
       }
     } catch {
@@ -3791,7 +4030,7 @@ function useHomeLocation(active: boolean) {
     setState((prev) => ({ ...prev, status: "locating", error: null }));
     const fallback = async () => {
       const ok = await resolveViaIp();
-      if (!ok) setState((prev) => ({ ...prev, status: "error", error: "Couldn't find your location — enter a city below." }));
+      if (!ok) setState((prev) => ({ ...prev, status: "error", error: "Couldn't find your location — enter one below." }));
     };
     if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
       void fallback();
@@ -3802,6 +4041,7 @@ function useHomeLocation(active: boolean) {
         setState({
           status: "resolved",
           coords: { lat: pos.coords.latitude, lon: pos.coords.longitude },
+          area: null,
           bbox: null,
           label: "Your location",
           source: "gps",
@@ -3812,12 +4052,15 @@ function useHomeLocation(active: boolean) {
     );
   }, [resolveViaIp]);
 
-  // Commit a chosen location (e.g. a candidate the user picked from search).
-  // A bbox is kept only when it represents a genuine area (state/region); city
-  // boxes fall back to the point radius.
-  const applyLocation = useCallback((coords: LatLon, label: string, source: HomeLocationSource, bbox?: BBox | null) => {
-    setState({ status: "resolved", coords, bbox: bbox && isAreaBBox(bbox) ? bbox : null, label, source, error: null });
-  }, []);
+  // Commit a place the user picked from the location dropdown. A city arrives
+  // with no area and stays a radius search; a state/province or country brings
+  // its area (and bounds) along and drops the radius.
+  const applyLocation = useCallback(
+    (coords: LatLon, label: string, source: HomeLocationSource, area?: GeoArea | null, bbox?: BBox | null) => {
+      setState({ status: "resolved", coords, area: area ?? null, bbox: area ? (bbox ?? null) : null, label, source, error: null });
+    },
+    [],
+  );
 
   // Prompt for the device location the first time the tab becomes active.
   useEffect(() => {
@@ -3831,7 +4074,18 @@ function useHomeLocation(active: boolean) {
 }
 
 type HomeLocationApi = ReturnType<typeof useHomeLocation>;
-type GeoCandidate = { id: string; lat: number; lon: number; label: string; short: string; bbox: BBox | null };
+type GeoCandidate = {
+  id: string;
+  lat: number;
+  lon: number;
+  label: string;
+  short: string;
+  kind: GeoAreaKind;
+  // Populated for area kinds; matched against the event's own location fields.
+  region: string | null;
+  country: string | null;
+  bbox: BBox | null;
+};
 
 // Nominatim returns boundingbox as [south, north, west, east] strings.
 function parseBBox(boundingbox: unknown): BBox | null {
@@ -3841,69 +4095,215 @@ function parseBBox(boundingbox: unknown): BBox | null {
   return { south, north, west, east };
 }
 
-// Geocode a free-text place to a short list of candidates. Multiple places
-// share a name, so the user picks the right one rather than guessing the first.
-async function geocodeCandidates(query: string): Promise<GeoCandidate[]> {
+// Photon returns extent as [minLon, maxLat, maxLon, minLat].
+function parseExtent(extent: unknown): BBox | null {
+  if (!Array.isArray(extent) || extent.length !== 4) return null;
+  const [west, north, east, south] = extent.map(Number);
+  if ([south, north, west, east].some((value) => !Number.isFinite(value))) return null;
+  return { south, north, west, east };
+}
+
+// Join the parts of a place name, dropping blanks and repeats ("Texas, Texas,
+// United States" → "Texas, United States").
+function joinPlaceParts(parts: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  return parts
+    .map((part) => (part ?? "").trim())
+    .filter((part) => {
+      if (!part || seen.has(part.toLowerCase())) return false;
+      seen.add(part.toLowerCase());
+      return true;
+    })
+    .join(", ");
+}
+
+const GEO_AREA_LABEL: Record<GeoAreaKind, string> = { point: "City", region: "State / Province", country: "Country" };
+
+function geoCandidateArea(candidate: GeoCandidate): GeoArea | null {
+  if (candidate.kind === "point") return null;
+  return { kind: candidate.kind, region: candidate.region, country: candidate.country };
+}
+
+// Photon (keyless, built for type-ahead — unlike Nominatim, whose usage policy
+// rules out autocomplete). Its `type` classifies the hit for us, so a state and
+// a city can be told apart without guessing from the bounding box size.
+async function photonCandidates(query: string, signal: AbortSignal): Promise<GeoCandidate[]> {
+  const res = await fetch(`https://photon.komoot.io/api/?limit=8&q=${encodeURIComponent(query)}`, {
+    headers: { Accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) throw new Error(`photon ${res.status}`);
+  const data = await res.json();
+  const features = Array.isArray(data?.features) ? data.features : [];
+  return features
+    .map((feature: Record<string, unknown>, index: number) => {
+      const props = (feature?.properties ?? {}) as Record<string, unknown>;
+      const coords = (feature?.geometry as { coordinates?: unknown[] } | undefined)?.coordinates;
+      const lon = Number(coords?.[0]);
+      const lat = Number(coords?.[1]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      const type = String(props.type ?? "");
+      // Anything more granular than a city (street, house, district) is still a
+      // useful point — only the two area types change how matching works.
+      const kind: GeoAreaKind = type === "country" ? "country" : type === "state" ? "region" : "point";
+      const name = String(props.name ?? "").trim();
+      if (!name) return null;
+      const state = props.state ? String(props.state) : null;
+      const country = props.country ? String(props.country) : null;
+      return {
+        id: `photon-${props.osm_id ?? index}-${index}`,
+        lat,
+        lon,
+        label: joinPlaceParts([name, kind === "country" ? null : state, kind === "country" ? null : country]),
+        short: name,
+        kind,
+        region: kind === "region" ? name : state,
+        country,
+        bbox: parseExtent(props.extent),
+      } satisfies GeoCandidate;
+    })
+    .filter((candidate: GeoCandidate | null): candidate is GeoCandidate => candidate != null);
+}
+
+// Fallback for when Photon is down. Nominatim's `addresstype` gives the same
+// city/state/country split, and `addressdetails` the names to match on.
+async function nominatimCandidates(query: string, signal: AbortSignal): Promise<GeoCandidate[]> {
   const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(query)}`,
-    { headers: { Accept: "application/json" } },
+    `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&q=${encodeURIComponent(query)}`,
+    { headers: { Accept: "application/json" }, signal },
   );
+  if (!res.ok) throw new Error(`nominatim ${res.status}`);
   const results = await res.json();
   if (!Array.isArray(results)) return [];
   return results
     .filter((hit) => hit && hit.lat && hit.lon)
     .map((hit, index) => {
+      const address = (hit.address ?? {}) as Record<string, string | undefined>;
+      const addressType = String(hit.addresstype ?? hit.type ?? "");
+      const kind: GeoAreaKind =
+        addressType === "country" ? "country" : ["state", "province", "region"].includes(addressType) ? "region" : "point";
       const label = String(hit.display_name ?? query);
+      const state = address.state ?? address.province ?? null;
       return {
         id: String(hit.place_id ?? index),
         lat: Number(hit.lat),
         lon: Number(hit.lon),
-        label,
-        short: label.split(",").slice(0, 2).join(",").trim() || query,
+        label: joinPlaceParts(label.split(",").slice(0, kind === "point" ? 3 : 2)),
+        short: label.split(",")[0]?.trim() || query,
+        kind,
+        region: kind === "region" ? (state ?? label.split(",")[0]?.trim() ?? null) : state,
+        country: address.country ?? null,
         bbox: parseBBox(hit.boundingbox),
-      };
+      } satisfies GeoCandidate;
     });
+}
+
+// Geocode free text to a short list of candidates. Several places share a name,
+// so the user picks the right one rather than the first being assumed.
+async function geocodeCandidates(query: string, signal: AbortSignal): Promise<GeoCandidate[]> {
+  try {
+    const hits = await photonCandidates(query, signal);
+    if (hits.length) return dedupeCandidates(hits);
+  } catch (error) {
+    if (signal.aborted || (error as Error)?.name === "AbortError") throw error;
+  }
+  return dedupeCandidates(await nominatimCandidates(query, signal));
+}
+
+// Geocoders routinely return the same place twice (the city node and its
+// boundary relation, say). Identical rows are noise, so keep the first.
+function dedupeCandidates(candidates: GeoCandidate[]) {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = `${candidate.kind}:${candidate.label.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function NearMeLocationBar({ location, radius, onRadiusChange }: { location: HomeLocationApi; radius: number; onRadiusChange: (radius: number) => void }) {
   const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query.trim(), 300);
   const [candidates, setCandidates] = useState<GeoCandidate[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [highlight, setHighlight] = useState(0);
 
   const sourceLabel =
     location.source === "gps" ? "device" : location.source === "ip" ? "approx." : location.source === "manual" ? "manual" : null;
 
-  const runSearch = async () => {
-    const trimmed = query.trim();
-    if (!trimmed) return;
+  const closeEditor = useCallback(() => {
+    setEditing(false);
+    setCandidates(null);
+    setSearchError(null);
+  }, []);
+  const searchRef = useOutsideClick<HTMLDivElement>(closeEditor);
+
+  // Live lookup: each debounced keystroke replaces the previous request, and an
+  // in-flight one is aborted so a slow early result can't overwrite a newer one.
+  useEffect(() => {
+    if (!editing || debouncedQuery.length < 2) {
+      setCandidates(null);
+      setSearchError(null);
+      setSearching(false);
+      return;
+    }
+    const controller = new AbortController();
     setSearching(true);
     setSearchError(null);
-    setCandidates(null);
-    try {
-      const hits = await geocodeCandidates(trimmed);
-      if (hits.length) setCandidates(hits);
-      else setSearchError(`Couldn't find "${trimmed}".`);
-    } catch {
-      setSearchError("Location lookup failed. Try again.");
-    } finally {
-      setSearching(false);
-    }
-  };
+    geocodeCandidates(debouncedQuery, controller.signal)
+      .then((hits) => {
+        if (controller.signal.aborted) return;
+        setCandidates(hits);
+        setHighlight(0);
+        setSearchError(hits.length ? null : `Couldn't find “${debouncedQuery}”.`);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setCandidates(null);
+        setSearchError("Location lookup failed. Try again.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSearching(false);
+      });
+    return () => controller.abort();
+  }, [debouncedQuery, editing]);
 
   const choose = (candidate: GeoCandidate) => {
-    location.applyLocation({ lat: candidate.lat, lon: candidate.lon }, candidate.short, "manual", candidate.bbox);
+    location.applyLocation(
+      { lat: candidate.lat, lon: candidate.lon },
+      candidate.short,
+      "manual",
+      geoCandidateArea(candidate),
+      candidate.bbox,
+    );
     setEditing(false);
     setCandidates(null);
     setSearchError(null);
     setQuery("");
   };
 
-  const closeEditor = () => {
-    setEditing(false);
-    setCandidates(null);
-    setSearchError(null);
+  const showSpinner = searching && !candidates?.length;
+
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    const options = candidates ?? [];
+    if (event.key === "Escape") {
+      closeEditor();
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (!options.length) return;
+      event.preventDefault();
+      setHighlight((index) => (index + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length);
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const picked = options[highlight];
+      if (picked) choose(picked);
+    }
   };
 
   return (
@@ -3913,7 +4313,8 @@ function NearMeLocationBar({ location, radius, onRadiusChange }: { location: Hom
         {location.status === "locating" && <span>Finding events near you…</span>}
         {location.status === "resolved" && (
           <span>
-            Near <strong>{location.label}</strong>
+            {location.area ? "Events in " : "Near "}
+            <strong>{location.label}</strong>
             {sourceLabel && <span className="near-me-source">{sourceLabel}</span>}
           </span>
         )}
@@ -3921,56 +4322,66 @@ function NearMeLocationBar({ location, radius, onRadiusChange }: { location: Hom
         {location.status === "idle" && <span>Sort events by distance from you.</span>}
       </div>
       <div className="near-me-actions">
-        <label className="near-me-radius">
-          Within
-          <select
-            className="near-me-radius-select"
-            value={radius}
-            onChange={(event) => onRadiusChange(Number(event.target.value))}
-            aria-label="Search radius"
-          >
-            {NEAR_ME_RADIUS_OPTIONS.map((option) => (
-              <option key={option} value={option}>{option} mi</option>
-            ))}
-          </select>
-        </label>
-        {editing ? (
-          <div className="near-me-search">
-            <form
-              className="near-me-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void runSearch();
-              }}
+        {/* A radius is meaningless for a state or country — those match every
+            event inside them, so the control is hidden rather than ignored. */}
+        {!location.area && (
+          <label className="near-me-radius">
+            Within
+            <select
+              className="near-me-radius-select"
+              value={radius}
+              onChange={(event) => onRadiusChange(Number(event.target.value))}
+              aria-label="Search radius"
             >
+              {NEAR_ME_RADIUS_OPTIONS.map((option) => (
+                <option key={option} value={option}>{option} mi</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {editing ? (
+          <div className="near-me-search" ref={searchRef}>
+            <div className="near-me-form">
               <input
                 autoFocus
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="City or region"
+                onKeyDown={onKeyDown}
+                placeholder="City, state, or country"
                 className="near-me-input"
-                aria-label="City or region"
+                aria-label="Location"
+                role="combobox"
+                aria-expanded={!!candidates?.length}
+                aria-controls="near-me-candidates"
+                aria-autocomplete="list"
               />
-              <button type="submit" className="near-me-go" disabled={searching || !query.trim()}>
-                {searching ? "…" : "Search"}
-              </button>
               <button type="button" className="near-me-cancel" onClick={closeEditor} aria-label="Cancel">×</button>
-            </form>
-            {(candidates || searchError) && (
-              <div className="near-me-candidates" role="listbox">
+            </div>
+            {(candidates?.length || searchError || showSpinner) && (
+              <div className="near-me-candidates" id="near-me-candidates" role="listbox">
+                {/* Spinner only until there's something to show — while refining
+                    a query the previous matches stay put instead of flashing. */}
+                {showSpinner && (
+                  <div className="near-me-candidate-empty near-me-candidate-loading">
+                    <span className="near-me-spinner" aria-hidden />
+                    Searching…
+                  </div>
+                )}
                 {searchError && <div className="near-me-candidate-empty">{searchError}</div>}
-                {candidates?.map((candidate) => (
+                {candidates?.map((candidate, index) => (
                   <button
                     key={candidate.id}
                     type="button"
                     role="option"
-                    aria-selected={false}
-                    className="near-me-candidate"
+                    aria-selected={index === highlight}
+                    className={`near-me-candidate${index === highlight ? " highlighted" : ""}`}
+                    onMouseEnter={() => setHighlight(index)}
                     onClick={() => choose(candidate)}
                     title={candidate.label}
                   >
                     <MapPin size={13} className="near-me-candidate-pin" />
                     <span className="near-me-candidate-text">{candidate.label}</span>
+                    <span className="near-me-candidate-kind">{GEO_AREA_LABEL[candidate.kind]}</span>
                   </button>
                 ))}
               </div>
@@ -3982,7 +4393,7 @@ function NearMeLocationBar({ location, radius, onRadiusChange }: { location: Hom
               Use my location
             </button>
             <button type="button" className="near-me-link" onClick={() => setEditing(true)}>
-              Enter city
+              Enter location
             </button>
           </>
         )}
@@ -3992,9 +4403,8 @@ function NearMeLocationBar({ location, radius, onRadiusChange }: { location: Hom
 }
 
 const HOME_EVENTS_PAGE_SIZE = 7;
-// Near me hides anything beyond this radius once a location resolves. Used as the
-// default and as the stable heuristic for isAreaBBox (area-vs-point classification).
-const NEAR_ME_RADIUS_MILES = 75;
+// Radius choices for a point (city / GPS / IP) Near me search. States and
+// countries ignore these entirely — see GeoArea.
 const NEAR_ME_RADIUS_OPTIONS = [25, 50, 75, 150, 250];
 const NEAR_ME_RADIUS_DEFAULT = 75;
 const NEAR_ME_RADIUS_KEY = "vex-nearme-radius";
@@ -4074,6 +4484,7 @@ function PaginatedEventList({
         compact
         showPriority
         showProgram
+        showGrade
         showDistance={showDistance}
         distanceFor={distanceFor}
         headerLabel={headerLabel}
@@ -4101,7 +4512,7 @@ function HomeUpcomingTier({ label, events }: { label: string; events: Event[] })
   return (
     <div className="tier-section">
       <div className={`tier-collapse${showFade ? " is-collapsed" : ""}`}>
-        <EventTable events={displayEvents} loading={false} compact showPriority showProgram headerLabel={groupLabel} />
+        <EventTable events={displayEvents} loading={false} compact showPriority showProgram showGrade headerLabel={groupLabel} />
         {showFade && (
           <button className="alliance-show-all" onClick={() => setExpanded(true)}>
             Show all {events.length} <ChevronDown size={15} />
@@ -4148,7 +4559,7 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
   return (
     <LoadingSwap
       loading={loading}
-      skeleton={<EventTable events={[]} loading compact showPriority showProgram />}
+      skeleton={<EventTable events={[]} loading compact showPriority showProgram showGrade />}
     >
       {!sections.length ? (
         <Empty>No upcoming events for this program yet.</Empty>
@@ -4166,6 +4577,7 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
                   compact
                   showPriority
                   showProgram
+                  showGrade
                   headerLabel={
                     <>
                       {section.label} <span className="tier-count">({section.events.length})</span>
@@ -4183,10 +4595,30 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
 }
 
 function Home() {
+  const { profile } = useAuth();
   const [homeEventTab, setHomeEventTab] = useState<HomeEventTab>("upcoming");
   const [nearMeRadius, setNearMeRadius] = useState<number>(() => loadNearMeRadius());
   useEffect(() => { saveNearMeRadius(nearMeRadius); }, [nearMeRadius]);
-  const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>(() => programOptions.filter((option) => option.value).map((option) => option.value));
+  // Program chips: a stored pick wins, else the signed-in user's own program
+  // (seeded by effect below — the profile isn't loaded synchronously on first
+  // render), else every program.
+  const [selectedProgramIds, setSelectedProgramIds] = useState<string[]>(() => loadHomePrograms() ?? allHomeProgramIds());
+  // Captured once at mount, before the persist effect writes storage, so the seed
+  // effect can tell a genuine prior choice from the default it just saved.
+  const [hadStoredPrograms] = useState<boolean>(() => loadHomePrograms() !== null);
+  const homeProgramsSeeded = useRef(false);
+  useEffect(() => { saveHomePrograms(selectedProgramIds); }, [selectedProgramIds]);
+  useEffect(() => {
+    if (homeProgramsSeeded.current) return;
+    if (hadStoredPrograms) {
+      homeProgramsSeeded.current = true;
+      return;
+    }
+    if (profile?.team_program) {
+      setSelectedProgramIds([profile.team_program]);
+      homeProgramsSeeded.current = true;
+    }
+  }, [profile, hadStoredPrograms]);
   const programKey = selectedProgramIds.join(",");
   const { data: events, loading: eventsLoading, error: eventsError } = useAsync(
     () =>
@@ -4204,6 +4636,7 @@ function Home() {
   );
   const location = useHomeLocation(homeEventTab === "nearMe");
   const userCoords = location.coords;
+  const userArea = location.area;
   const userBbox = location.bbox;
   const distanceFor = useCallback(
     (event: Event) => {
@@ -4217,14 +4650,7 @@ function Home() {
   const homeEvents = useMemo(() => {
     if (homeEventTab === "today") {
       // Events whose date window contains today, ordered by smart sort.
-      return baseHomeEvents
-        .filter((event) => {
-          const start = new Date(event.start ?? 0).getTime();
-          const end = new Date(event.end ?? event.start ?? 0).getTime();
-          const now = today.getTime();
-          return start <= now && now <= end + oneDay;
-        })
-        .sort((a, b) => compareEvents(a, b, "smart"));
+      return baseHomeEvents.filter(eventIsToday).sort((a, b) => compareEvents(a, b, "smart"));
     }
     if (homeEventTab === "sigs") {
       return baseHomeEvents
@@ -4239,27 +4665,19 @@ function Home() {
     }
     if (homeEventTab === "nearMe") {
       // Until a location resolves, fall back to time-proximity ordering so the
-      // tab is never empty. Once resolved, keep events within the point radius
-      // OR — for a broad area like a state — anywhere inside its bounding box,
-      // sorted by distance from the chosen point.
+      // tab is never empty.
       if (!userCoords) {
         return [...baseHomeEvents].sort(
           (a, b) => eventDistance(a) - eventDistance(b) || compareEventsChronological(a, b),
         );
       }
-      return baseHomeEvents
-        .map((event) => ({ event, coords: eventCoords(event) }))
-        .filter((entry): entry is { event: Event; coords: LatLon } => entry.coords != null)
-        .map((entry) => ({ event: entry.event, distance: haversineMiles(userCoords, entry.coords), coords: entry.coords }))
-        .filter((entry) => entry.distance <= nearMeRadius || (userBbox != null && coordsInBBox(entry.coords, userBbox)))
-        .sort((a, b) => a.distance - b.distance || compareEventsChronological(a.event, b.event))
-        .map((entry) => entry.event);
+      return filterEventsNearLocation(baseHomeEvents, { coords: userCoords, area: userArea, bbox: userBbox }, nearMeRadius, true);
     }
     // Upcoming: future events, chronological (grouped by level downstream).
     return baseHomeEvents
       .filter((event) => new Date(event.start ?? 0).getTime() >= today.getTime())
       .sort(compareEventsChronological);
-  }, [baseHomeEvents, homeEventTab, userCoords, userBbox, distanceFor, nearMeRadius]);
+  }, [baseHomeEvents, homeEventTab, userCoords, userArea, userBbox, nearMeRadius]);
 
   return (
     <section className="page home-page">
@@ -4334,7 +4752,7 @@ function Home() {
                 hideCount
                 hideLabel
               />
-              <Link href="/events" className="home-events-seeall">See all events</Link>
+              <Link href="/events" className="home-events-seeall">All Events</Link>
             </div>
           }
           icon={<CalendarDays />}
@@ -4345,7 +4763,7 @@ function Home() {
             <UpcomingGroupedEvents events={homeEvents} loading={eventsLoading} />
           ) : homeEventTab === "nearMe" && userCoords && !eventsLoading && homeEvents.length === 0 ? (
             <div className="notice subtle">
-              {userBbox ? (
+              {userArea ? (
                 <>No events in {location.label ?? "that area"}. </>
               ) : (
                 <>No events within {nearMeRadius} mi. </>
@@ -4441,6 +4859,7 @@ type SavedEventFilters = {
   programMultiSelect: boolean;
   pastSeasonDateDir: "asc" | "desc";
   selectedGrades: string[];
+  nearMe: boolean;
 };
 
 function readEventFilters(): Partial<SavedEventFilters> {
@@ -4497,6 +4916,16 @@ function EventsPageInner() {
   const [regionTab, setRegionTab] = useState<RegionOptionKind>("country");
   const [regionSearch, setRegionSearch] = useState("");
   const [eventWindow, setEventWindow] = useState<EventWindow>(() => readEventFilters().eventWindow ?? "near");
+  // "Near me" is a location filter that sits alongside Region (they're mutually
+  // exclusive — see toggleNearMe/toggleRegion). It reuses the Home tab's
+  // location resolution, radius, and status bar so both pages behave the same.
+  const [nearMe, setNearMe] = useState<boolean>(() => readEventFilters().nearMe ?? false);
+  const [nearMeRadius, setNearMeRadius] = useState<number>(() => loadNearMeRadius());
+  useEffect(() => { saveNearMeRadius(nearMeRadius); }, [nearMeRadius]);
+  const location = useHomeLocation(nearMe);
+  const userCoords = location.coords;
+  const userArea = location.area;
+  const userBbox = location.bbox;
   const [sort, setSort] = useState<EventSort>(() => readEventFilters().sort ?? "smart");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const sortMenuRef = useOutsideClick<HTMLDivElement>(() => setSortMenuOpen(false));
@@ -4516,8 +4945,9 @@ function EventsPageInner() {
   const [page, setPage] = useState(1);
   const selectedProgramKey = selectedProgramIds.join(",");
   const selectedSeasonKey = selectedSeasonIds.join(",");
-  const queryKey = `${eventWindow}:${selectedProgramKey}:${selectedSeasonKey}`;
-  const dateWindow = eventWindowDates(eventWindow);
+  const fetchWindow = eventWindowFetchKey(eventWindow);
+  const queryKey = `${fetchWindow}:${selectedProgramKey}:${selectedSeasonKey}`;
+  const dateWindow = eventWindowDates(fetchWindow);
   const seasons = useAsync(() => collectAllPages<Season>((page) => api.robotEventsSeasons({ page, per_page: 250 })), []);
   const countries = useAsync(() => api.robotEventsCountries(), []);
   const countryRegions = useAsync(() => api.robotEventsRegions(), []);
@@ -4550,6 +4980,8 @@ function EventsPageInner() {
   const isPastSeasonView = !!currentSeasonId && selectedSeasonIds.length > 0 && !selectedSeasonIds.includes(currentSeasonId);
   const countryOptions = useMemo(() => dedupeCountryGroups(countries.data ?? []), [countries.data]);
   const sortOptions: Array<{ label: string; value: EventSort }> = [
+    // Distance is only meaningful while Near me is on, so it's offered there only.
+    ...(nearMe ? [{ label: "Distance", value: "distance" as const }] : []),
     { label: "Smart Sort", value: "smart" },
     { label: "Start Date", value: "date" },
     { label: "Event Type", value: "type" },
@@ -4611,7 +5043,15 @@ function EventsPageInner() {
     if (!needle) return true;
     return [option.label, option.badge, option.countryName, option.regionName, option.vexLabel].filter(Boolean).join(" ").toLowerCase().includes(needle);
   });
-  const visibleEvents = useMemo(
+  const distanceFor = useCallback(
+    (event: Event) => {
+      if (!userCoords) return null;
+      const coords = eventCoords(event);
+      return coords ? haversineMiles(userCoords, coords) : null;
+    },
+    [userCoords],
+  );
+  const filteredEvents = useMemo(
     () =>
       filterAndSortEvents(data?.data ?? [], {
         programIds: selectedProgramIds,
@@ -4620,10 +5060,27 @@ function EventsPageInner() {
         seasonIds: selectedSeasonIds,
         hideCanceled,
         grades: selectedGrades,
-        sort: isPastSeasonView ? "past-season" : sort,
+        // "distance" is applied below (it needs the resolved location); until
+        // then fall back to the default ordering.
+        sort: isPastSeasonView ? "past-season" : sort === "distance" ? "smart" : sort,
       }),
     [data, selectedProgramIds, level, selectedRegionOptions, selectedSeasonIds, hideCanceled, selectedGrades, sort, isPastSeasonView],
   );
+  const visibleEvents = useMemo(() => {
+    let events = filteredEvents;
+    if (eventWindow === "today") events = events.filter(eventIsToday);
+    // Near me. Until a location resolves, the list is left untouched rather
+    // than emptied.
+    if (nearMe && userCoords) {
+      events = filterEventsNearLocation(
+        events,
+        { coords: userCoords, area: userArea, bbox: userBbox },
+        nearMeRadius,
+        sort === "distance",
+      );
+    }
+    return events;
+  }, [filteredEvents, eventWindow, nearMe, userCoords, userArea, userBbox, nearMeRadius, sort]);
   // Quick search live-filters the visible events directly (no results dropdown).
   const searchedEvents = useMemo(() => {
     const needle = quickSearch.trim().toLowerCase();
@@ -4633,9 +5090,29 @@ function EventsPageInner() {
   const pageSize = 40;
   const totalPages = Math.max(1, Math.ceil(searchedEvents.length / pageSize));
   const pageEvents = searchedEvents.slice((page - 1) * pageSize, page * pageSize);
+  // Distance ordering only means something for a point search — ranking a whole
+  // state or country by how far each event is from its centroid is noise. So it
+  // is applied automatically for a city/GPS/IP fix and rolled back to whatever
+  // the user was sorting by otherwise. It stays selectable by hand either way,
+  // and a sort the user picks themselves is never overwritten.
+  const autoDistanceSort = useRef(false);
+  const sortBeforeDistance = useRef<EventSort>("smart");
+  useEffect(() => {
+    if (nearMe && userCoords && !userArea) {
+      if (!autoDistanceSort.current && sort !== "distance") {
+        sortBeforeDistance.current = sort;
+        autoDistanceSort.current = true;
+        setSort("distance");
+      }
+    } else if (autoDistanceSort.current) {
+      autoDistanceSort.current = false;
+      if (sort === "distance") setSort(sortBeforeDistance.current);
+    }
+  }, [nearMe, userCoords, userArea, sort]);
+
   useEffect(() => {
     setPage(1);
-  }, [selectedProgramIds, level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds, hideCanceled, selectedGrades]);
+  }, [selectedProgramIds, level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds, hideCanceled, selectedGrades, nearMe, nearMeRadius, userCoords]);
 
   useEffect(() => {
     setPage(1);
@@ -4646,10 +5123,10 @@ function EventsPageInner() {
       "vex-events-programs": selectedProgramIds,
       "vex-events-filters": {
         level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds,
-        seasonSelectionTouched, hideCanceled, filterLayout, seasonMultiSelect, programMultiSelect, pastSeasonDateDir, selectedGrades,
+        seasonSelectionTouched, hideCanceled, filterLayout, seasonMultiSelect, programMultiSelect, pastSeasonDateDir, selectedGrades, nearMe,
       } satisfies SavedEventFilters,
     });
-  }, [level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds, seasonSelectionTouched, hideCanceled, filterLayout, seasonMultiSelect, programMultiSelect, pastSeasonDateDir, selectedGrades, selectedProgramIds]);
+  }, [level, selectedRegionKeys, eventWindow, sort, selectedSeasonIds, seasonSelectionTouched, hideCanceled, filterLayout, seasonMultiSelect, programMultiSelect, pastSeasonDateDir, selectedGrades, selectedProgramIds, nearMe]);
 
   useEffect(() => {
     if (!seasonOptions.length) return;
@@ -4686,6 +5163,7 @@ function EventsPageInner() {
     setSelectedProgramIds(["1"]);
     setLevel("");
     setSelectedRegionKeys([]);
+    setNearMe(false);
     setEventWindow("near");
     setSort("smart");
     setSelectedSeasonIds([]);
@@ -4703,10 +5181,23 @@ function EventsPageInner() {
     setSort(nextSort);
   };
   const toggleRegion = (key: string) => {
+    // Picking an explicit region supersedes Near me — the two would otherwise
+    // intersect into a confusing (often empty) result.
+    setNearMe(false);
     setSelectedRegionKeys((keys) => (keys.includes(key) ? keys.filter((item) => item !== key) : [...keys, key]));
   };
   const clearRegions = () => {
     setSelectedRegionKeys([]);
+  };
+  const toggleNearMe = () => {
+    setNearMe((on) => {
+      const next = !on;
+      if (next) {
+        setSelectedRegionKeys([]);
+        setRegionMenuOpen(false);
+      }
+      return next;
+    });
   };
 
   // Program is single-select in the toggle UI; grade options depend on it.
@@ -4773,10 +5264,12 @@ function EventsPageInner() {
               <div className="seg-toggle">
                 <button type="button" className={!activeGrade ? "active" : ""} onClick={() => selectGrade(null)}>
                   All
+                  {!activeGrade && <SlideIndicator id="seg-grade" variant="pill" />}
                 </button>
                 {availableGrades.map((g) => (
                   <button key={g} type="button" className={activeGrade === g ? "active" : ""} onClick={() => selectGrade(g)}>
                     {gradeShortLabel(g)}
+                    {activeGrade === g && <SlideIndicator id="seg-grade" variant="pill" />}
                   </button>
                 ))}
               </div>
@@ -4788,7 +5281,19 @@ function EventsPageInner() {
           </div>
         </div>
         <div className="filter-field">
-          <span>Region</span>
+          <span className="filter-field-label-row">
+            Region
+            <button
+              type="button"
+              className={`near-me-chip${nearMe ? " active" : ""}`}
+              aria-pressed={nearMe}
+              onClick={toggleNearMe}
+              title="Show events within a radius of your location"
+            >
+              <MapPin size={12} />
+              Near me
+            </button>
+          </span>
           <div className="picker-menu" ref={regionMenuRef}>
             <button type="button" onClick={() => { setRegionMenuOpen((open) => !open); setLastOpenedMenu("region"); }} aria-expanded={regionMenuOpen}>
               {regionButtonLabel}
@@ -4831,35 +5336,42 @@ function EventsPageInner() {
         </div>
         <div className="filter-section">
           <div className="filter-section-title">Time</div>
-          <div className="seg-toggle">
-            <button className={eventWindow === "near" ? "active" : ""} onClick={() => setEventWindow("near")}>
-              Near today
-            </button>
-            <button className={eventWindow === "upcoming" ? "active" : ""} onClick={() => setEventWindow("upcoming")}>
-              Upcoming
-            </button>
-            <button className={eventWindow === "allSeason" ? "active" : ""} onClick={() => setEventWindow("allSeason")}>
-              All
-            </button>
+          {/* Four options, so a fixed 2×2 rather than flex-wrap's lopsided 3+1. */}
+          <div className="seg-toggle seg-toggle-quiet seg-toggle-grid">
+            {EVENT_WINDOW_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                className={eventWindow === option.value ? "active" : ""}
+                onClick={() => setEventWindow(option.value)}
+              >
+                {option.label}
+                {eventWindow === option.value && <SlideIndicator id="seg-time" variant="pill" />}
+              </button>
+            ))}
           </div>
         </div>
         <div className="filter-section">
           <div className="filter-section-title">Type</div>
-          <div className="seg-toggle">
+          <div className="seg-toggle seg-toggle-quiet">
             <button className={!level ? "active" : ""} onClick={() => setLevel("")}>
               All
+              {!level && <SlideIndicator id="seg-type" variant="pill" />}
             </button>
             <button className={level === "World" ? "active" : ""} onClick={() => setQuickFilter("World", eventWindow)}>
               Worlds
+              {level === "World" && <SlideIndicator id="seg-type" variant="pill" />}
             </button>
             <button className={level === "Signature" ? "active" : ""} onClick={() => setQuickFilter("Signature", eventWindow)}>
               Signature
+              {level === "Signature" && <SlideIndicator id="seg-type" variant="pill" />}
             </button>
             <button className={level === "Championship" ? "active" : ""} onClick={() => setQuickFilter("Championship", eventWindow)}>
               Championships
+              {level === "Championship" && <SlideIndicator id="seg-type" variant="pill" />}
             </button>
             <button className={level === "Other" ? "active" : ""} onClick={() => setLevel("Other")}>
               Other
+              {level === "Other" && <SlideIndicator id="seg-type" variant="pill" />}
             </button>
           </div>
         </div>
@@ -4933,8 +5445,9 @@ function EventsPageInner() {
               </span>
             )}
           </div>
+          {nearMe && <NearMeLocationBar location={location} radius={nearMeRadius} onRadiusChange={setNearMeRadius} />}
           <CrossFade
-            trigger={`${selectedSeasonIds.join(",")}|${selectedProgramIds.join(",")}|${selectedGrades.join(",")}|${selectedRegionKeys.join(",")}|${level}|${eventWindow}|${sort}|${pastSeasonDateDir}|${page}`}
+            trigger={`${selectedSeasonIds.join(",")}|${selectedProgramIds.join(",")}|${selectedGrades.join(",")}|${selectedRegionKeys.join(",")}|${level}|${eventWindow}|${sort}|${pastSeasonDateDir}|${page}|${nearMe ? `${nearMeRadius}:${location.label ?? ""}` : ""}`}
           >
             {isPastSeasonView ? (
               <PastSeasonEventView
@@ -4953,6 +5466,8 @@ function EventsPageInner() {
                   showPriority
                   showGrade
                   showSeason={!selectedSeasonIds.length || allSeasonsSelected}
+                  showDistance={nearMe && !!userCoords}
+                  distanceFor={distanceFor}
                   emptyMessage={(() => {
                     const q = quickSearch.trim();
                     const looksLikeTeam = /^\d{1,5}[a-z]?$/i.test(q);
@@ -4966,6 +5481,20 @@ function EventsPageInner() {
                     }
                     if (q) {
                       return <>No events match “{q}”. Try a different name or clear the search.</>;
+                    }
+                    if (nearMe && userCoords) {
+                      return (
+                        <>
+                          {userArea ? (
+                            <>No events in {location.label ?? "that area"}. Pick another location above, or </>
+                          ) : (
+                            <>
+                              No events within {nearMeRadius} mi of {location.label ?? "your location"}. Widen the radius above, or{" "}
+                            </>
+                          )}
+                          <button type="button" className="empty-link" onClick={toggleNearMe}>turn off Near me</button>.
+                        </>
+                      );
                     }
                     return (
                       <>
@@ -5174,6 +5703,7 @@ function EventTable({
   emptyMessage?: ReactNode;
 }) {
   const showProgram = showProgramProp ?? !compact;
+  const gradesFor = useExactEventGrades(events, showGrade);
   const showLevel = !compact && !showPriority;
   const columnCount =
     3 +
@@ -5232,7 +5762,22 @@ function EventTable({
               )}
               {showGrade && (
                 <td className="grade-col">
-                  <span className={`event-grade-badge grade-${eventGradeCode(event)}`}>{eventGradeCode(event)}</span>
+                  {(() => {
+                    const codes = gradesFor(event);
+                    if (!codes.length) return <span className="muted">—</span>;
+                    const exact = hasExactEventGrade(event);
+                    const label = codes.map((code) => GRADE_CODE_TO_FULL[code] ?? code).join(" + ");
+                    return (
+                      <span
+                        className={`event-grade-badges${exact ? "" : " is-program-span"}`}
+                        title={exact ? label : `${label} (this program's grade levels — exact level for this event not loaded)`}
+                      >
+                        {codes.map((code) => (
+                          <span key={code} className={`event-grade-badge grade-${code}`}>{code}</span>
+                        ))}
+                      </span>
+                    );
+                  })()}
                 </td>
               )}
               {showSeason && <td>{shortSeasonName(event.season.name)}</td>}
@@ -7007,11 +7552,10 @@ function EventInfoTab({
   const statsWorldSkills = useAsync(async () => {
     const seasonId = event.season?.id;
     if (!seasonId) return null;
-    const gc = eventGradeCode(event);
-    const grade = gc === "HS" ? "High School"
-      : gc === "MS" ? "Middle School"
-      : gc === "ES" ? "Elementary"
-      : event.grade ?? "High School"; // fallback for mixed/all-grade events
+    // One ladder has to be picked, so use the top grade the program reaches
+    // (V5RC → High School, VIQRC → Middle School, VURC/VAIRC → College).
+    const gc = eventTopGradeCode(event);
+    const grade = (gc ? GRADE_CODE_TO_FULL[gc] : null) ?? event.grade ?? "High School";
     return loadWorldSkills(seasonId, grade).catch(() => null);
   }, [event.id, event.season?.id]);
 
@@ -7079,7 +7623,11 @@ function EventInfoTab({
             {event.level && (
               <AboutProfileRow label="Level">{event.level}</AboutProfileRow>
             )}
-            {(() => { const g = event.grade || (eventGradeCode(event) !== "All" ? eventGradeCode(event) : null); return g ? <AboutProfileRow label="Grade">{g}</AboutProfileRow> : null; })()}
+            {(() => {
+              const codes = eventGradeCodesBest(event);
+              const g = event.grade || (codes.length ? codes.map((code) => GRADE_CODE_TO_FULL[code] ?? code).join(" / ") : null);
+              return g ? <AboutProfileRow label="Grade">{g}</AboutProfileRow> : null;
+            })()}
             <AboutProfileRow label="Region">{event.location?.region ?? event.location?.city ?? "—"}</AboutProfileRow>
             {event.location?.venue && (
               <AboutProfileRow label="Venue">{event.location.venue}</AboutProfileRow>
