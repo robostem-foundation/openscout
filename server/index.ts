@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { clientIpFromForwardedFor, guardProxyRequest, proxyRequest, type ProxySource } from "./proxy.js";
 import { scrapeEventInfo } from "./eventInfoScraper.js";
+import { resolveEventGrades } from "./eventGrades.js";
+import { parseSkuParam } from "../api/event-grades.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -65,6 +67,23 @@ app.get("/api/event-info", async (req: express.Request, res: express.Response) =
   } catch (err) {
     console.error("[event-info] handler error:", err);
     res.status(500).json({ error: "Failed to fetch event info" });
+  }
+});
+
+// Event grade-level lookup (cache-first scrape) — also before the catch-alls.
+app.get("/api/event-grades", async (req: express.Request, res: express.Response) => {
+  const requests = parseSkuParam(typeof req.query.sku === "string" ? req.query.sku : "");
+  if (!requests.length) {
+    res.status(400).json({ error: "sku query param is required (comma-separated SKU:programId)" });
+    return;
+  }
+  try {
+    const grades = await resolveEventGrades(requests);
+    res.setHeader("cache-control", "public, s-maxage=86400, stale-while-revalidate=604800");
+    res.json({ grades });
+  } catch (err) {
+    console.error("[event-grades] handler error:", err);
+    res.status(500).json({ error: "Failed to resolve event grades" });
   }
 });
 
