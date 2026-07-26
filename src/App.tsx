@@ -109,8 +109,9 @@ import {
 } from "./shared-teams";
 import type { SharedTeamInvite, SharedTeamMember, SharedTeamMembership, SharedTeamRole } from "./shared-teams";
 import { supabase } from "./supabase";
-import { setEventsSettings, setQuickViewFirst, setQuickViewMode, setQuickViewSide, useQuickViewFirst, useQuickViewMode, useQuickViewSide, useSettingsEpoch } from "./settings";
-import type { QuickViewMode, QuickViewSide } from "./settings";
+import { TranslatedText } from "./components/TranslatedText";
+import { setEventsSettings, setQuickViewFirst, setQuickViewMode, setQuickViewSide, setTranslateMode, useQuickViewFirst, useQuickViewMode, useQuickViewSide, useSettingsEpoch, useTranslateMode } from "./settings";
+import type { QuickViewMode, QuickViewSide, TranslateMode } from "./settings";
 import type { TabLayout } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
@@ -960,7 +961,9 @@ function GlobalSearch({ className = "" }: { className?: string }) {
           className="gs-result"
           onMouseDown={() => handleSelect(teamPath(team))}
         >
-          <span className="gs-result-main">{team.number} - {team.team_name ?? "Unnamed Team"}</span>
+          <span className="gs-result-main">
+            {team.number} - <TranslatedText text={team.team_name ?? "Unnamed Team"} country={team.location?.country} />
+          </span>
           <span className="gs-result-sub">{locationLine(team)}</span>
         </button>
       ))}
@@ -989,7 +992,7 @@ function GlobalSearch({ className = "" }: { className?: string }) {
           className="gs-result"
           onMouseDown={() => handleSelect(eventPath(event))}
         >
-          <span className="gs-result-main">{event.name}</span>
+          <TranslatedText className="gs-result-main" text={event.name} country={event.location?.country} />
           <span className="gs-result-sub">{event.sku} · {locationLine(event)}</span>
         </button>
       ))}
@@ -3910,7 +3913,9 @@ function FavoritesPanel() {
           <Link key={`t-${team.id}`} href={teamPath(team)} className="home-fav-item">
             <span className="home-fav-badge team">{team.program?.code ?? "VEX"}</span>
             <span className="home-fav-text">
-              <span className="home-fav-title">{team.number} · {team.team_name ?? "Unnamed Team"}</span>
+              <span className="home-fav-title">
+                {team.number} · <TranslatedText text={team.team_name ?? "Unnamed Team"} country={team.location?.country} />
+              </span>
               <span className="home-fav-sub">{locationLine(team)}</span>
             </span>
           </Link>
@@ -3919,7 +3924,7 @@ function FavoritesPanel() {
           <Link key={`e-${event.id}`} href={eventPath(event)} className="home-fav-item">
             <span className="home-fav-badge event">{seasonYearLabel(event.season?.name) || <CalendarDays size={13} />}</span>
             <span className="home-fav-text">
-              <span className="home-fav-title">{event.name}</span>
+              <TranslatedText className="home-fav-title" text={event.name} country={event.location?.country} />
               <span className="home-fav-sub">{locationLine(event)}</span>
             </span>
           </Link>
@@ -5741,7 +5746,9 @@ function EventTable({
           {events.map((event) => (
             <tr key={event.id}>
               <td className="event-name-cell">
-                <Link href={eventPath(event)} className="event-name-link">{event.name}</Link>
+                <Link href={eventPath(event)} className="event-name-link">
+                  <TranslatedText text={event.name} country={event.location?.country} />
+                </Link>
                 <div className="muted event-sku-line">{event.sku}</div>
               </td>
               <td className="event-location-cell">
@@ -6445,16 +6452,24 @@ function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divis
                         teamName={team.team_name}
                         className="team-number"
                       />
-                      {!splitName && team.team_name && <span>{team.team_name}</span>}
+                      {!splitName && team.team_name && (
+                        <TranslatedText text={team.team_name} country={team.location?.country} />
+                      )}
                     </td>
-                    {splitName && <td className="truncate-cell team-name-cell">{team.team_name || "—"}</td>}
+                    {splitName && (
+                      <td className="truncate-cell team-name-cell">
+                        {team.team_name ? <TranslatedText text={team.team_name} country={team.location?.country} /> : "—"}
+                      </td>
+                    )}
                     <td>
                       <ProgramBadge program={team.program} />
                     </td>
                     <td>
                       <GradeBadge grade={team.grade} />
                     </td>
-                    <td className="truncate-cell">{team.organization || "-"}</td>
+                    <td className="truncate-cell">
+                      {team.organization ? <TranslatedText text={team.organization} country={team.location?.country} /> : "-"}
+                    </td>
                     <td className="truncate-cell">{locationLine(team)}</td>
                     {skills && (
                       <td className="team-skills-col">
@@ -6507,9 +6522,15 @@ function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divis
                             <div>
                               <div>
                                 <strong>{team.number}</strong>
-                                {team.team_name && <span> - {team.team_name}</span>}
+                                {team.team_name && (
+                                  <span> - <TranslatedText text={team.team_name} country={team.location?.country} /></span>
+                                )}
                               </div>
-                              <div>{team.organization || "No organization listed"}</div>
+                              <div>
+                                {team.organization
+                                  ? <TranslatedText text={team.organization} country={team.location?.country} />
+                                  : "No organization listed"}
+                              </div>
                               <div>
                                 {locationLine(team)} · {team.grade ?? "Grade unknown"} · {team.registered ? "Registered" : "Inactive"}
                               </div>
@@ -6616,8 +6637,14 @@ function TeamCard({ team, compareMode }: { team: Team; compareMode: boolean }) {
           className="team-card-num"
         />
         <div className="team-card-id">
-          {team.team_name && <span className="team-card-name">{team.team_name}</span>}
-          <span className="team-card-org">{team.organization || "No organization listed"}</span>
+          {team.team_name && (
+            <TranslatedText className="team-card-name" text={team.team_name} country={team.location?.country} />
+          )}
+          <span className="team-card-org">
+            {team.organization
+              ? <TranslatedText text={team.organization} country={team.location?.country} />
+              : "No organization listed"}
+          </span>
         </div>
         <span className="team-card-compare" onClick={(e) => e.stopPropagation()}>
           <CompareRowBtn
@@ -6688,7 +6715,12 @@ function TeamRowMatchesPreview({ teamId, eventId }: { teamId: number; eventId?: 
             return (
               <tr key={match.id}>
                 <td>
-                  <Link href={`/event/${match.event.code ?? match.event.id}`}>{match.event.name}</Link>
+                  <Link href={`/event/${match.event.code ?? match.event.id}`}>
+                    {/* `match.event` is an IdInfo (id/name/code) with no location, so
+                        there is no country to pass. Script detection still catches CJK
+                        and Cyrillic here; only Latin-script names go untranslated. */}
+                    <TranslatedText text={match.event.name} />
+                  </Link>
                   <span className="muted inline-muted">{match.name}</span>
                   <DivisionTag match={match} multiDivision={multiDivisionEventIds.has(match.event.id)} />
                 </td>
@@ -6816,7 +6848,9 @@ function SearchFilters({
                 <button type="button" key={team.id} onMouseDown={(event) => event.preventDefault()} onClick={() => onPickTeam(team)}>
                   <span>
                     <strong>{team.number}</strong>
-                    {team.team_name && <span> - {team.team_name}</span>}
+                    {team.team_name && (
+                      <span> - <TranslatedText text={team.team_name} country={team.location?.country} /></span>
+                    )}
                   </span>
                   <small>{[team.program?.name, team.grade, locationLine(team)].filter(Boolean).join(" · ")}</small>
                 </button>
@@ -7241,9 +7275,11 @@ function EventDetail({ param }: { param: string }) {
           <div className="eyebrow">
             <CalendarDays size={16} /> {event.sku}
           </div>
-          <h1>{event.name}</h1>
+          <h1><TranslatedText text={event.name} country={event.location?.country} /></h1>
           <p>
-            {event.location.venue ? `${event.location.venue} · ` : ""}
+            {event.location.venue ? (
+              <><TranslatedText text={event.location.venue} country={event.location?.country} /> · </>
+            ) : ""}
             {locationLine(event)}
           </p>
           <div className="meta-line">
@@ -7630,7 +7666,9 @@ function EventInfoTab({
             })()}
             <AboutProfileRow label="Region">{event.location?.region ?? event.location?.city ?? "—"}</AboutProfileRow>
             {event.location?.venue && (
-              <AboutProfileRow label="Venue">{event.location.venue}</AboutProfileRow>
+              <AboutProfileRow label="Venue">
+                <TranslatedText text={event.location.venue} country={event.location?.country} />
+              </AboutProfileRow>
             )}
             <AboutProfileRow label="Season">{event.season?.name ?? "—"}</AboutProfileRow>
             <AboutProfileRow label="SKU">{event.sku ?? String(event.id)}</AboutProfileRow>
@@ -9211,7 +9249,11 @@ function TeamDetail({ param }: { param: string }) {
             {team.number}
             {team.team_name ? ` - ${team.team_name}` : ""}
           </h1>
-          <p>{team.organization || team.robot_name || "VEX Robotics team"}</p>
+          <p>
+            {team.organization
+              ? <TranslatedText text={team.organization} country={team.location?.country} />
+              : (team.robot_name || "VEX Robotics team")}
+          </p>
           <div className="meta-line">
             <ProgramBadge program={team.program} />
             <span>{locationLine(team)}</span>
@@ -10182,7 +10224,7 @@ function TeamEventCards({
                   className="event-group-name-btn"
                   onClick={(e) => { e.preventDefault(); onViewMatches(event.id); }}
                 >
-                  {event.name}
+                  <TranslatedText text={event.name} country={event.location?.country} />
                 </button>
                 <small>{event.sku}</small>
               </span>
@@ -10429,7 +10471,9 @@ function TeamEventMatchPreview({ matches, focusTeamId, onViewMatches, isIq = fal
 // division events stay uncluttered.
 function DivisionTag({ match, multiDivision }: { match: Match; multiDivision: boolean }) {
   if (!multiDivision || !match.division?.name) return null;
-  return <span className="division-tag">{match.division.name}</span>;
+  // No country in scope here (a Match carries an IdInfo event, and a Division has
+  // no location of its own), so this relies on script detection alone.
+  return <TranslatedText className="division-tag" text={match.division.name} />;
 }
 
 function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDivision = false, multiDivision = true, showPlay = false, presetSupported = false, presetLoading = false, presetUrl, timestampMap, onOpenMatch }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; hideDivision?: boolean; multiDivision?: boolean; showPlay?: boolean; presetSupported?: boolean; presetLoading?: boolean; presetUrl?: string | null; timestampMap?: Map<number, MatchTimestamp>; onOpenMatch?: (match: Match, timestamp: MatchTimestamp) => void }) {
@@ -14110,8 +14154,10 @@ function WorldSkillsPageInner() {
                         teamName={r.team.teamName ?? undefined}
                       />
                     </td>
-                    <td className="ws-text-cell ws-tip-cell ws-m-name" data-tip={r.team.teamName ?? "—"}><span className="ws-cell-inner">{r.team.teamName ?? "—"}</span></td>
-                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.organization ?? "—"}><span className="ws-cell-inner">{r.team.organization ?? "—"}</span></td>
+                    {/* data-tip deliberately keeps the ORIGINAL text, so hovering a
+                        translated cell still shows the name as RobotEvents has it. */}
+                    <td className="ws-text-cell ws-tip-cell ws-m-name" data-tip={r.team.teamName ?? "—"}><span className="ws-cell-inner">{r.team.teamName ? <TranslatedText text={r.team.teamName} country={r.team.country} /> : "—"}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.organization ?? "—"}><span className="ws-cell-inner">{r.team.organization ? <TranslatedText text={r.team.organization} country={r.team.country} /> : "—"}</span></td>
                     <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.eventRegion ?? "—"}><span className="ws-cell-inner">{r.team.eventRegion ?? "—"}</span></td>
                     <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.country ?? "—"}><span className="ws-cell-inner">{r.team.country ?? "—"}</span></td>
                   </tr>
@@ -14597,6 +14643,11 @@ const QUICK_VIEW_OPTIONS: Array<{ value: boolean; label: string }> = [
   { value: false, label: "Open full team view" },
 ];
 
+const TRANSLATE_MODE_OPTIONS: Array<{ value: TranslateMode; label: string }> = [
+  { value: "auto", label: "Auto-translate" },
+  { value: "manual", label: "Manual" },
+];
+
 // Mini wireframe preview: "quick view first" shows a content area with a side
 // drawer; "full" shows a plain full-page content area.
 function QuickViewWire({ value }: { value: boolean }) {
@@ -14643,6 +14694,7 @@ function AppearanceSettings() {
   const quickViewFirst = useQuickViewFirst(); // team-click behavior, synced
   const quickViewMode = useQuickViewMode(); // sidebar vs bottom sheet, synced
   const quickViewSide = useQuickViewSide(); // sidebar dock side, synced
+  const translateMode = useTranslateMode(); // auto vs manual translation, synced
 
   const choose = (value: NonNullable<Profile["theme"]>) => {
     applyTheme(value); // instant local apply + localStorage
@@ -14695,6 +14747,31 @@ function AppearanceSettings() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="settings-field">
+          <h3 className="settings-field-title">Translate mode</h3>
+          <p className="settings-section-copy">
+            Non-English event, team, and organization names can be shown in English. Either way, the translate icon
+            beside a name switches it back to the original.
+          </p>
+          <div className="seg-toggle seg-toggle-quiet" role="group" aria-label="Translate mode">
+            {TRANSLATE_MODE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={translateMode === option.value ? "active" : ""}
+                onClick={() => setTranslateMode(option.value)}
+                aria-pressed={translateMode === option.value}
+              >
+                {option.label}
+                {translateMode === option.value && <SlideIndicator id="translate-mode" variant="pill" />}
+              </button>
+            ))}
+          </div>
+          <p className="onboard-hint">
+            Manual makes no translation requests until you ask for one. Syncs across your devices.
+          </p>
         </div>
 
         {quickViewFirst && (
@@ -14839,7 +14916,9 @@ function SharedTeamFavoritesList({ sharedTeamId }: { sharedTeamId: string }) {
           <Link href={teamPath(team)} className="home-fav-item">
             <span className="home-fav-badge team">{team.program?.code ?? "VEX"}</span>
             <span className="home-fav-text">
-              <span className="home-fav-title">{team.number} · {team.team_name ?? "Unnamed Team"}</span>
+              <span className="home-fav-title">
+                {team.number} · <TranslatedText text={team.team_name ?? "Unnamed Team"} country={team.location?.country} />
+              </span>
               <span className="home-fav-sub">{locationLine(team)}</span>
             </span>
           </Link>
@@ -14858,7 +14937,7 @@ function SharedTeamFavoritesList({ sharedTeamId }: { sharedTeamId: string }) {
           <Link href={eventPath(event)} className="home-fav-item">
             <span className="home-fav-badge event">{seasonYearLabel(event.season?.name) || <CalendarDays size={13} />}</span>
             <span className="home-fav-text">
-              <span className="home-fav-title">{event.name}</span>
+              <TranslatedText className="home-fav-title" text={event.name} country={event.location?.country} />
               <span className="home-fav-sub">{locationLine(event)}</span>
             </span>
           </Link>
@@ -15953,7 +16032,10 @@ function SpotlightRow({
       <button type="button" className={cls} onMouseEnter={onMouseEnter} onClick={onClick}>
         <span className="spotlight-badge">{programSlug(t.program) || t.program?.code || "VEX"}</span>
         <span className="spotlight-item-text">
-          <span className="spotlight-item-main">{t.number}{t.team_name ? ` · ${t.team_name}` : ""}</span>
+          <span className="spotlight-item-main">
+            {t.number}
+            {t.team_name ? <> · <TranslatedText text={t.team_name} country={t.location?.country} /></> : ""}
+          </span>
           <span className="spotlight-item-sub">{locationLine(t)}</span>
         </span>
         <span className="spotlight-item-enter">↵</span>
@@ -15981,7 +16063,7 @@ function SpotlightRow({
       <button type="button" className={cls} onMouseEnter={onMouseEnter} onClick={onClick}>
         <span className="spotlight-badge">{seasonYearLabel(ev.season?.name) ?? <CalendarDays size={11} />}</span>
         <span className="spotlight-item-text">
-          <span className="spotlight-item-main">{ev.name}</span>
+          <TranslatedText className="spotlight-item-main" text={ev.name} country={ev.location?.country} />
           <span className="spotlight-item-sub">{ev.sku} · {locationLine(ev)}</span>
         </span>
         <span className="spotlight-item-enter">↵</span>
@@ -16854,7 +16936,11 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
                   <div className="compare-team-number">
                     <Link href={teamPath(slot.profile)}>{slot.profile.number}</Link>
                   </div>
-                  {slot.profile.team_name && <div className="compare-team-name">{slot.profile.team_name}</div>}
+                  {slot.profile.team_name && (
+                    <div className="compare-team-name">
+                      <TranslatedText text={slot.profile.team_name} country={slot.profile.location?.country} />
+                    </div>
+                  )}
                   <div className="compare-team-meta">
                     <ProgramBadge program={slot.profile.program} />
                     <span>{locationLine(slot.profile)}</span>
@@ -17417,9 +17503,15 @@ function MyTeamDashboard() {
     <div className="myteam-head">
       <span className="myteam-num">{team.number}</span>
       <div>
-        <h1>{team.team_name || team.number}</h1>
+        <h1>
+          {team.team_name
+            ? <TranslatedText text={team.team_name} country={team.location?.country} />
+            : team.number}
+        </h1>
         <div className="myteam-meta">
-          {team.organization && <span>{team.organization}</span>}
+          {team.organization && (
+            <TranslatedText text={team.organization} country={team.location?.country} />
+          )}
           <span>{locationLine(team)}</span>
           <span className="badge">{programSlug(team.program)}</span>
           {team.grade && <span className="badge">{team.grade}</span>}
@@ -17493,7 +17585,7 @@ function MyTeamDashboard() {
           <div className="myteam-seg-lab">Qualification</div>
           {liveRanking ? (
             <>
-              <div className="myteam-seg-rank"><span className="n">#{liveRanking.rank}</span>{liveRanking.division?.name && <span className="of">{liveRanking.division.name}</span>}</div>
+              <div className="myteam-seg-rank"><span className="n">#{liveRanking.rank}</span>{liveRanking.division?.name && <TranslatedText className="of" text={liveRanking.division.name} />}</div>
               <div className="myteam-kvrow">
                 <div className="myteam-kv"><span className="kl">Record</span><span className="kv-v">{liveRanking.wins ?? 0}–{liveRanking.losses ?? 0}{liveRanking.ties ? `–${liveRanking.ties}` : ""}</span></div>
                 <div className="myteam-kv"><span className="kl">WP</span><span className="kv-v">{liveRanking.wp ?? 0}</span></div>
@@ -17654,7 +17746,7 @@ function MyTeamDashboard() {
 
   const timelineNode = (row: MyTeamTimelineRow, showHint?: boolean) => (
     <>
-      <div className="row"><span className="nm">{row.event.name}</span><span className="dt">{myTeamDateLabel(row.event.start)}</span></div>
+      <div className="row"><TranslatedText className="nm" text={row.event.name} country={row.event.location?.country} /><span className="dt">{myTeamDateLabel(row.event.start)}</span></div>
       <div className="myteam-evmeta"><span className="loc">{locationLine(row.event)}</span></div>
       <div className="myteam-evtags"><span className={`event-priority priority-${eventCategory(row.event).rank}`}>{eventCategory(row.event).label}</span>{crownRow(row, showHint)}</div>
       <div className="myteam-resline">{renderPieces(row)}</div>
