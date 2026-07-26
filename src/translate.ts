@@ -107,6 +107,20 @@ function chromeTranslator(): ChromeTranslator | null {
 const instances = new Map<string, Promise<{ translate(input: string): Promise<string> }>>();
 const warmed = new Set<string>();
 
+// The on-device API can hang rather than reject — `availability()` in particular
+// never settles on some builds where the AI stack is present but not ready. Without
+// a ceiling the string would sit in "pending" forever and never reach the server
+// fallback, so every local call races this timeout and a timeout means "fall
+// through", not "failed".
+const ON_DEVICE_TIMEOUT_MS = 3000;
+
+function withTimeout<T>(promise: Promise<T>): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ON_DEVICE_TIMEOUT_MS)),
+  ]);
+}
+
 /**
  * On-device translation, or null to fall through to the server.
  *
@@ -122,12 +136,13 @@ async function translateOnDevice(text: string, sourceLang: string): Promise<stri
   const pair = `${sourceLang}|en`;
   const options = { sourceLanguage: sourceLang, targetLanguage: "en" };
 
-  let availability: string;
+  let availability: string | null;
   try {
-    availability = await api.availability(options);
+    availability = await withTimeout(api.availability(options));
   } catch {
     return null;
   }
+  if (availability === null) return null; // hung — let the server handle it
 
   if (availability !== "available") {
     if (availability === "downloadable" && !warmed.has(pair)) {
@@ -143,7 +158,11 @@ async function translateOnDevice(text: string, sourceLang: string): Promise<stri
       instance = api.create(options);
       instances.set(pair, instance);
     }
-    const translated = (await (await instance).translate(text)).trim();
+    const ready = await withTimeout(instance);
+    if (!ready) return null;
+    const output = await withTimeout(ready.translate(text));
+    if (output === null) return null;
+    const translated = output.trim();
     // An unchanged string means the model had nothing to offer — treat it as a
     // miss so the server still gets a shot at it.
     return translated && translated !== text ? translated : null;
