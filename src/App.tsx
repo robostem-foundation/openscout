@@ -961,7 +961,9 @@ function GlobalSearch({ className = "" }: { className?: string }) {
           className="gs-result"
           onMouseDown={() => handleSelect(teamPath(team))}
         >
-          <span className="gs-result-main">{team.number} - {team.team_name ?? "Unnamed Team"}</span>
+          <span className="gs-result-main">
+            {team.number} - <TranslatedText text={team.team_name ?? "Unnamed Team"} country={team.location?.country} />
+          </span>
           <span className="gs-result-sub">{locationLine(team)}</span>
         </button>
       ))}
@@ -3911,7 +3913,9 @@ function FavoritesPanel() {
           <Link key={`t-${team.id}`} href={teamPath(team)} className="home-fav-item">
             <span className="home-fav-badge team">{team.program?.code ?? "VEX"}</span>
             <span className="home-fav-text">
-              <span className="home-fav-title">{team.number} · {team.team_name ?? "Unnamed Team"}</span>
+              <span className="home-fav-title">
+                {team.number} · <TranslatedText text={team.team_name ?? "Unnamed Team"} country={team.location?.country} />
+              </span>
               <span className="home-fav-sub">{locationLine(team)}</span>
             </span>
           </Link>
@@ -6450,14 +6454,20 @@ function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divis
                       />
                       {!splitName && team.team_name && <span>{team.team_name}</span>}
                     </td>
-                    {splitName && <td className="truncate-cell team-name-cell">{team.team_name || "—"}</td>}
+                    {splitName && (
+                      <td className="truncate-cell team-name-cell">
+                        {team.team_name ? <TranslatedText text={team.team_name} country={team.location?.country} /> : "—"}
+                      </td>
+                    )}
                     <td>
                       <ProgramBadge program={team.program} />
                     </td>
                     <td>
                       <GradeBadge grade={team.grade} />
                     </td>
-                    <td className="truncate-cell">{team.organization || "-"}</td>
+                    <td className="truncate-cell">
+                      {team.organization ? <TranslatedText text={team.organization} country={team.location?.country} /> : "-"}
+                    </td>
                     <td className="truncate-cell">{locationLine(team)}</td>
                     {skills && (
                       <td className="team-skills-col">
@@ -6510,9 +6520,15 @@ function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divis
                             <div>
                               <div>
                                 <strong>{team.number}</strong>
-                                {team.team_name && <span> - {team.team_name}</span>}
+                                {team.team_name && (
+                                  <span> - <TranslatedText text={team.team_name} country={team.location?.country} /></span>
+                                )}
                               </div>
-                              <div>{team.organization || "No organization listed"}</div>
+                              <div>
+                                {team.organization
+                                  ? <TranslatedText text={team.organization} country={team.location?.country} />
+                                  : "No organization listed"}
+                              </div>
                               <div>
                                 {locationLine(team)} · {team.grade ?? "Grade unknown"} · {team.registered ? "Registered" : "Inactive"}
                               </div>
@@ -6619,8 +6635,14 @@ function TeamCard({ team, compareMode }: { team: Team; compareMode: boolean }) {
           className="team-card-num"
         />
         <div className="team-card-id">
-          {team.team_name && <span className="team-card-name">{team.team_name}</span>}
-          <span className="team-card-org">{team.organization || "No organization listed"}</span>
+          {team.team_name && (
+            <TranslatedText className="team-card-name" text={team.team_name} country={team.location?.country} />
+          )}
+          <span className="team-card-org">
+            {team.organization
+              ? <TranslatedText text={team.organization} country={team.location?.country} />
+              : "No organization listed"}
+          </span>
         </div>
         <span className="team-card-compare" onClick={(e) => e.stopPropagation()}>
           <CompareRowBtn
@@ -6824,7 +6846,9 @@ function SearchFilters({
                 <button type="button" key={team.id} onMouseDown={(event) => event.preventDefault()} onClick={() => onPickTeam(team)}>
                   <span>
                     <strong>{team.number}</strong>
-                    {team.team_name && <span> - {team.team_name}</span>}
+                    {team.team_name && (
+                      <span> - <TranslatedText text={team.team_name} country={team.location?.country} /></span>
+                    )}
                   </span>
                   <small>{[team.program?.name, team.grade, locationLine(team)].filter(Boolean).join(" · ")}</small>
                 </button>
@@ -9221,7 +9245,11 @@ function TeamDetail({ param }: { param: string }) {
             {team.number}
             {team.team_name ? ` - ${team.team_name}` : ""}
           </h1>
-          <p>{team.organization || team.robot_name || "VEX Robotics team"}</p>
+          <p>
+            {team.organization
+              ? <TranslatedText text={team.organization} country={team.location?.country} />
+              : (team.robot_name || "VEX Robotics team")}
+          </p>
           <div className="meta-line">
             <ProgramBadge program={team.program} />
             <span>{locationLine(team)}</span>
@@ -14120,8 +14148,10 @@ function WorldSkillsPageInner() {
                         teamName={r.team.teamName ?? undefined}
                       />
                     </td>
-                    <td className="ws-text-cell ws-tip-cell ws-m-name" data-tip={r.team.teamName ?? "—"}><span className="ws-cell-inner">{r.team.teamName ?? "—"}</span></td>
-                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.organization ?? "—"}><span className="ws-cell-inner">{r.team.organization ?? "—"}</span></td>
+                    {/* data-tip deliberately keeps the ORIGINAL text, so hovering a
+                        translated cell still shows the name as RobotEvents has it. */}
+                    <td className="ws-text-cell ws-tip-cell ws-m-name" data-tip={r.team.teamName ?? "—"}><span className="ws-cell-inner">{r.team.teamName ? <TranslatedText text={r.team.teamName} country={r.team.country} /> : "—"}</span></td>
+                    <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.organization ?? "—"}><span className="ws-cell-inner">{r.team.organization ? <TranslatedText text={r.team.organization} country={r.team.country} /> : "—"}</span></td>
                     <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.eventRegion ?? "—"}><span className="ws-cell-inner">{r.team.eventRegion ?? "—"}</span></td>
                     <td className="ws-muted-cell ws-tip-cell ws-hide-mobile" data-tip={r.team.country ?? "—"}><span className="ws-cell-inner">{r.team.country ?? "—"}</span></td>
                   </tr>
@@ -14880,7 +14910,9 @@ function SharedTeamFavoritesList({ sharedTeamId }: { sharedTeamId: string }) {
           <Link href={teamPath(team)} className="home-fav-item">
             <span className="home-fav-badge team">{team.program?.code ?? "VEX"}</span>
             <span className="home-fav-text">
-              <span className="home-fav-title">{team.number} · {team.team_name ?? "Unnamed Team"}</span>
+              <span className="home-fav-title">
+                {team.number} · <TranslatedText text={team.team_name ?? "Unnamed Team"} country={team.location?.country} />
+              </span>
               <span className="home-fav-sub">{locationLine(team)}</span>
             </span>
           </Link>
@@ -15994,7 +16026,10 @@ function SpotlightRow({
       <button type="button" className={cls} onMouseEnter={onMouseEnter} onClick={onClick}>
         <span className="spotlight-badge">{programSlug(t.program) || t.program?.code || "VEX"}</span>
         <span className="spotlight-item-text">
-          <span className="spotlight-item-main">{t.number}{t.team_name ? ` · ${t.team_name}` : ""}</span>
+          <span className="spotlight-item-main">
+            {t.number}
+            {t.team_name ? <> · <TranslatedText text={t.team_name} country={t.location?.country} /></> : ""}
+          </span>
           <span className="spotlight-item-sub">{locationLine(t)}</span>
         </span>
         <span className="spotlight-item-enter">↵</span>
@@ -16895,7 +16930,11 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
                   <div className="compare-team-number">
                     <Link href={teamPath(slot.profile)}>{slot.profile.number}</Link>
                   </div>
-                  {slot.profile.team_name && <div className="compare-team-name">{slot.profile.team_name}</div>}
+                  {slot.profile.team_name && (
+                    <div className="compare-team-name">
+                      <TranslatedText text={slot.profile.team_name} country={slot.profile.location?.country} />
+                    </div>
+                  )}
                   <div className="compare-team-meta">
                     <ProgramBadge program={slot.profile.program} />
                     <span>{locationLine(slot.profile)}</span>
@@ -17458,9 +17497,15 @@ function MyTeamDashboard() {
     <div className="myteam-head">
       <span className="myteam-num">{team.number}</span>
       <div>
-        <h1>{team.team_name || team.number}</h1>
+        <h1>
+          {team.team_name
+            ? <TranslatedText text={team.team_name} country={team.location?.country} />
+            : team.number}
+        </h1>
         <div className="myteam-meta">
-          {team.organization && <span>{team.organization}</span>}
+          {team.organization && (
+            <TranslatedText text={team.organization} country={team.location?.country} />
+          )}
           <span>{locationLine(team)}</span>
           <span className="badge">{programSlug(team.program)}</span>
           {team.grade && <span className="badge">{team.grade}</span>}
