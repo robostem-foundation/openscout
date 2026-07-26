@@ -145,6 +145,14 @@ export const api = {
     const params = new URLSearchParams({ sku });
     return dedupedJson<EventInfoData>(`/api/event-info?${params.toString()}`);
   },
+  // Grade levels for a batch of events, as `SKU:programId` pairs (the program is
+  // needed to expand a "Grade Level: All" page into that program's span). Resolved
+  // server-side, cache-first — see server/eventGrades.ts. SKUs the server couldn't
+  // resolve are simply absent from the map.
+  eventGrades: (items: string[]): Promise<{ grades: Record<string, string[]> }> => {
+    const params = new URLSearchParams({ sku: items.join(",") });
+    return dedupedJson<{ grades: Record<string, string[]> }>(`/api/event-grades?${params.toString()}`);
+  },
   jumperPresetEventExists: (sku: string) => jumperJson<JumperPresetExists>("preset-event-exists", { sku }),
   jumperMatchTimestamps: (sku: string, query: Query = {}) => jumperJson<MatchTimestamp[]>("match-timestamp", { sku, ...query }),
   superscore: (program: "v5rc" | "viqrc", query: Query = {}) =>
