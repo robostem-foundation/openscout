@@ -15,6 +15,8 @@
 // and never fetched twice. Only V5RC and VIQRC are scraped at all — VURC and
 // VAIRC events have an unambiguous span, so spending a request on them is waste.
 
+import { supabaseConfig, supabaseHeaders } from "./supabaseRest.js";
+
 const CORS_PROXY = "https://proxy.cors.sh/";
 const EVENTS_VEX_BASE = process.env.ROBOTEVENTS_ROOT_BASE ?? "https://events.vex.com";
 
@@ -102,36 +104,8 @@ async function fetchEventPage(sku: string): Promise<string> {
 
 // ── Supabase cache (service-role key: bypasses RLS, server-only) ──────────────
 
-// Reads only need SELECT and the `event_grades` policy is public, so the
-// publishable key is enough and the cache stays useful even before the secret key
-// is configured. Writes bypass RLS and need the secret key.
-let warnedNoWrites = false;
-function supabaseConfig(mode: "read" | "write") {
-  const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
-  const secretKey = process.env.SUPABASE_SECRET_KEY;
-  const key =
-    mode === "write" ? secretKey : (secretKey ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY);
-  if (!url || !key) {
-    if (mode === "write" && !warnedNoWrites) {
-      warnedNoWrites = true;
-      // Worth shouting about: with no write path every visitor re-scrapes the same
-      // events, and the proxy quota is monthly.
-      console.warn("[event-grades] no SUPABASE_SECRET_KEY — grades will be re-scraped, not persisted");
-    }
-    return null;
-  }
-  return { url: url.replace(/\/$/, ""), key };
-}
-
-// `sb_publishable_…`/`sb_secret_…` keys are not JWTs, and Supabase only accepts
-// them in the `apikey` header — so send Authorization only for a JWT key.
-function supabaseHeaders(key: string): Record<string, string> {
-  const isJwt = key.startsWith("ey");
-  return { apikey: key, ...(isJwt ? { Authorization: `Bearer ${key}` } : {}) };
-}
-
 async function readCache(skus: string[]): Promise<EventGradeRow[]> {
-  const config = supabaseConfig("read");
+  const config = supabaseConfig("read", "event-grades");
   if (!config || !skus.length) return [];
   const list = skus.map((sku) => `"${sku}"`).join(",");
   const query = `${config.url}/rest/v1/event_grades?select=sku,grades,grade_label&sku=in.(${encodeURIComponent(list)})`;
@@ -145,7 +119,7 @@ async function readCache(skus: string[]): Promise<EventGradeRow[]> {
 }
 
 async function writeCache(rows: Array<EventGradeRow & { programId: number | null }>): Promise<void> {
-  const config = supabaseConfig("write");
+  const config = supabaseConfig("write", "event-grades");
   if (!config || !rows.length) return;
   const res = await fetch(`${config.url}/rest/v1/event_grades?on_conflict=sku`, {
     method: "POST",
