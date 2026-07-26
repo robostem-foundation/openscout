@@ -115,10 +115,15 @@ const warmed = new Set<string>();
 const ON_DEVICE_TIMEOUT_MS = 3000;
 
 function withTimeout<T>(promise: Promise<T>): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout>;
   return Promise.race([
     promise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), ON_DEVICE_TIMEOUT_MS)),
-  ]);
+    new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), ON_DEVICE_TIMEOUT_MS);
+    }),
+    // Clear on settle so a fast on-device answer does not leave a timer pending
+    // for the rest of the window — three per string adds up across a table.
+  ]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -182,6 +187,17 @@ const MAX_BATCH = 60;
 let queued = new Map<string, { text: string; sourceLang: string }>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
+// The server translates at most MAX_TRANSLATIONS_PER_REQUEST (12) cache MISSES per
+// call, so a cold 50-row page gets 12 back and 38 absent. Absent must therefore
+// mean "not yet", not "failed" — otherwise most of the page loses its icon and
+// only recovers on a reload. Unresolved keys go back on the queue and drain over
+// the next few windows, which converges within one page view.
+//
+// The batch stays at 60 rather than dropping to 12 so that a page whose strings
+// are already in the shared cache still resolves in a single round trip.
+const attempts = new Map<string, number>();
+const MAX_ATTEMPTS = 6; // 6 × 12 comfortably covers a full page; then give up.
+
 function enqueue(key: string, text: string, sourceLang: string) {
   queued.set(key, { text, sourceLang });
   if (timer) return;
@@ -212,15 +228,32 @@ async function flush() {
     const payload = (await response.json()) as { translations?: Record<string, string> };
     const translations = payload.translations ?? {};
 
-    for (const [key] of sending) {
+    for (const [key, value] of sending) {
       const text = translations[key];
-      // Absent means the server could not resolve it. Do NOT negatively cache:
-      // today's quota exhaustion must not suppress this string permanently.
-      if (text) resolved(key, text);
-      else put(key, FAILED);
+      if (text) {
+        attempts.delete(key);
+        resolved(key, text);
+        continue;
+      }
+      // Absent: usually the server's per-request miss cap, occasionally a genuine
+      // upstream failure. Retry a bounded number of times, then show the original.
+      // Nothing is negatively cached either way, so a later visit tries again.
+      const tried = (attempts.get(key) ?? 0) + 1;
+      if (tried >= MAX_ATTEMPTS) {
+        attempts.delete(key);
+        put(key, FAILED);
+      } else {
+        attempts.set(key, tried);
+        enqueue(key, value.text, value.sourceLang);
+      }
     }
   } catch {
-    for (const [key] of sending) put(key, FAILED);
+    // A hard transport failure will not fix itself within a page view; retrying
+    // would just hammer a down endpoint. Show the originals.
+    for (const [key] of sending) {
+      attempts.delete(key);
+      put(key, FAILED);
+    }
   }
 }
 

@@ -36,7 +36,14 @@ export function TranslatedText({
 
   const label = showingEnglish ? "Show original" : "Show translation";
 
-  const onClick = () => {
+  // Most render sites sit inside something interactive — an <a> from <Link>, a
+  // result <button>, or a <tr onClick> row. Without both of these the click
+  // bubbles and the ancestor wins: the events table would navigate to the event
+  // instead of showing the original. preventDefault is what Link checks
+  // (`!event.defaultPrevented`), stopPropagation covers the plain onClick parents.
+  const onClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     // Manual mode: the first click is what fetches. `request()` is a no-op once
     // a translation exists, so the same handler covers both modes.
     if (!hasEnglish) {
@@ -47,6 +54,13 @@ export function TranslatedText({
     setShowOriginal((value) => !value);
   };
 
+  // The global search results commit on MOUSEDOWN, not click, so stopping the
+  // click alone would still navigate before the toggle ever ran.
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   return (
     <span className={className}>
       <Tooltip>
@@ -55,6 +69,7 @@ export function TranslatedText({
             type="button"
             className={`translate-toggle ${showingEnglish ? "is-english" : ""} ${pending ? "is-pending" : ""}`}
             onClick={onClick}
+            onMouseDown={onMouseDown}
             aria-label={pending ? "Translating…" : label}
             aria-pressed={showingEnglish}
           >

@@ -2,6 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/translate.ts": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     { "source": "/api/event-info", "destination": "/api/event-info" },
     { "source": "/api/event-grades", "destination": "/api/event-grades" },
