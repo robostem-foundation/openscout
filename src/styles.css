@@ -651,8 +651,13 @@ main {
   color: var(--text-muted);
 }
 
-.events-pager-top {
-  border-bottom: 1px solid var(--border);
+.events-pager-center {
+  display: flex;
+  justify-content: center;
+}
+
+.events-pager-btns {
+  justify-self: end;
 }
 
 .events-pager-bottom {
@@ -691,6 +696,54 @@ main {
 .events-pager-btns button:disabled {
   cursor: not-allowed;
   opacity: 0.4;
+}
+
+/* Smart Sort / Start Date segmented control in the Upcoming pager row. */
+.upcoming-sort-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.upcoming-sort-toggle button {
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.upcoming-sort-toggle button:hover {
+  color: var(--text);
+}
+
+.upcoming-sort-toggle button.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+@media (max-width: 560px) {
+  .events-pager {
+    grid-template-columns: auto 1fr;
+    row-gap: 8px;
+  }
+
+  .events-pager-center {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }
 
 /* Upcoming tab: stacked level sections. The level name lives in the table's

@@ -4431,25 +4431,33 @@ function EventsPager({
   totalPages,
   onPage,
   placement,
+  center,
 }: {
   page: number;
   totalPages: number;
   onPage: (page: number) => void;
   placement: "top" | "bottom";
+  // Optional middle slot (e.g. the Upcoming sort toggle). When present the row
+  // renders even for a single page, so the control never disappears.
+  center?: ReactNode;
 }) {
-  if (!Number.isFinite(totalPages) || totalPages <= 1) return null;
+  const paged = Number.isFinite(totalPages) && totalPages > 1;
+  if (!paged && !center) return null;
   return (
     <div className={`events-pager events-pager-${placement}`}>
-      <span className="events-pager-label">
-        Page {page} of {totalPages}
-      </span>
+      <span className="events-pager-label">{paged ? `Page ${page} of ${totalPages}` : ""}</span>
+      <div className="events-pager-center">{center}</div>
       <div className="events-pager-btns">
-        <button disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">
-          <ChevronLeft size={16} />
-        </button>
-        <button disabled={page >= totalPages} onClick={() => onPage(page + 1)} aria-label="Next page">
-          <ChevronRight size={16} />
-        </button>
+        {paged && (
+          <>
+            <button disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">
+              <ChevronLeft size={16} />
+            </button>
+            <button disabled={page >= totalPages} onClick={() => onPage(page + 1)} aria-label="Next page">
+              <ChevronRight size={16} />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -4536,12 +4544,53 @@ function HomeUpcomingTier({ label, events }: { label: string; events: Event[] })
   );
 }
 
+// Upcoming sort mode. "smart" keeps the level-grouped view (Worlds → Signature
+// → Championship → Other); "date" drops the grouping for one flat list ordered
+// by start date.
+type UpcomingSort = "smart" | "date";
+const UPCOMING_SORT_KEY = "vex-home-upcoming-sort";
+function loadUpcomingSort(): UpcomingSort {
+  try {
+    return localStorage.getItem(UPCOMING_SORT_KEY) === "date" ? "date" : "smart";
+  } catch { return "smart"; }
+}
+
+function UpcomingSortToggle({ value, onChange }: { value: UpcomingSort; onChange: (value: UpcomingSort) => void }) {
+  const options: Array<{ value: UpcomingSort; label: string }> = [
+    { value: "smart", label: "Smart Sort" },
+    { value: "date", label: "Start Date" },
+  ];
+  return (
+    <div className="upcoming-sort-toggle" role="group" aria-label="Sort upcoming events">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={value === option.value ? "active" : ""}
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // Upcoming tab: events grouped into level sections (Worlds → Signature →
 // Championship → Other), chronological within each. Marquee tiers collapse with
 // a fade; "Other Events" paginates. The Other-Events pager is hoisted to wrap
 // the whole view so its controls sit above all groups (top) and below them
-// (bottom), rather than floating between sections.
+// (bottom), rather than floating between sections. Switching the sort toggle to
+// "Start Date" replaces the whole thing with one flat paginated list.
 function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: boolean }) {
+  const [sort, setSort] = useState<UpcomingSort>(() => loadUpcomingSort());
+  useEffect(() => {
+    try { localStorage.setItem(UPCOMING_SORT_KEY, sort); } catch { /* ignore */ }
+  }, [sort]);
+  const sortToggle = <UpcomingSortToggle value={sort} onChange={setSort} />;
+
+  const byDate = useMemo(() => [...events].sort(compareEventsChronological), [events]);
   const sections = useMemo(() => {
     const tiers: Array<{ label: string; category: EventCategory; collapsible: boolean }> = [
       { label: "World Championships", category: "Worlds", collapsible: true },
@@ -4555,14 +4604,17 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
   }, [events]);
 
   const otherEvents = useMemo(() => sections.find((section) => !section.collapsible)?.events ?? [], [sections]);
+  // One page counter for both modes: it paginates "Other Events" under Smart
+  // Sort and the whole flat list under Start Date.
+  const paged = sort === "date" ? byDate : otherEvents;
   const [page, setPage] = useState(1);
   useEffect(() => {
     setPage(1);
-  }, [otherEvents]);
+  }, [paged]);
 
-  const totalPages = Math.max(1, Math.ceil(otherEvents.length / HOME_EVENTS_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(paged.length / HOME_EVENTS_PAGE_SIZE));
   const current = Math.min(page, totalPages);
-  const otherSlice = otherEvents.slice((current - 1) * HOME_EVENTS_PAGE_SIZE, current * HOME_EVENTS_PAGE_SIZE);
+  const otherSlice = paged.slice((current - 1) * HOME_EVENTS_PAGE_SIZE, current * HOME_EVENTS_PAGE_SIZE);
 
   return (
     <LoadingSwap
@@ -4571,9 +4623,27 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
     >
       {!sections.length ? (
         <Empty>No upcoming events for this program yet.</Empty>
+      ) : sort === "date" ? (
+        <div className="home-events-groups">
+          <EventsPager page={current} totalPages={totalPages} onPage={setPage} placement="top" center={sortToggle} />
+          <EventTable
+            events={otherSlice}
+            loading={false}
+            compact
+            showPriority
+            showProgram
+            showGrade
+            headerLabel={
+              <>
+                Events <span className="tier-count">({byDate.length})</span>
+              </>
+            }
+          />
+          <EventsPager page={current} totalPages={totalPages} onPage={setPage} placement="bottom" />
+        </div>
       ) : (
         <div className="home-events-groups">
-          <EventsPager page={current} totalPages={totalPages} onPage={setPage} placement="top" />
+          <EventsPager page={current} totalPages={totalPages} onPage={setPage} placement="top" center={sortToggle} />
           {sections.map((section) =>
             section.collapsible ? (
               <HomeUpcomingTier key={section.category} label={section.label} events={section.events} />
@@ -4683,7 +4753,7 @@ function Home() {
     }
     // Upcoming: future events, chronological (grouped by level downstream).
     return baseHomeEvents
-      .filter((event) => new Date(event.start ?? 0).getTime() >= today.getTime())
+      .filter((event) => eventIsToday(event) || new Date(event.start ?? 0).getTime() >= today.getTime())
       .sort(compareEventsChronological);
   }, [baseHomeEvents, homeEventTab, userCoords, userArea, userBbox, nearMeRadius]);
 
