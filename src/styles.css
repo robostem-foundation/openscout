@@ -12734,3 +12734,49 @@ td.col-muted { color: var(--text-2); }
 .event-grade-badges.is-program-span {
   opacity: 0.72;
 }
+
+/* Translate toggle — the icon beside a translatable name. Accent-colored means
+   the English text is showing; muted means the original is. Both colors come
+   from the existing token set, so light and dark mode need no extra rules. */
+.translate-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: -1px;
+  margin-right: 0.28em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.translate-toggle.is-english {
+  color: var(--primary);
+}
+
+.translate-toggle:hover {
+  opacity: 0.7;
+}
+
+.translate-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Pending is a slow pulse rather than a spinner: a spinner in a table cell reads
+   as an error state, and the row must not change height. */
+.translate-toggle.is-pending {
+  animation: translate-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes translate-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .translate-toggle.is-pending { animation: none; opacity: 0.6; }
+}
