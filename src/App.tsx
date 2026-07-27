@@ -60,7 +60,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Component, createContext, Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { Dispatch, ErrorInfo, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, SetStateAction } from "react";
+import type { Dispatch, ErrorInfo, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, RefObject, SetStateAction } from "react";
 import DOMPurify from "dompurify";
 import { api } from "./api";
 import JumperPage from "./jumper/JumperPage.jsx";
@@ -3597,6 +3597,11 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
   // Close the mobile drawer whenever the route changes (covers link taps and the
   // browser back gesture — both flow through the pathname).
   useEffect(() => { setNavOpen(false); }, [path]);
+  // The topbar nav is squeezed by the search box on narrow desktop widths; give
+  // it the same edge fade + drag-to-scroll as the season / tab strips. No wheel
+  // hijack here — the cursor sits over the header while reading the page.
+  const navRef = useRef<HTMLElement>(null);
+  const navEdges = useScrollStrip(navRef);
   const nav = [
     ["/", "OpenScout"],
     ["/events", "Events"],
@@ -3623,7 +3628,10 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
             <img className="brand-logo" src="/openscout-mark-tight.png" alt="" />
             <span className="brand-word">OpenScout</span>
           </Link>
-          <nav>
+          <nav
+            ref={navRef}
+            className={`topbar-nav no-scrollbar${navEdges.moreLeft ? " is-more-left" : ""}${navEdges.moreRight ? " is-more-right" : ""}`}
+          >
             {nav.slice(1).map(([href, label]) => (
               <Link key={href} href={href} className={path === href ? "active" : ""}>
                 {href === "/jumper" && (
@@ -9688,6 +9696,155 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   );
 }
 
+// Shared behaviour for every horizontally-scrolling strip (season picker, the
+// home event tabs, the header nav): report which edges have hidden content, and
+// let the strip be dragged with the mouse like a map.
+//
+// Drag never steals a click: pointer movement only becomes a drag past
+// DRAG_THRESHOLD px, and only then is the trailing click swallowed (capture
+// phase, before the button's own handler). A plain press still selects.
+const DRAG_THRESHOLD = 5;
+function useScrollStrip(
+  ref: RefObject<HTMLElement | null>,
+  { wheel = false, keys = false, deps = [] as unknown[] } = {},
+) {
+  const [moreLeft, setMoreLeft] = useState(false);
+  const [moreRight, setMoreRight] = useState(false);
+
+  const updateEdges = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    setMoreLeft(el.scrollLeft > 1);
+    setMoreRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+  }, [ref]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    updateEdges();
+    el.addEventListener("scroll", updateEdges, { passive: true });
+    window.addEventListener("resize", updateEdges);
+    const ro = new ResizeObserver(updateEdges);
+    ro.observe(el);
+    // A child resize (labels swapping, fonts loading) changes scrollWidth too.
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener("scroll", updateEdges);
+      window.removeEventListener("resize", updateEdges);
+      ro.disconnect();
+    };
+  }, [ref, updateEdges, ...deps]);
+
+  // Vertical wheel over the strip scrolls it horizontally instead of the page,
+  // and arrow keys do the same while the pointer is hovering it. Opt-in: on the
+  // header nav, hijacking the wheel would trap page scrolling.
+  const hoverRef = useRef(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onEnter = () => { hoverRef.current = true; };
+    const onLeave = () => { hoverRef.current = false; };
+    el.addEventListener("mouseenter", onEnter);
+    el.addEventListener("mouseleave", onLeave);
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth) return;
+      const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (!delta) return;
+      e.preventDefault();
+      el.scrollLeft += delta;
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!hoverRef.current) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      // Don't hijack arrows when the user is typing in a field.
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
+      e.preventDefault();
+      el.scrollLeft += e.key === "ArrowRight" ? 80 : -80;
+    };
+    if (wheel) el.addEventListener("wheel", onWheel, { passive: false });
+    if (keys) window.addEventListener("keydown", onKey);
+    return () => {
+      el.removeEventListener("mouseenter", onEnter);
+      el.removeEventListener("mouseleave", onLeave);
+      el.removeEventListener("wheel", onWheel);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [ref, wheel, keys, ...deps]);
+
+  // Mouse drag-to-scroll. Touch is left alone — it already pans natively.
+  // State lives in a ref, and this effect deliberately depends on nothing but
+  // `ref`: scrolling flips moreLeft/moreRight mid-drag, and if a re-render could
+  // resubscribe these listeners the in-flight drag would be dropped — losing the
+  // click suppression and switching the tab you dragged from.
+  const drag = useRef({ startX: 0, startScroll: 0, pointerId: null as number | null, active: false });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const d = drag.current;
+
+    const stop = () => {
+      if (d.pointerId != null) {
+        try { el.releasePointerCapture(d.pointerId); } catch { /* already gone */ }
+      }
+      d.pointerId = null;
+      el.classList.remove("is-dragging");
+      // Keep swallowing the click that closes out this drag, then forget it.
+      if (d.active) window.setTimeout(() => { d.active = false; }, 0);
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "touch" || e.button !== 0) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      d.pointerId = e.pointerId;
+      d.startX = e.clientX;
+      d.startScroll = el.scrollLeft;
+      d.active = false;
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (d.pointerId !== e.pointerId) return;
+      const dx = e.clientX - d.startX;
+      if (!d.active) {
+        if (Math.abs(dx) < DRAG_THRESHOLD) return;
+        d.active = true;
+        el.classList.add("is-dragging");
+        try { el.setPointerCapture(d.pointerId); } catch { /* non-fatal */ }
+      }
+      e.preventDefault();
+      el.scrollLeft = d.startScroll - dx;
+    };
+    // Capture phase: runs before the tab/segment's own onClick, so a click that
+    // merely ended a drag never changes the selection.
+    const onClickCapture = (e: globalThis.MouseEvent) => {
+      if (!d.active) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("pointermove", onPointerMove);
+    el.addEventListener("pointerup", stop);
+    el.addEventListener("pointercancel", stop);
+    el.addEventListener("click", onClickCapture, true);
+    // Native image/text dragging would fight the pan.
+    // `Event` here is the DOM event, not this app's Event type.
+    const onDragStart = (e: globalThis.Event) => { if (d.active) e.preventDefault(); };
+    el.addEventListener("dragstart", onDragStart);
+    return () => {
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("pointermove", onPointerMove);
+      el.removeEventListener("pointerup", stop);
+      el.removeEventListener("pointercancel", stop);
+      el.removeEventListener("click", onClickCapture, true);
+      el.removeEventListener("dragstart", onDragStart);
+    };
+  }, [ref]);
+
+  return { moreLeft, moreRight, updateEdges };
+}
+
 function SeasonSelector({
   seasons,
   selectedSeasonId,
@@ -9710,9 +9867,9 @@ function SeasonSelector({
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoRef = useRef<number | null>(null);
   const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
-  // Whether the strip overflows past each edge (drives the fade + chevron chips).
-  const [moreRight, setMoreRight] = useState(false);
-  const [moreLeft, setMoreLeft] = useState(false);
+  // Edge overflow (drives the fade + chevron chips) plus wheel / arrow-key /
+  // drag scrolling, all shared with the other strips via useScrollStrip.
+  const { moreLeft, moreRight } = useScrollStrip(scrollRef, { wheel: true, keys: true, deps: [seasons] });
 
   useLayoutEffect(() => {
     const measure = () => {
@@ -9725,66 +9882,6 @@ function SeasonSelector({
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [selectedSeasonId, seasons]);
-
-  // Track both-edge overflow as the strip scrolls / resizes.
-  const updateEdges = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setMoreLeft(el.scrollLeft > 1);
-    setMoreRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
-  }, []);
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    updateEdges();
-    el.addEventListener("scroll", updateEdges, { passive: true });
-    window.addEventListener("resize", updateEdges);
-    const ro = new ResizeObserver(updateEdges);
-    ro.observe(el);
-    return () => {
-      el.removeEventListener("scroll", updateEdges);
-      window.removeEventListener("resize", updateEdges);
-      ro.disconnect();
-    };
-  }, [updateEdges, seasons]);
-
-  // Vertical wheel over the strip scrolls it horizontally instead of the page,
-  // and arrow keys do the same while the pointer is hovering the strip.
-  const hoverRef = useRef(false);
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (el.scrollWidth <= el.clientWidth) return;
-      const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-      if (!delta) return;
-      e.preventDefault();
-      el.scrollLeft += delta;
-    };
-    const onEnter = () => { hoverRef.current = true; };
-    const onLeave = () => { hoverRef.current = false; };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (!hoverRef.current) return;
-      if (el.scrollWidth <= el.clientWidth) return;
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      // Don't hijack arrows when the user is typing in a field.
-      const t = e.target as HTMLElement | null;
-      const tag = t?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
-      e.preventDefault();
-      el.scrollLeft += e.key === "ArrowRight" ? 80 : -80;
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    el.addEventListener("mouseenter", onEnter);
-    el.addEventListener("mouseleave", onLeave);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      el.removeEventListener("wheel", onWheel);
-      el.removeEventListener("mouseenter", onEnter);
-      el.removeEventListener("mouseleave", onLeave);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [seasons]);
 
   const stopAuto = useCallback(() => {
     if (autoRef.current != null) {
@@ -9837,7 +9934,10 @@ function SeasonSelector({
             </button>
           </div>
         )}
-        <div ref={scrollRef} className="season-scroll-view no-scrollbar">
+        <div
+          ref={scrollRef}
+          className={`season-scroll-view no-scrollbar${moreLeft ? " is-more-left" : ""}${moreRight ? " is-more-right" : ""}`}
+        >
           <div ref={trackRef} className="relative w-max rounded-lg bg-muted p-1">
             {pill && (
               <span

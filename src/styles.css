@@ -245,6 +245,48 @@ nav {
   overflow-x: auto;
 }
 
+/* ── Scrollable strips: drag-to-scroll + edge fades ─────────────────────────
+   Shared by every horizontally-scrolling strip (useScrollStrip in App.tsx sets
+   .is-dragging while a drag is live and .is-more-left/.is-more-right whenever
+   content is hidden past that edge). A strip only advertises itself as
+   draggable while it actually has something to reveal. */
+.is-more-left,
+.is-more-right {
+  cursor: grab;
+}
+
+.is-dragging {
+  cursor: grabbing;
+  /* Text selection would otherwise fight the pan, and smooth-scroll would make
+     the strip lag behind the pointer. */
+  user-select: none;
+  scroll-behavior: auto;
+}
+
+/* Tabs set cursor: pointer on themselves — while a drag is live the grabbing
+   cursor has to win over that. (Idle, a tab still reads as clickable.) */
+.is-dragging * {
+  cursor: grabbing;
+}
+
+/* Header nav: fade whichever edge has links hidden behind it. The nav has no
+   room for chevron chips at the widths where it clips, so the fade plus
+   drag/scroll is the whole affordance. */
+.topbar-nav.is-more-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+}
+
+.topbar-nav.is-more-left {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 18px);
+  mask-image: linear-gradient(to right, transparent, #000 18px);
+}
+
+.topbar-nav.is-more-left.is-more-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 18px, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent, #000 18px, #000 calc(100% - 18px), transparent 100%);
+}
+
 /* Right-side cluster: search + theme toggle + auth, pinned to the right edge as
    one group. margin-left:auto here is the ONLY flex spacer, so it stays right-
    aligned regardless of whether nav is present (nav is hidden on mobile). */
@@ -496,12 +538,40 @@ main {
 .home-events-header .season-toolbar {
   flex: 0 1 auto;
   min-width: 0;
+  /* Without this a centre-aligned grid item keeps its max-content width and
+     spills over the program toggle and "All Events" instead of scrolling. */
+  max-width: 100%;
 }
 
-/* The event toggle has no overflow at 4 items — drop the edge fade mask. */
-.home-events-header .season-scroll-view {
+/* The tab strip never uses the sidebar's edge mask — it would blur the strip's
+   own rounded corner. When the five tabs do overflow it gets the season-picker
+   treatment instead: an opaque fade in the track colour plus a chevron chip. */
+.home-events-header .season-scroll-view,
+.home-events-header .season-scroll-view.is-more-right {
   -webkit-mask-image: none;
   mask-image: none;
+}
+
+.home-events-header .season-toolbar-nolabel .season-fade {
+  display: flex;
+  width: 66px;
+}
+
+/* Keep the scroll chevron visible (override `.panel h2 svg { display: none }`). */
+.panel h2 .season-more svg {
+  display: block;
+}
+
+/* The strip's own track colour (bg-muted), not the toolbar surface, so the fade
+   dissolves into the pill background instead of washing over it. */
+.home-events-header .season-toolbar-nolabel .season-fade::before {
+  background: linear-gradient(to right, transparent, var(--muted) 60%, var(--muted) 100%);
+  border-radius: 0 8px 8px 0;
+}
+
+.home-events-header .season-toolbar-nolabel .season-fade-left::before {
+  background: linear-gradient(to left, transparent, var(--muted) 60%, var(--muted) 100%);
+  border-radius: 8px 0 0 8px;
 }
 
 .home-events-seeall {
@@ -570,12 +640,14 @@ main {
 
 /* Pager rendered above and below each paginated home list. Hidden by the
    component when there is only a single page. */
+/* Three slots — label, centered control, page buttons — so the middle stays
+   optically centered no matter how wide the label gets. */
 .events-pager {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 8px 4px;
+  padding: 6px 14px;
   color: var(--text-muted);
 }
 
@@ -5049,8 +5121,9 @@ a.team-card-num:hover {
   border-radius: 0;
 }
 /* Soften the right edge so the overflowing seasons fade out instead of being
-   cut off hard — just a hair of fade. */
-.season-toolbar-nolabel .season-scroll-view {
+   cut off hard — just a hair of fade. Gated on .is-more-right: with nothing
+   hidden the mask only smudged the strip's own rounded corner. */
+.season-toolbar-nolabel .season-scroll-view.is-more-right {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 10px), transparent 100%);
   mask-image: linear-gradient(to right, #000 calc(100% - 10px), transparent 100%);
 }
@@ -5243,6 +5316,15 @@ a.team-card-num:hover {
   gap: 2px;
   flex: 1 1 auto;
   min-width: 0;
+  /* Grid items stretch by default, which would make each button's box span the
+     whole left half of the card — clicking empty space beside a short event name
+     would then open the event instead of toggling the card. Shrink both to their
+     text so only the text itself is a hit target. */
+  justify-items: start;
+}
+/* ...but a long name must still wrap inside the column rather than overflow. */
+.event-group-head-main > * {
+  max-width: 100%;
 }
 
 .event-group summary small {
