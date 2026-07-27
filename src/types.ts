@@ -235,6 +235,29 @@ export type WorldSkillsEntry = {
   eligible?: boolean;
 };
 
+// One row of /api/top-skills — the #1 world-skills team for a program + grade.
+// Mirrors the shape built in server/topSkills.ts.
+export type TopSkillsEntry = {
+  rank: number;
+  teamId: number;
+  team: string;
+  teamName: string | null;
+  organization: string | null;
+  region: string | null;
+  country: string | null;
+  score: number;
+  driver: number;
+  programming: number;
+};
+
+export type TopSkillsResult = {
+  program: "v5rc" | "viqrc";
+  grade: "hs" | "ms" | "es";
+  seasonId: number | null;
+  seasonName: string | null;
+  entry: TopSkillsEntry | null;
+};
+
 export type EventInfoWebcastLink = { url: string; platform: "youtube" | "vimeo" | "other"; label: string };
 
 export type EventInfoData = {
