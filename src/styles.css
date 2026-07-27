@@ -11528,6 +11528,23 @@ a.shared-team-note-row:hover { background: var(--surface-2); }
 .ws-table tbody tr:last-child td { border-bottom: none; }
 .ws-table tbody tr:hover td { background: var(--surface-2); }
 
+/* Arrival highlight for a row deep-linked with ?team= (home sidebar skills
+   leaders). Fades itself out so the table returns to normal without a click. */
+.ws-table tbody tr.ws-row-focus > td {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  animation: ws-row-flash 4s ease-out forwards;
+}
+.ws-table tbody tr.ws-row-focus > td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+@keyframes ws-row-flash {
+  0%, 55% { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-table tbody tr.ws-row-focus > td { animation: none; }
+}
+
 /* Highlighted max-score cells */
 .ws-max-score { color: var(--success); font-weight: 700; }
 .ws-max-auto, .ws-max-driver { color: var(--success); }
