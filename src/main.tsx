@@ -3,13 +3,16 @@ import { createRoot } from "react-dom/client";
 import { Analytics } from "@vercel/analytics/react";
 import App from "./App";
 import { AuthProvider } from "./auth";
+import { TooltipProvider } from "./components/ui/tooltip";
 import "./index.css"; // Tailwind preflight + Geist tokens — must load first
 import "./styles.css"; // legacy app styles — after, so element rules win over preflight
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AuthProvider>
-      <App />
+      <TooltipProvider>
+        <App />
+      </TooltipProvider>
     </AuthProvider>
     <Analytics />
   </StrictMode>,
