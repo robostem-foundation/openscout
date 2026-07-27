@@ -9076,6 +9076,7 @@ function TeamAboutTab({
 
 function TeamDetail({ param }: { param: string }) {
   const [tab, setTab] = useState<TeamDetailTab>(() => hashTab(TEAM_DETAIL_TABS, "about"));
+  const [playback, setPlayback] = useState<MatchPlayback | null>(null);
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const [dateDirection, setDateDirection] = useState<DateDirection>("asc");
   const [matchesBySeason, setMatchesBySeason] = useState<Record<number, AsyncBucket<Match>>>({});
@@ -9363,6 +9364,7 @@ function TeamDetail({ param }: { param: string }) {
             const ev = eventIndex.get(eventId);
             navigate(urlWithHash(`${ev ? eventPath(ev) : `/event/${eventId}`}?focusTeam=${team.id}&focusTeamNum=${encodeURIComponent(team.number)}`, "team-matches"));
           }}
+          onOpenMatch={(match, timestamp) => setPlayback({ match, timestamp })}
         />
       )}
       {!activeStatus.loading && tab === "rankings" && (
@@ -9405,6 +9407,7 @@ function TeamDetail({ param }: { param: string }) {
       </CrossFade>
       </div>
       </div>
+      {playback && <MatchVideoOverlay playback={playback} onClose={() => setPlayback(null)} />}
     </section>
     </ProgramContext.Provider>
   );
@@ -10320,6 +10323,7 @@ function TeamEventCards({
   isIq,
   detailsLoading,
   onViewMatches,
+  onOpenMatch,
 }: {
   events: Event[];
   matches: Match[];
@@ -10330,80 +10334,147 @@ function TeamEventCards({
   isIq?: boolean;
   detailsLoading: boolean;
   onViewMatches: (eventId: number) => void;
+  onOpenMatch: (match: Match, timestamp: MatchTimestamp) => void;
 }) {
   if (!events.length) return <Empty>No events this season.</Empty>;
 
   return (
     <div className="event-groups">
-      {events.map((event) => {
-        const eventMatches  = matches.filter((m) => m.event.id === event.id);
-        const eventRankings = rankings.filter((r) => r.event.id === event.id);
-        const eventSkills   = skills.filter((s) => s.event.id === event.id);
-        const eventAwards   = awards.filter((a) => a.event.id === event.id);
-        const cat      = eventCategory(event);
-        const shortLoc = [event.location?.city, event.location?.region].filter(Boolean).join(", ");
-
-        return (
-          <details key={event.id} className="event-group">
-            <summary>
-              {/* Left: event name + SKU */}
-              <span className="event-group-head-main">
-                <button
-                  className="event-group-name-btn"
-                  onClick={(e) => { e.preventDefault(); onViewMatches(event.id); }}
-                >
-                  {event.name}
-                </button>
-                <small>{event.sku}</small>
-              </span>
-              {/* Right: program badge · city/state · dates, with level tag below */}
-              <span className="event-card-info">
-                <span className="event-card-meta-row">
-                  <ProgramBadge program={event.program} />
-                  {shortLoc && <span className="event-card-location">{shortLoc}</span>}
-                  <span className="event-group-meta">{formatEventDateRange(event.start, event.end)}</span>
-                </span>
-                {cat.label !== "Other" && (
-                  <span className={`event-priority priority-${cat.rank}`}>{cat.label}</span>
-                )}
-              </span>
-              <ChevronDown size={15} className="event-group-chevron" aria-hidden="true" />
-            </summary>
-            {/* Stats: awards / ranking / skills */}
-            <TeamEventDetail
-              matches={eventMatches}
-              rankings={eventRankings}
-              skills={eventSkills}
-              awards={eventAwards}
-              focusTeamId={focusTeamId}
-              isIq={isIq}
-              loading={detailsLoading}
-              hideMatchPreview
-              multiDivision={(event.divisions?.length ?? 0) > 1}
-              onViewMatches={() => onViewMatches(event.id)}
-            />
-            {/* All matches — identical to the old Matches tab. Already inside the
-                event-card <details>, so no extra collapse; just an overflow guard. */}
-            {!detailsLoading && eventMatches.length > 0 && (
-              <div className="results-table-scroll">
-                <TeamMatchTable
-                  matches={eventMatches}
-                  focusTeamId={focusTeamId}
-                  isIq={isIq}
-                  multiDivision={(event.divisions?.length ?? 0) > 1}
-                />
-              </div>
-            )}
-            {/* Footer: open full event page */}
-            <div className="event-card-footer">
-              <button type="button" className="view-all-matches" onClick={() => onViewMatches(event.id)}>
-                See event →
-              </button>
-            </div>
-          </details>
-        );
-      })}
+      {events.map((event) => (
+        <TeamEventCard
+          key={event.id}
+          event={event}
+          matches={matches.filter((m) => m.event.id === event.id)}
+          rankings={rankings.filter((r) => r.event.id === event.id)}
+          skills={skills.filter((s) => s.event.id === event.id)}
+          awards={awards.filter((a) => a.event.id === event.id)}
+          focusTeamId={focusTeamId}
+          isIq={isIq}
+          detailsLoading={detailsLoading}
+          onViewMatches={onViewMatches}
+          onOpenMatch={onOpenMatch}
+        />
+      ))}
     </div>
+  );
+}
+
+// One event card in the team-focused Events list. Split out from TeamEventCards
+// so it can fetch its own Jumper preset/timestamps (per-event, keyed by SKU) —
+// the same data source the event page's focus-team match view uses to power the
+// match video column — and light up the same crown row My Team shows per event.
+function TeamEventCard({
+  event,
+  matches: eventMatches,
+  rankings: eventRankings,
+  skills: eventSkills,
+  awards: eventAwards,
+  focusTeamId,
+  isIq,
+  detailsLoading,
+  onViewMatches,
+  onOpenMatch,
+}: {
+  event: Event;
+  matches: Match[];
+  rankings: Ranking[];
+  skills: Skill[];
+  awards: Award[];
+  focusTeamId: number;
+  isIq?: boolean;
+  detailsLoading: boolean;
+  onViewMatches: (eventId: number) => void;
+  onOpenMatch: (match: Match, timestamp: MatchTimestamp) => void;
+}) {
+  const cat = eventCategory(event);
+  const shortLoc = [event.location?.city, event.location?.region].filter(Boolean).join(", ");
+  const multiDivision = (event.divisions?.length ?? 0) > 1;
+  const wins = useMemo(() => computeEventAwardWins(event, eventAwards, focusTeamId, !!isIq), [event, eventAwards, focusTeamId, isIq]);
+
+  const preset = useAsync(async () => api.jumperPresetEventExists(event.sku), [event.sku], 1500);
+  const matchTimestamps = useAsync(
+    async () => {
+      if (!preset.data?.exists) return null;
+      return api.jumperMatchTimestamps(event.sku, { offsetSeconds: -5 });
+    },
+    [event.sku, preset.data?.exists],
+  );
+  const timestampMap = useMemo(() => new Map((matchTimestamps.data ?? []).map((ts) => [ts.id, ts])), [matchTimestamps.data]);
+  const presetUrl = preset.data?.exists ? `https://jumper.robostem.org/?preset=${encodeURIComponent(jumperPresetName(event, preset.data))}` : null;
+
+  return (
+    <details className="event-group">
+      <summary>
+        {/* Left: event name + SKU — the only two spots that open the full event
+            page. Everything else in the summary just toggles this card. */}
+        <span className="event-group-head-main">
+          <button
+            className="event-group-name-btn"
+            onClick={(e) => { e.preventDefault(); onViewMatches(event.id); }}
+          >
+            {event.name}
+          </button>
+          <button
+            type="button"
+            className="event-group-sku-btn"
+            onClick={(e) => { e.preventDefault(); onViewMatches(event.id); }}
+          >
+            {event.sku}
+          </button>
+        </span>
+        {/* Right: award crowns · program badge · city/state · dates, with level tag below */}
+        <span className="event-card-info">
+          <span className="event-card-meta-row">
+            <AwardCrowns wins={wins} />
+            <ProgramBadge program={event.program} />
+            {shortLoc && <span className="event-card-location">{shortLoc}</span>}
+            <span className="event-group-meta">{formatEventDateRange(event.start, event.end)}</span>
+          </span>
+          {cat.label !== "Other" && (
+            <span className={`event-priority priority-${cat.rank}`}>{cat.label}</span>
+          )}
+        </span>
+        <ChevronDown size={15} className="event-group-chevron" aria-hidden="true" />
+      </summary>
+      {/* Stats: awards / ranking / skills */}
+      <TeamEventDetail
+        matches={eventMatches}
+        rankings={eventRankings}
+        skills={eventSkills}
+        awards={eventAwards}
+        focusTeamId={focusTeamId}
+        isIq={isIq}
+        loading={detailsLoading}
+        hideMatchPreview
+        multiDivision={multiDivision}
+        onViewMatches={() => onViewMatches(event.id)}
+      />
+      {/* All matches — identical to the old Matches tab, plus the same match video
+          column the event page's focus-team view shows. Already inside the
+          event-card <details>, so no extra collapse; just an overflow guard. */}
+      {!detailsLoading && eventMatches.length > 0 && (
+        <div className="results-table-scroll">
+          <TeamMatchTable
+            matches={eventMatches}
+            focusTeamId={focusTeamId}
+            isIq={isIq}
+            multiDivision={multiDivision}
+            showPlay
+            presetSupported={!!preset.data?.exists}
+            presetLoading={preset.loading || (preset.data?.exists ? matchTimestamps.loading : false)}
+            presetUrl={presetUrl}
+            timestampMap={timestampMap}
+            onOpenMatch={onOpenMatch}
+          />
+        </div>
+      )}
+      {/* Footer: open full event page */}
+      <div className="event-card-footer">
+        <button type="button" className="view-all-matches" onClick={() => onViewMatches(event.id)}>
+          See event →
+        </button>
+      </div>
+    </details>
   );
 }
 

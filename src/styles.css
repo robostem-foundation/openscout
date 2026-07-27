@@ -5380,12 +5380,24 @@ a.team-card-num:hover {
   max-width: 100%;
 }
 
-.event-group summary small {
+.event-group-sku-btn {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
   color: var(--text-faint);
   font-family: var(--font-geist-mono, ui-monospace, monospace);
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.02em;
+  cursor: pointer;
+  text-align: left;
+}
+
+.event-group-sku-btn:hover,
+.event-group-sku-btn:focus {
+  color: var(--text-muted);
+  text-decoration: underline;
 }
 
 .event-group-meta {
