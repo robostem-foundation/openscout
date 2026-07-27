@@ -3428,6 +3428,11 @@ a.team-card-num:hover {
   white-space: nowrap;
 }
 
+/* Event-tier badges, keyed by eventCategory().rank:
+   0 Worlds · 1 Signature · 2 Spotlight · 3 Championship · 4 Other.
+   Spotlight is the tier VEX added for 2026-2027; green keeps it inside this
+   palette's Bootstrap-era family while sitting clearly between Signature's amber
+   and Other's grey, and leaves Championship's blue alone. */
 .priority-0 {
   background: var(--danger);
 }
@@ -3438,11 +3443,16 @@ a.team-card-num:hover {
 }
 
 .priority-2 {
-  background: #5bc0de;
+  background: #5cb85c;
   color: var(--badge-ink);
 }
 
 .priority-3 {
+  background: #5bc0de;
+  color: var(--badge-ink);
+}
+
+.priority-4 {
   background: #777;
 }
 

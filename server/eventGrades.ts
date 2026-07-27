@@ -83,9 +83,15 @@ function proxyOrigin(): string {
   return FALLBACK_PROXY_ORIGIN;
 }
 
-async function fetchEventPage(sku: string): Promise<string> {
+/**
+ * Fetch any events.vex.com page through the CORS proxy. Exported because the
+ * Spotlight-tier lookup (server/spotlightEvents.ts) needs the same treatment —
+ * the site is behind Cloudflare, so a direct server fetch gets challenged.
+ * `label` only shapes the error message.
+ */
+export async function fetchVexPage(url: string, label = url): Promise<string> {
   const key = process.env.CORS_SH_API_KEY;
-  const res = await fetch(`${CORS_PROXY}${eventPageUrl(sku)}`, {
+  const res = await fetch(`${CORS_PROXY}${url}`, {
     headers: {
       Origin: proxyOrigin(),
       "User-Agent":
@@ -95,9 +101,13 @@ async function fetchEventPage(sku: string): Promise<string> {
     signal: AbortSignal.timeout(15000),
   });
   const html = await res.text();
-  if (!res.ok) throw new Error(`event page ${sku}: HTTP ${res.status}`);
-  if (html.length < 500 || html.includes("Just a moment...")) throw new Error(`event page ${sku}: challenged`);
+  if (!res.ok) throw new Error(`${label}: HTTP ${res.status}`);
+  if (html.length < 500 || html.includes("Just a moment...")) throw new Error(`${label}: challenged`);
   return html;
+}
+
+function fetchEventPage(sku: string): Promise<string> {
+  return fetchVexPage(eventPageUrl(sku), `event page ${sku}`);
 }
 
 // ── Supabase cache (service-role key: bypasses RLS, server-only) ──────────────
