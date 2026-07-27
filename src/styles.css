@@ -1503,86 +1503,350 @@ main {
   transform: translateX(2px);
 }
 
-/* Flat hairline rows matching the rest of the sidebar (favorites, recents).
-   Program identity is carried by a quiet color dot rather than a loud outline. */
-.skills-lb-btn {
-  --skill-color: var(--text-faint);
+/* Row 1: the in-app link fills the row, the VEX-logo button sits flush right.
+   The logo button is only as wide as its logo + external-link glyph. */
+.skills-lb-row {
   display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.skills-lb-row .skills-lb-openscout {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.skills-lb-vex-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+}
+
+.skills-lb-vex {
+  display: flex;
+  flex: 0 0 auto;
+  cursor: pointer;
   align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 0 9px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  color: var(--text);
-  font-size: 13.5px;
-  font-weight: 500;
-  text-decoration: none;
-  transition:
-    background 0.15s,
-    border-color 0.15s;
-}
-
-/* Program dot. */
-.skills-lb-btn::before {
-  content: "";
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-  background: var(--skill-color);
-}
-
-/* Label fills the row so the external-link icon sits flush right. */
-.skills-lb-btn > span {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.skills-lb-btn.v5 {
-  --skill-color: #d0524d;
-}
-
-.skills-lb-btn.iq {
-  --skill-color: #3b7fb5;
-}
-
-.skills-lb-btn.vexu {
-  --skill-color: var(--text-faint);
-}
-
-/* Brighten the dots slightly against the near-black dark surface. */
-[data-theme="dark"] .skills-lb-btn.v5 {
-  --skill-color: #f0625d;
-}
-[data-theme="dark"] .skills-lb-btn.iq {
-  --skill-color: #5a9bd4;
-}
-[data-theme="dark"] .skills-lb-btn.vexu {
-  --skill-color: #a1a1a1;
-}
-
-.skills-lb-btn svg {
-  flex: 0 0 auto;
   color: var(--text-faint);
-  transition: color 0.15s;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.skills-lb-btn:hover {
+.skills-lb-vex img {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  object-fit: cover;
+}
+
+.skills-lb-vex svg {
+  flex: 0 0 auto;
+}
+
+.skills-lb-vex:hover {
   border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.skills-lb-vex.is-open {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+/* Menu of the four official standings pages. */
+.skills-lb-vex-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 178px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.skills-lb-vex-menu a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12.5px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.skills-lb-vex-menu a > span {
+  flex: 1 1 auto;
+}
+
+.skills-lb-vex-menu a svg {
+  color: var(--text-faint);
+}
+
+.skills-lb-vex-menu a:hover {
   background: var(--surface-2);
   text-decoration: none;
 }
 
-.skills-lb-btn:hover svg {
-  color: var(--text-muted);
+.skills-lb-vex-menu a:focus-visible {
+  background: var(--surface-2);
+  outline: 0;
 }
 
-.skills-lb-btn:focus-visible {
+.skills-lb-vex:focus-visible {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
   outline: 0;
+}
+
+/* ---- World-skills leaders: #1 team per program + grade ---- */
+
+/* A list, not four nested cards: rows run edge to edge inside the panel and are
+   separated by hairlines, matching the events/rankings tables. The negative
+   margins cancel .skills-leaderboard-list's padding so hover fills the row. */
+.skills-leader-grid {
+  display: flex;
+  flex-direction: column;
+  margin: 2px -12px -12px;
+}
+
+.skills-leader-card {
+  --skill-color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  /* Space, not a rule, separates the team from its scores. */
+  gap: 14px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text);
+  text-decoration: none;
+  animation: skills-leader-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: background 0.13s;
+}
+
+/* Stagger the rows as they land. */
+.skills-leader-card:nth-of-type(2) { animation-delay: 50ms; }
+.skills-leader-card:nth-of-type(3) { animation-delay: 100ms; }
+.skills-leader-card:nth-of-type(4) { animation-delay: 150ms; }
+
+@keyframes skills-leader-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.skills-leader-card.v5rc {
+  --skill-color: #d0524d;
+}
+
+.skills-leader-card.viqrc {
+  --skill-color: #3b7fb5;
+}
+
+[data-theme="dark"] .skills-leader-card.v5rc {
+  --skill-color: #f0625d;
+}
+
+[data-theme="dark"] .skills-leader-card.viqrc {
+  --skill-color: #5a9bd4;
+}
+
+a.skills-leader-card:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+a.skills-leader-card:focus-visible {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+  outline: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skills-leader-card { animation: none; }
+}
+
+/* Left column: caption above the team it belongs to. */
+.skills-leader-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Program name carries the only color in the row; the grade stays quiet. */
+.skills-leader-eyebrow {
+  min-width: 0;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--skill-color) 78%, var(--text));
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The grade half of the eyebrow carries the same hue coding as the events-list
+   grade badges (.event-grade-badge) — same ink, no fill, so the two surfaces
+   agree on what HS/MS/ES look like. */
+.skills-leader-grade {
+  font-style: normal;
+  font-weight: 700;
+}
+
+.skills-leader-grade.grade-HS { color: #31708f; }
+.skills-leader-grade.grade-MS { color: #3c763d; }
+.skills-leader-grade.grade-ES { color: #8a6d3b; }
+
+[data-theme="dark"] .skills-leader-grade.grade-HS { color: #7db6d6; }
+[data-theme="dark"] .skills-leader-grade.grade-MS { color: #7ccb8a; }
+[data-theme="dark"] .skills-leader-grade.grade-ES { color: #e8c971; }
+
+/* Team number sets the row height; the name wraps to at most two lines and is
+   clamped to that same height (2 × 1.14em of 10px ≈ the 19px number's line box). */
+.skills-leader-id {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The program hue lives in the type itself: one gradient sweeps across the number
+   and name, starting in the program color and settling into the muted ink the name
+   would have had on its own. Guarded because a browser without
+   background-clip:text would render transparent text. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .skills-leader-id {
+    background-image: linear-gradient(
+      96deg,
+      color-mix(in srgb, var(--skill-color) 80%, var(--text)) 0%,
+      color-mix(in srgb, var(--skill-color) 28%, var(--text)) 40%,
+      var(--text-muted) 78%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
+  /* Children must hand their glyphs to the parent's clipped background. */
+  .skills-leader-id .skills-leader-team,
+  .skills-leader-id .skills-leader-name {
+    color: transparent;
+  }
+}
+
+.skills-leader-team {
+  flex: 0 0 auto;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.skills-leader-name {
+  display: -webkit-box;
+  flex: 1 1 auto;
+  overflow: hidden;
+  min-width: 0;
+  max-height: 2.28em;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.14;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* Total / driver / programming on the right in fixed columns, so every row and
+   the header line up. Total carries the emphasis. */
+.skills-leader-scores {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Total: big number over its own label. */
+.skills-leader-total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.skills-leader-total strong {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+/* Driver and prog: two "value label" lines, each on one baseline. */
+.skills-leader-splits {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.skills-leader-split {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.skills-leader-split b {
+  min-width: 18px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.skills-leader-total small,
+.skills-leader-split small {
+  color: var(--text-faint);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.skills-leader-bone {
+  display: block;
+  flex: 0 0 auto;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--surface-3);
+}
+
+.skills-leader-empty {
+  display: flex;
+  align-items: center;
+  height: 22.8px;
+  color: var(--text-faint);
+  font-size: 11.5px;
 }
 
 .home-grid,
