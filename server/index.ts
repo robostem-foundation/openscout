@@ -6,6 +6,7 @@ import { createServer as createViteServer } from "vite";
 import { clientIpFromForwardedFor, guardProxyRequest, proxyRequest, type ProxySource } from "./proxy.js";
 import { scrapeEventInfo } from "./eventInfoScraper.js";
 import { resolveEventGrades } from "./eventGrades.js";
+import { currentSeasonByProgram, isTopSkillsGrade, isTopSkillsProgram, programRunsGrade, resolveTopSkills } from "./topSkills.js";
 import { parseSkuParam } from "../api/event-grades.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -84,6 +85,25 @@ app.get("/api/event-grades", async (req: express.Request, res: express.Response)
   } catch (err) {
     console.error("[event-grades] handler error:", err);
     res.status(500).json({ error: "Failed to resolve event grades" });
+  }
+});
+
+// Top world-skills row per program + grade (server-trimmed) — also before the
+// catch-alls so it isn't swallowed by the /api/re-root proxy.
+app.get("/api/top-skills", async (req: express.Request, res: express.Response) => {
+  const program = typeof req.query.program === "string" ? req.query.program : null;
+  const grade = typeof req.query.grade === "string" ? req.query.grade : null;
+  if (!isTopSkillsProgram(program) || !isTopSkillsGrade(grade) || !programRunsGrade(program, grade)) {
+    res.status(400).json({ error: "program must be v5rc|viqrc and grade a level that program runs (hs|ms|es)" });
+    return;
+  }
+  try {
+    const result = await resolveTopSkills(program, grade);
+    res.setHeader("cache-control", "public, s-maxage=600, stale-while-revalidate=3600");
+    res.json(result);
+  } catch (err) {
+    console.error("[top-skills] handler error:", err);
+    res.status(502).json({ error: "Failed to load world skills leaderboard" });
   }
 });
 

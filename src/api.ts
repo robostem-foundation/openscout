@@ -15,6 +15,7 @@ import type {
   SuperscoreRow,
   Team,
   TeamLight,
+  TopSkillsResult,
   WorldSkillsEntry,
 } from "./types";
 
@@ -157,6 +158,10 @@ export const api = {
   jumperMatchTimestamps: (sku: string, query: Query = {}) => jumperJson<MatchTimestamp[]>("match-timestamp", { sku, ...query }),
   superscore: (program: "v5rc" | "viqrc", query: Query = {}) =>
     rseJson<Paginated<SuperscoreRow>>(`superscore/rankings/${program}`, query),
+  // Server-trimmed: the full leaderboard is multi-MB, this returns one row.
+  // See server/topSkills.ts.
+  topSkills: (program: "v5rc" | "viqrc", grade: "hs" | "ms" | "es") =>
+    dedupedJson<TopSkillsResult>(`/api/top-skills?program=${program}&grade=${grade}`),
   worldSkills: (seasonId: string | number, grade: string) =>
     robotEventsRootJson<WorldSkillsEntry[]>(`api/seasons/${seasonId}/skills`, { post_season: 0, grade_level: grade }),
 };
