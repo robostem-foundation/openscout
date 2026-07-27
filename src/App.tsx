@@ -3670,33 +3670,242 @@ function Layout({ children, path }: { children: ReactNode; path: string }) {
   );
 }
 
-const skillsLeaderboards = [
+// ── Home sidebar: world-skills leaders ────────────────────────────────────────
+
+// The official standings on events.vex.com, one per board — the VEX-logo button
+// opens a menu of these rather than guessing which one the viewer wanted.
+const VEX_SKILLS_LINKS = [
   {
-    label: "VEX V5 High School Skills",
+    label: "V5RC High School",
     url: "https://events.vex.com/robot-competitions/vex-robotics-competition/standings/skills?grade_level=High%20School",
-    className: "v5 high",
   },
   {
-    label: "VEX V5 Middle School Skills",
+    label: "V5RC Middle School",
     url: "https://events.vex.com/robot-competitions/vex-robotics-competition/standings/skills?grade_level=Middle%20School",
-    className: "v5 middle",
   },
   {
-    label: "VEX IQ Middle School Skills",
+    label: "VIQRC Middle School",
     url: "https://events.vex.com/robot-competitions/vex-iq-competition/standings/skills?grade_level=Middle%20School",
-    className: "iq middle",
   },
   {
-    label: "VEX IQ Elementary School Skills",
+    label: "VIQRC Elementary",
     url: "https://events.vex.com/robot-competitions/vex-iq-competition/standings/skills?grade_level=Elementary",
-    className: "iq elementary",
-  },
-  {
-    label: "VEX U Skills",
-    url: "https://events.vex.com/robot-competitions/college-competition/standings/skills",
-    className: "vexu",
   },
 ];
+const VEX_LOGO_URL =
+  "https://yt3.googleusercontent.com/5lzewzjUgaUmU6t7Ri_EhCKN5THw9Mz7gX9M3b_AgtqZiJQjoq8nFr9qzREAp8D88nNasBGafA=s900-c-k-c0x00ffffff-no-rj";
+
+// The four world-skills leaderboards. Default order: V5RC first, each program
+// high grade → low. `program`/`grade` double as the /skills URL params.
+type SkillsLeaderKey = {
+  program: "v5rc" | "viqrc";
+  grade: "hs" | "ms" | "es";
+  progName: string;
+  gradeLabel: string;
+};
+
+const skillsLeaders: SkillsLeaderKey[] = [
+  { program: "v5rc", grade: "hs", progName: "V5RC", gradeLabel: "HS" },
+  { program: "v5rc", grade: "ms", progName: "V5RC", gradeLabel: "MS" },
+  { program: "viqrc", grade: "ms", progName: "VIQRC", gradeLabel: "MS" },
+  { program: "viqrc", grade: "es", progName: "VIQRC", gradeLabel: "ES" },
+];
+
+/**
+ * Signed-in users see their own program's two boards first, then the other
+ * program's — the profile stores a team program (RobotEvents id) but no grade,
+ * so within a program the order stays high grade → low. VURC/VAIRC profiles have
+ * no board here and fall through to the default order.
+ */
+function orderedSkillsLeaders(teamProgram?: string | null): SkillsLeaderKey[] {
+  const mine = teamProgram === "1" ? "v5rc" : teamProgram === "41" ? "viqrc" : null;
+  if (!mine) return skillsLeaders;
+  // Stable sort, so each program keeps its internal grade order.
+  return [...skillsLeaders].sort((a, b) => Number(b.program === mine) - Number(a.program === mine));
+}
+
+// Session cache of the four leaders, keyed program:grade. Each response is a
+// single row, so holding all four costs nothing and repeat visits to the home
+// page render them instantly instead of refetching on every mount. A rejected
+// request drops out of the cache so the next visit retries it.
+const topSkillsCache = new Map<string, Promise<TopSkillsResult>>();
+
+function loadTopSkills(program: "v5rc" | "viqrc", grade: "hs" | "ms" | "es") {
+  const key = `${program}:${grade}`;
+  let promise = topSkillsCache.get(key);
+  if (!promise) {
+    promise = api.topSkills(program, grade).catch((err: Error) => {
+      topSkillsCache.delete(key);
+      throw err;
+    });
+    topSkillsCache.set(key, promise);
+  }
+  return promise;
+}
+
+/** Warm all four leaders once per page load, whatever route the visit started on. */
+function prefetchSkillsLeaders() {
+  for (const lb of skillsLeaders) {
+    // Errors are the cards' problem, not the prefetch's — swallow here so an
+    // offline visit doesn't produce an unhandled rejection.
+    loadTopSkills(lb.program, lb.grade).catch(() => {});
+  }
+}
+
+/**
+ * One tile: the #1 skills team for a program + grade.
+ *
+ * Data comes from /api/top-skills, which trims the multi-megabyte world
+ * leaderboard down to this single row server-side. Clicking through opens the
+ * in-app leaderboard already switched to this program, season, and grade, with
+ * the team briefly highlighted (see `team` param in WorldSkillsPageInner).
+ */
+function SkillsLeaderCard({
+  program,
+  grade,
+  progName,
+  gradeLabel,
+}: {
+  program: "v5rc" | "viqrc";
+  grade: "hs" | "ms" | "es";
+  progName: string;
+  gradeLabel: string;
+}) {
+  const { data, loading, error } = useAsync(() => loadTopSkills(program, grade), [program, grade]);
+  const entry = data?.entry ?? null;
+  const params = new URLSearchParams({ program, grade });
+  if (data?.seasonId) params.set("season", String(data.seasonId));
+  if (entry) params.set("team", String(entry.teamId));
+
+  const head = (
+    <span className="skills-leader-eyebrow">
+      {progName} <em className={`skills-leader-grade grade-${gradeLabel}`}>{gradeLabel}</em>
+    </span>
+  );
+
+  if (loading || !entry) {
+    return (
+      <div className={`skills-leader-card ${program}${loading ? " is-loading" : ""}`} aria-busy={loading || undefined}>
+        <span className="skills-leader-main">
+          {head}
+          {loading ? (
+            <span className="skills-leader-bone skeleton-shimmer" style={{ width: "70%", height: 20 }} />
+          ) : (
+            <span className="skills-leader-empty">{error ? "Unavailable" : "No scores yet"}</span>
+          )}
+        </span>
+        {loading && <span className="skills-leader-bone skeleton-shimmer" style={{ width: 118, height: 26 }} />}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={`/skills?${params.toString()}`}
+      className={`skills-leader-card ${program}`}
+      title={`#1 ${progName} ${gradeLabel} skills — ${entry.team}${entry.teamName ? ` (${entry.teamName})` : ""}`}
+    >
+      {/* Left: who. Right: what they scored. */}
+      <span className="skills-leader-main">
+        {head}
+        {/* Number and name share one row: the number sets the row height and the
+            name is clamped to two lines that fit inside it. */}
+        <span className="skills-leader-id">
+          <strong className="skills-leader-team">{entry.team}</strong>
+          <span className="skills-leader-name">{entry.teamName || entry.organization || "—"}</span>
+        </span>
+      </span>
+      {/* Total stands alone; driver and programming stack beside it as two
+          value-then-label lines, so the small numbers share a baseline with their
+          own labels instead of floating above the big one. */}
+      <span className="skills-leader-scores">
+        <span className="skills-leader-total">
+          <strong>{entry.score}</strong>
+          <small>Total</small>
+        </span>
+        <span className="skills-leader-splits">
+          <span className="skills-leader-split">
+            <b>{entry.driver}</b>
+            <small>Driver</small>
+          </span>
+          <span className="skills-leader-split">
+            <b>{entry.programming}</b>
+            <small>Prog</small>
+          </span>
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+/** The VEX-logo button: opens a menu of the four official standings pages. */
+function VexSkillsMenu() {
+  const [open, setOpen] = useState(false);
+  const ref = useOutsideClick<HTMLDivElement>(() => setOpen(false));
+
+  return (
+    <div className="skills-lb-vex-wrap" ref={ref} onKeyDown={(e) => e.key === "Escape" && setOpen(false)}>
+      <button
+        type="button"
+        className={`skills-lb-vex${open ? " is-open" : ""}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Official skills standings on events.vex.com"
+        aria-label="Official skills standings on events.vex.com"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <img src={VEX_LOGO_URL} alt="" width={20} height={20} loading="lazy" />
+        <ExternalLink size={13} />
+      </button>
+      {open && (
+        <div className="skills-lb-vex-menu" role="menu">
+          {VEX_SKILLS_LINKS.map((link) => (
+            <a
+              key={link.url}
+              href={link.url}
+              target="_blank"
+              rel="noreferrer"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+            >
+              <span>{link.label}</span>
+              <ExternalLink size={11} />
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SkillsLeaderboardPanel() {
+  const { profile } = useAuth();
+  const leaders = orderedSkillsLeaders(profile?.team_program);
+  return (
+    <Panel title="World Skills Rankings" icon={<Trophy />}>
+      <div className="skills-leaderboard-list">
+        <div className="skills-lb-row">
+          <Link href="/skills" className="skills-lb-openscout">
+            <span>View leaderboards</span>
+            <ChevronRight size={15} className="arrow" />
+          </Link>
+          <VexSkillsMenu />
+        </div>
+        <div className="skills-leader-grid">
+          {leaders.map((lb) => (
+            <SkillsLeaderCard
+              key={`${lb.program}-${lb.grade}`}
+              program={lb.program}
+              grade={lb.grade}
+              progName={lb.progName}
+              gradeLabel={lb.gradeLabel}
+            />
+          ))}
+        </div>
+      </div>
+    </Panel>
+  );
+}
 
 const homeEventTabs: Array<{ label: string; value: HomeEventTab }> = [
   { label: "Upcoming", value: "upcoming" },
@@ -4796,26 +5005,7 @@ function Home() {
           <FavoritesPanel />
           <SharedTeamPanel />
 
-          <Panel title="VEX Skill Leaderboards" icon={<Trophy />}>
-            <div className="skills-leaderboard-list">
-              <Link href="/skills" className="skills-lb-openscout">
-                <span>View leaderboards on OpenScout</span>
-                <ChevronRight size={15} className="arrow" />
-              </Link>
-              {skillsLeaderboards.map((lb) => (
-                <a
-                  key={lb.url}
-                  href={lb.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={`skills-lb-btn ${lb.className}`}
-                >
-                  <span>{lb.label}</span>
-                  <ExternalLink size={13} />
-                </a>
-              ))}
-            </div>
-          </Panel>
+          <SkillsLeaderboardPanel />
         </aside>
 
         <Panel
@@ -18093,6 +18283,9 @@ export default function App() {
 
   useEffect(() => {
     loadYouTubeApi();
+    // Four one-row requests — warm them on any entry point so the home sidebar's
+    // skills leaders are already there when the visit reaches them.
+    prefetchSkillsLeaders();
   }, []);
 
   // Update the breadcrumb history before paint so the trail is correct on the
