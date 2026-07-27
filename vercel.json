@@ -6,6 +6,7 @@
     { "source": "/api/event-info", "destination": "/api/event-info" },
     { "source": "/api/event-grades", "destination": "/api/event-grades" },
     { "source": "/api/top-skills", "destination": "/api/top-skills" },
+    { "source": "/api/spotlight-events", "destination": "/api/spotlight-events" },
     { "source": "/api/:path*", "destination": "/api/proxy?__p=:path*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],

@@ -19,6 +19,14 @@ import type {
   WorldSkillsEntry,
 } from "./types";
 
+import { noteEventsForSpotlightTier } from "./spotlightTier";
+
+/** Pass a paginated event page through the Spotlight-tier trigger unchanged. */
+const notedEvents = (page: Paginated<Event>) => {
+  noteEventsForSpotlightTier(page.data);
+  return page;
+};
+
 type QueryValue = string | number | boolean | null | undefined;
 type Query = Record<string, QueryValue | QueryValue[]>;
 
@@ -92,8 +100,16 @@ export const api = {
   robotEventsSeasons: (query: Query = {}) => robotEventsJson<Paginated<Season>>("seasons", { per_page: 250, ...query }),
   robotEventsCountries: () => robotEventsRootJson<CountryGroup[]>("api/countries", { common: 1 }),
   robotEventsRegions: (countryId?: string | number) => robotEventsRootJson<CountryRegion[]>(countryId ? `api/regions/${countryId}` : "api/regions"),
-  events: (query: Query = {}) => robotEventsJson<Paginated<Event>>("events", query),
-  event: (id: string | number) => robotEventsJson<Event>(`events/${id}`),
+  // The three event endpoints tap noteEventsForSpotlightTier: seeing a `level:
+  // "World"` row is what triggers the Spotlight-tier lookup, so a session that
+  // never loads an ambiguous event never spends a request. See src/spotlightTier.ts.
+  events: (query: Query = {}) =>
+    robotEventsJson<Paginated<Event>>("events", query).then(notedEvents),
+  event: (id: string | number) =>
+    robotEventsJson<Event>(`events/${id}`).then((event) => {
+      noteEventsForSpotlightTier(event);
+      return event;
+    }),
   eventTeams: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Team>>(`events/${id}/teams`, query),
   eventMatches: (id: string | number, division: string | number, query: Query = {}) =>
     robotEventsJson<Paginated<Match>>(`events/${id}/divisions/${division}/matches`, query),
@@ -137,7 +153,8 @@ export const api = {
     return { meta: res.meta, data: res.data.map(mapTeamLight) };
   },
   team: (id: string | number) => robotEventsJson<Team>(`teams/${id}`),
-  teamEvents: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Event>>(`teams/${id}/events`, query),
+  teamEvents: (id: string | number, query: Query = {}) =>
+    robotEventsJson<Paginated<Event>>(`teams/${id}/events`, query).then(notedEvents),
   teamMatches: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Match>>(`teams/${id}/matches`, query),
   teamRankings: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Ranking>>(`teams/${id}/rankings`, query),
   teamSkills: (id: string | number, query: Query = {}) => robotEventsJson<Paginated<Skill>>(`teams/${id}/skills`, query),

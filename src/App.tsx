@@ -66,6 +66,7 @@ import { api } from "./api";
 import JumperPage from "./jumper/JumperPage.jsx";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
+import { getSpotlightTierVersion, isSpotlightSku, subscribeSpotlightTier, useSpotlightTier } from "./spotlightTier";
 import { setTheme as applyTheme, useTheme } from "./theme";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { fade, revealUp, slideInLeft, springSmooth } from "@/lib/motion";
@@ -120,7 +121,7 @@ import type { TrayEntry } from "./compare";
 import { toCsv, downloadCsv as downloadCsvFile } from "./export";
 import { computeEventOpr } from "./analytics";
 import type { TeamOpr } from "./analytics";
-import type { Alliance, Award, CountryGroup, Event, EventInfoData, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, WorldSkillsEntry } from "./types";
+import type { Alliance, Award, CountryGroup, Event, EventInfoData, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, TopSkillsResult, WorldSkillsEntry } from "./types";
 import tzLookup from "@photostructure/tz-lookup";
 
 const programOptions = [
@@ -176,7 +177,18 @@ const teamCacheRefreshMs = 24 * 60 * 60 * 1000;
 // Matches the proxy's ~60s upstream cache, so faster would just return cached bytes.
 const liveEventRefreshMs = 30 * 1000;
 const globalEventSearchCacheMs = 5 * 60 * 1000;
-type EventCategory = "Worlds" | "Signature" | "Championship" | "Other";
+// VEX event tiers, most significant first. "Spotlight" is the tier VEX introduced
+// for 2026-2027; see eventCategory for how it is detected.
+type EventCategory = "Worlds" | "Signature" | "Spotlight" | "Championship" | "Other";
+
+// The events page's Type filter values → the tier they select.
+const LEVEL_FILTER_CATEGORIES: Record<string, EventCategory> = {
+  World: "Worlds",
+  Signature: "Signature",
+  Spotlight: "Spotlight",
+  Championship: "Championship",
+  Other: "Other",
+};
 type EventSort = "smart" | "date" | "type" | "name" | "program" | "location" | "past-season" | "distance";
 type EventWindow = "today" | "near" | "upcoming" | "next30" | "next90" | "past30" | "allSeason";
 type EventFilterLayout = "sidebar" | "inline";
@@ -1311,11 +1323,16 @@ function normalizeText(value?: string | null) {
 function eventCategory(event: Event): { label: EventCategory; rank: number } {
   const robotEventsType = event.level ?? event.event_type ?? "";
 
+  // Checked before Worlds: both arrive as level "World", and only the SKU set from
+  // /api/spotlight-events tells them apart (see src/spotlightTier.ts). Until that
+  // set loads this is false, so a Spotlight event reads as Worlds — the behaviour
+  // that predates the lookup.
+  if (isSpotlightSku(event.sku)) return { label: "Spotlight", rank: 2 };
   if (robotEventsType === "World") return { label: "Worlds", rank: 0 };
   if (robotEventsType === "Signature") return { label: "Signature", rank: 1 };
-  if (robotEventsType === "National" || robotEventsType === "State" || robotEventsType === "Regional") return { label: "Championship", rank: 2 };
+  if (robotEventsType === "National" || robotEventsType === "State" || robotEventsType === "Regional") return { label: "Championship", rank: 3 };
 
-  return { label: "Other", rank: 3 };
+  return { label: "Other", rank: 4 };
 }
 
 // Scrimmages are practice events that shouldn't count toward performance trends.
@@ -2408,9 +2425,12 @@ function filterAndSortEvents(events: Event[], options: {
       if (programIds.length && !programIds.includes(String(event.program.id))) return false;
       if (seasonIds.length && !seasonIds.includes(event.season.id)) return false;
       if (options.level) {
-        if (options.level === "Championship" && eventCategory(event).label !== "Championship") return false;
-        if (options.level === "Other" && eventCategory(event).label !== "Other") return false;
-        if (options.level !== "Championship" && options.level !== "Other" && event.level !== options.level) return false;
+        // Filter by tier, not by the raw RobotEvents level — otherwise "Worlds"
+        // also matches Spotlight events, which arrive as level "World".
+        const wantedCategory = LEVEL_FILTER_CATEGORIES[options.level];
+        if (wantedCategory) {
+          if (eventCategory(event).label !== wantedCategory) return false;
+        } else if (event.level !== options.level) return false;
       }
       if (!eventMatchesRegionOptions(event, options.regionOptions ?? [])) return false;
       if (options.hideCanceled && /cancel+ed|canceled/i.test(event.name)) return false;
@@ -4800,17 +4820,21 @@ function UpcomingGroupedEvents({ events, loading }: { events: Event[]; loading: 
   const sortToggle = <UpcomingSortToggle value={sort} onChange={setSort} />;
 
   const byDate = useMemo(() => [...events].sort(compareEventsChronological), [events]);
+  const spotlightTier = useSpotlightTier();
+
   const sections = useMemo(() => {
     const tiers: Array<{ label: string; category: EventCategory; collapsible: boolean }> = [
       { label: "World Championships", category: "Worlds", collapsible: true },
       { label: "Signature Events", category: "Signature", collapsible: true },
+      { label: "Spotlight Events", category: "Spotlight", collapsible: true },
       { label: "Championships", category: "Championship", collapsible: true },
       { label: "Other Events", category: "Other", collapsible: false },
     ];
     return tiers
       .map((tier) => ({ ...tier, events: events.filter((event) => eventCategory(event).label === tier.category) }))
       .filter((tier) => tier.events.length > 0);
-  }, [events]);
+    // Grouping is by tier, so the Spotlight SKUs arriving must regroup.
+  }, [events, spotlightTier]);
 
   const otherEvents = useMemo(() => sections.find((section) => !section.collapsible)?.events ?? [], [sections]);
   // One page counter for both modes: it paginates "Other Events" under Smart
@@ -4917,9 +4941,11 @@ function Home() {
       }),
     [programKey],
   );
+  const spotlightTier = useSpotlightTier();
   const baseHomeEvents = useMemo(
     () => filterAndSortEvents(events?.data ?? [], { hideCanceled: true, sort: "smart", programIds: selectedProgramIds }),
-    [events, selectedProgramIds],
+    // Smart sort orders by tier, so re-sort when the Spotlight SKUs arrive.
+    [events, selectedProgramIds, spotlightTier],
   );
   const location = useHomeLocation(homeEventTab === "nearMe");
   const userCoords = location.coords;
@@ -4960,7 +4986,9 @@ function Home() {
       }
       return filterEventsNearLocation(baseHomeEvents, { coords: userCoords, area: userArea, bbox: userBbox }, nearMeRadius, true);
     }
-    // Upcoming: future events, chronological (grouped by level downstream).
+    // Upcoming: today's events plus everything still ahead, chronological
+    // (grouped by level downstream). `today` carries a time-of-day, so events
+    // that started earlier today need eventIsToday to survive the cutoff.
     return baseHomeEvents
       .filter((event) => eventIsToday(event) || new Date(event.start ?? 0).getTime() >= today.getTime())
       .sort(compareEventsChronological);
@@ -5319,6 +5347,7 @@ function EventsPageInner() {
     },
     [userCoords],
   );
+  const spotlightTier = useSpotlightTier();
   const filteredEvents = useMemo(
     () =>
       filterAndSortEvents(data?.data ?? [], {
@@ -5332,7 +5361,9 @@ function EventsPageInner() {
         // then fall back to the default ordering.
         sort: isPastSeasonView ? "past-season" : sort === "distance" ? "smart" : sort,
       }),
-    [data, selectedProgramIds, level, selectedRegionOptions, selectedSeasonIds, hideCanceled, selectedGrades, sort, isPastSeasonView],
+    // spotlightTier: the Spotlight SKU set can land after this first runs, and
+    // `level` filters by tier.
+    [data, selectedProgramIds, level, selectedRegionOptions, selectedSeasonIds, hideCanceled, selectedGrades, sort, isPastSeasonView, spotlightTier],
   );
   const visibleEvents = useMemo(() => {
     let events = filteredEvents;
@@ -5633,6 +5664,10 @@ function EventsPageInner() {
               Signature
               {level === "Signature" && <SlideIndicator id="seg-type" variant="pill" />}
             </button>
+            <button className={level === "Spotlight" ? "active" : ""} onClick={() => setQuickFilter("Spotlight", eventWindow)}>
+              Spotlight
+              {level === "Spotlight" && <SlideIndicator id="seg-type" variant="pill" />}
+            </button>
             <button className={level === "Championship" ? "active" : ""} onClick={() => setQuickFilter("Championship", eventWindow)}>
               Championships
               {level === "Championship" && <SlideIndicator id="seg-type" variant="pill" />}
@@ -5907,6 +5942,7 @@ function PastSeasonEventView({
   const tiers: Array<{ label: string; category: EventCategory; collapsible: boolean; paginate: boolean }> = [
     { label: "World Championships", category: "Worlds", collapsible: true, paginate: false },
     { label: "Signature Events", category: "Signature", collapsible: true, paginate: false },
+    { label: "Spotlight Events", category: "Spotlight", collapsible: true, paginate: false },
     { label: "Championships", category: "Championship", collapsible: true, paginate: false },
     { label: "Other Events", category: "Other", collapsible: false, paginate: true },
   ];
@@ -18314,6 +18350,12 @@ export default function App() {
   const trayEntries = useCompareTray();
   const compareModalOpen = useCompareModalOpen();
   const quickView = useQuickView();
+
+  // Re-render once the Spotlight-tier SKUs land, since eventCategory reads them
+  // from module scope rather than from props. The fetch itself is triggered by the
+  // api layer, only when an events payload actually contains a `level: "World"`
+  // row — see src/spotlightTier.ts.
+  useSyncExternalStore(subscribeSpotlightTier, getSpotlightTierVersion, getSpotlightTierVersion);
 
   useEffect(() => {
     loadYouTubeApi();

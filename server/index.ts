@@ -7,6 +7,7 @@ import { clientIpFromForwardedFor, guardProxyRequest, proxyRequest, type ProxySo
 import { scrapeEventInfo } from "./eventInfoScraper.js";
 import { resolveEventGrades } from "./eventGrades.js";
 import { currentSeasonByProgram, isTopSkillsGrade, isTopSkillsProgram, programRunsGrade, resolveTopSkills } from "./topSkills.js";
+import { resolveSpotlightEvents } from "./spotlightEvents.js";
 import { parseSkuParam } from "../api/event-grades.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -104,6 +105,18 @@ app.get("/api/top-skills", async (req: express.Request, res: express.Response) =
   } catch (err) {
     console.error("[top-skills] handler error:", err);
     res.status(502).json({ error: "Failed to load world skills leaderboard" });
+  }
+});
+
+// Spotlight-tier event SKUs (see server/spotlightEvents.ts) — before the catch-alls.
+app.get("/api/spotlight-events", async (_req: express.Request, res: express.Response) => {
+  try {
+    const result = await resolveSpotlightEvents(await currentSeasonByProgram());
+    res.setHeader("cache-control", "public, s-maxage=21600, stale-while-revalidate=86400");
+    res.json(result);
+  } catch (err) {
+    console.error("[spotlight-events] handler error:", err);
+    res.status(502).json({ error: "Failed to resolve Spotlight events" });
   }
 });
 
