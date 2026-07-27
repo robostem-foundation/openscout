@@ -14004,6 +14004,16 @@ function WorldSkillsPageInner() {
     });
   }
 
+  // `?team=` (set by the home sidebar's skills-leader tiles) points at one row:
+  // the page pages to it, scrolls it into view, and flashes it, then forgets it.
+  // Deliberately not written back to the URL by the sync effect below — the
+  // highlight is a one-shot arrival cue, not shareable state.
+  const [focusTeamId, setFocusTeamId] = useState<number | null>(() => {
+    const raw = parseInt(new URLSearchParams(window.location.search).get("team") ?? "", 10);
+    return Number.isFinite(raw) ? raw : null;
+  });
+  const focusRowRef = useRef<HTMLTableRowElement | null>(null);
+
   const [useUtc, setUseUtc] = useState(false);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
@@ -14179,6 +14189,26 @@ function WorldSkillsPageInner() {
   const visibleRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   useEffect(() => { setPage(1); }, [debouncedSearch, filterCountries, filterRegions, resolvedSeasonId, grade, sort]);
+
+  // Arrival highlight: once the rows for the requested leaderboard exist, page to
+  // the focused team, scroll it into view, and drop the highlight after a beat.
+  // Runs once — any later interaction (sorting, filtering) is the user's own.
+  useEffect(() => {
+    if (focusTeamId == null) return;
+    const index = sorted.findIndex((row) => row.team.id === focusTeamId);
+    if (index === -1) return;
+    setPage(Math.floor(index / PAGE_SIZE) + 1);
+    const raf = requestAnimationFrame(() => {
+      focusRowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+    const timer = window.setTimeout(() => setFocusTeamId(null), 4000);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+    };
+    // `sorted` is the trigger (rows arrive async); the timeout clearing
+    // focusTeamId is what stops this from re-flashing on later sort changes.
+  }, [focusTeamId, sorted]);
 
   const wpPlacement = useMemo(() => {
     if (!wpAuto && !wpDriver) return null;
@@ -14521,7 +14551,11 @@ function WorldSkillsPageInner() {
                 </tr>
               ) : (
                 visibleRows.map((r, i) => (
-                  <tr key={r.team.id}>
+                  <tr
+                    key={r.team.id}
+                    ref={r.team.id === focusTeamId ? focusRowRef : undefined}
+                    className={r.team.id === focusTeamId ? "ws-row-focus" : undefined}
+                  >
                     <td className="ws-col-num ws-hide-mobile">{(page - 1) * PAGE_SIZE + i + 1}</td>
                     <td className="ws-m-rank"><strong>{r.rank}</strong></td>
                     <td className="ws-m-stat" data-label="Score"><strong>{r.scores.score}</strong></td>
