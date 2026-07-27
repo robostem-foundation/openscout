@@ -17268,6 +17268,87 @@ type MyTeamTimelineWins = {
   all: Array<{ title: string; qualifies: string[] }>;
 };
 
+// Shared by the My Team timeline and the team-focused Events list (crown row):
+// tallies a team's award wins at one event into the champion/skills/excellence/
+// other buckets the crown display lights up from.
+function computeEventAwardWins(event: Event, eventAwards: Award[], teamId: number, isIq: boolean): MyTeamTimelineWins {
+  const teamWonAwards = eventAwards.filter((a) => awardTeamWinners(a).some((w) => w.team?.id === teamId));
+  const champRe = isIq ? /teamwork.*champions?/i : /world champions?|tournament champions?|event champions?/i;
+  const skillsRe = /(?:robot\s*)?skills?.*champions?/i;
+  const excellenceRe = /excellence award/i;
+  const champAward = teamWonAwards.find((a) => champRe.test(a.title)) ?? null;
+  let champion: MyTeamTimelineWins["champion"] = null;
+  if (champAward) {
+    // Half crown when the win is division-scoped at a multi-division event: the
+    // winning entry carries a `division` and the event has >1 division. A win with
+    // no division (or a single-division event) is the overall event champion.
+    const multiDivision = (event.divisions?.length ?? 0) > 1;
+    const wonOverall = awardTeamWinners(champAward).some((w) => w.team?.id === teamId && !w.division);
+    champion = wonOverall || !multiDivision ? "full" : "division";
+  }
+  return {
+    champion,
+    skills: teamWonAwards.some((a) => skillsRe.test(a.title)),
+    excellence: teamWonAwards.some((a) => excellenceRe.test(a.title)),
+    otherAwards: teamWonAwards.filter((a) => a !== champAward && !skillsRe.test(a.title) && !excellenceRe.test(a.title)).length,
+    all: teamWonAwards.map((a) => ({ title: a.title, qualifies: a.qualifications ?? [] })),
+  };
+}
+
+// Crowns show an accumulated award "value" that fills LEFT TO RIGHT across three
+// crowns. Each important award (Tournament Champion, Robot Skills Champion, Excellence)
+// adds a full crown; a division-only champion adds a half; any number of "other" awards
+// together add a half. The total is rendered as N full crowns + an optional trailing
+// half, left-packed, and capped at 3 crowns. If the value exceeds 3, a "+" trails the
+// three full crowns. The hover popup always lists every award in full.
+function AwardCrowns({ wins, showHint }: { wins: MyTeamTimelineWins; showHint?: boolean }) {
+  const { champion, skills, excellence, otherAwards, all } = wins;
+  let value = 0;
+  if (champion === "full") value += 1;
+  else if (champion === "division") value += 0.5;
+  if (skills) value += 1;
+  if (excellence) value += 1;
+  if (otherAwards > 0) value += 0.5;
+
+  const capped = Math.min(value, 3);
+  const fulls = Math.floor(capped);
+  const hasHalf = capped - fulls >= 0.5;
+  const showOtherPlus = value > 3;
+  type CrownState = "full" | "half" | "off";
+  const slots: CrownState[] = Array.from({ length: 3 }, (_, i) =>
+    i < fulls ? "full" : i === fulls && hasHalf ? "half" : "off",
+  );
+  const crownsLabel = value > 0 ? `Awards won: ${all.length}` : "No awards won";
+  return (
+    <span className="myteam-crowns" tabIndex={all.length ? 0 : -1} aria-label={crownsLabel}>
+      {slots.map((state, i) =>
+        state === "full" ? (
+          <Crown key={i} className="mt-crown on" aria-hidden="true" />
+        ) : state === "half" ? (
+          <span key={i} className="mt-crown-half" aria-hidden="true">
+            <Crown className="mt-crown off" />
+            <span className="mt-crown-clip"><Crown className="mt-crown on" /></span>
+          </span>
+        ) : (
+          <Crown key={i} className="mt-crown off" aria-hidden="true" />
+        ),
+      )}
+      {showOtherPlus && <span className="mt-crown-plus" aria-hidden="true">+</span>}
+      {showHint && <span className="myteam-crowns-hint">Hover for all awards</span>}
+      {all.length > 0 && (
+        <span className="myteam-crowns-pop">
+          {all.map((a, i) => (
+            <span key={i} className="mt-crown-popitem">
+              <span className="mt-crown-poptitle">{a.title}</span>
+              {a.qualifies.length > 0 && <span className="mt-crown-popq">Qualifies: {a.qualifies.join(", ")}</span>}
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
 type MyTeamTimelineRow = {
   event: Event;
   state: "live" | "up" | "done";
@@ -17500,32 +17581,8 @@ function MyTeamDashboard() {
       const live = eventIsLive(event);
       const up = !live && start > now;
       const state: MyTeamTimelineRow["state"] = live ? "live" : up ? "up" : "done";
-      // Awards this team won at this event (title-matched via the same regexes used
-      // elsewhere for consistency), with qualifications for the hover popup.
-      const teamWonAwards = team
-        ? seasonAwards.filter((a) => a.event.id === event.id && awardTeamWinners(a).some((w) => w.team?.id === team.id))
-        : [];
-      const champRe = isIq ? /teamwork.*champions?/i : /world champions?|tournament champions?|event champions?/i;
-      const skillsRe = /(?:robot\s*)?skills?.*champions?/i;
-      const excellenceRe = /excellence award/i;
-      const champAward = teamWonAwards.find((a) => champRe.test(a.title)) ?? null;
-      let champion: MyTeamTimelineWins["champion"] = null;
-      if (champAward && team) {
-        // Half crown when the win is division-scoped at a multi-division event: the
-        // winning entry carries a `division` and the event has >1 division. A win with
-        // no division (or a single-division event) is the overall event champion.
-        const multiDivision = (event.divisions?.length ?? 0) > 1;
-        const wonOverall = awardTeamWinners(champAward).some((w) => w.team?.id === team.id && !w.division);
-        champion = wonOverall || !multiDivision ? "full" : "division";
-      }
-      const wins: MyTeamTimelineWins = {
-        champion,
-        skills: teamWonAwards.some((a) => skillsRe.test(a.title)),
-        excellence: teamWonAwards.some((a) => excellenceRe.test(a.title)),
-        // Any award that isn't one of the three "important" ones above.
-        otherAwards: teamWonAwards.filter((a) => a !== champAward && !skillsRe.test(a.title) && !excellenceRe.test(a.title)).length,
-        all: teamWonAwards.map((a) => ({ title: a.title, qualifies: a.qualifications ?? [] })),
-      };
+      const eventAwards = seasonAwards.filter((a) => a.event.id === event.id);
+      const wins = team ? computeEventAwardWins(event, eventAwards, team.id, isIq) : computeEventAwardWins(event, [], 0, isIq);
       const rk = seasonRankings.find((r) => r.event.id === event.id) ?? null;
       const sk = skillSummary(seasonSkills.filter((s) => s.event.id === event.id));
       return {
@@ -17839,65 +17896,11 @@ function MyTeamDashboard() {
     </div>
   );
 
-  // Crowns show an accumulated award "value" that fills LEFT TO RIGHT across three
-  // crowns. Each important award (Tournament Champion, Robot Skills Champion, Excellence)
-  // adds a full crown; a division-only champion adds a half; any number of "other" awards
-  // together add a half. The total is rendered as N full crowns + an optional trailing
-  // half, left-packed, and capped at 3 crowns. If the value exceeds 3, a "+" trails the
-  // three full crowns. The hover popup always lists every award in full.
-  const crownRow = (row: MyTeamTimelineRow, showHint?: boolean) => {
-    const { champion, skills, excellence, otherAwards, all } = row.wins;
-    let value = 0;
-    if (champion === "full") value += 1;
-    else if (champion === "division") value += 0.5;
-    if (skills) value += 1;
-    if (excellence) value += 1;
-    if (otherAwards > 0) value += 0.5;
-
-    const capped = Math.min(value, 3);
-    const fulls = Math.floor(capped);
-    const hasHalf = capped - fulls >= 0.5;
-    const showOtherPlus = value > 3;
-    type CrownState = "full" | "half" | "off";
-    const slots: CrownState[] = Array.from({ length: 3 }, (_, i) =>
-      i < fulls ? "full" : i === fulls && hasHalf ? "half" : "off",
-    );
-    const crownsLabel = value > 0 ? `Awards won: ${all.length}` : "No awards won";
-    return (
-      <span className="myteam-crowns" tabIndex={all.length ? 0 : -1} aria-label={crownsLabel}>
-        {slots.map((state, i) =>
-          state === "full" ? (
-            <Crown key={i} className="mt-crown on" aria-hidden="true" />
-          ) : state === "half" ? (
-            <span key={i} className="mt-crown-half" aria-hidden="true">
-              <Crown className="mt-crown off" />
-              <span className="mt-crown-clip"><Crown className="mt-crown on" /></span>
-            </span>
-          ) : (
-            <Crown key={i} className="mt-crown off" aria-hidden="true" />
-          ),
-        )}
-        {showOtherPlus && <span className="mt-crown-plus" aria-hidden="true">+</span>}
-        {showHint && <span className="myteam-crowns-hint">Hover for all awards</span>}
-        {all.length > 0 && (
-          <span className="myteam-crowns-pop">
-            {all.map((a, i) => (
-              <span key={i} className="mt-crown-popitem">
-                <span className="mt-crown-poptitle">{a.title}</span>
-                {a.qualifies.length > 0 && <span className="mt-crown-popq">Qualifies: {a.qualifies.join(", ")}</span>}
-              </span>
-            ))}
-          </span>
-        )}
-      </span>
-    );
-  };
-
   const timelineNode = (row: MyTeamTimelineRow, showHint?: boolean) => (
     <>
       <div className="row"><span className="nm">{row.event.name}</span><span className="dt">{myTeamDateLabel(row.event.start)}</span></div>
       <div className="myteam-evmeta"><span className="loc">{locationLine(row.event)}</span></div>
-      <div className="myteam-evtags"><span className={`event-priority priority-${eventCategory(row.event).rank}`}>{eventCategory(row.event).label}</span>{crownRow(row, showHint)}</div>
+      <div className="myteam-evtags"><span className={`event-priority priority-${eventCategory(row.event).rank}`}>{eventCategory(row.event).label}</span><AwardCrowns wins={row.wins} showHint={showHint} /></div>
       <div className="myteam-resline">{renderPieces(row)}</div>
     </>
   );
