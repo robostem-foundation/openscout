@@ -6,45 +6,46 @@
 // <project-ref>.supabase.co". Nothing in this repo can override that; the only
 // supported fix is Supabase's paid custom-domain add-on.
 //
-// Google Identity Services (GIS) sidesteps it: the browser talks to Google
-// directly from openscout.ing, Google attributes the prompt to the authorized
-// JavaScript origin, and we exchange the resulting ID token for a Supabase
-// session via `signInWithIdToken`. Same user row, same `sub` — accounts created
-// through the old redirect flow keep working.
+// So we run the OpenID Connect implicit flow ourselves: a top-level navigation
+// to Google with `redirect_uri` on our own domain, which is what the chooser
+// names. Google posts an ID token back in the URL fragment and Supabase turns it
+// into a session via `signInWithIdToken` — same user row, same `sub`, so
+// accounts created through the old redirect flow keep working.
 //
-// Every failure path (script blocked, GIS unavailable, exchange rejected) falls
-// back to the original redirect flow, so the worst case is today's behavior.
+// This deliberately does NOT use Google Identity Services. GIS renders a button
+// we can't style; overlaying it invisibly under ours gets silently refused by
+// Chrome's FedCM button flow, which won't show a chooser for a transparent or
+// obscured button. A plain top-level navigation has no such rule and can't be
+// popup-blocked either.
 import { supabase } from "./supabase";
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
-const SRC = "https://accounts.google.com/gsi/client";
-
-// GIS button width is clamped by Google to 200–400px.
-const MIN_WIDTH = 200;
-const MAX_WIDTH = 400;
-
-type CredentialResponse = { credential?: string };
-
-type GoogleIdentity = {
-  accounts: {
-    id: {
-      initialize: (config: Record<string, unknown>) => void;
-      renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
-    };
-  };
-};
-
-declare global {
-  interface Window {
-    google?: GoogleIdentity;
-  }
-}
+const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
+// Handoff across the redirect. sessionStorage (not local) so it dies with the
+// tab and can't be replayed later.
+const HANDOFF_KEY = "openscout:google-signin";
 
 export const isGoogleIdentityConfigured = Boolean(CLIENT_ID);
 
-// The redirect flow we started with — also the fallback whenever GIS can't
-// finish the job.
-export async function googleRedirectSignIn(redirectTo?: string) {
+// Google matches redirect_uri by exact string, so this has to be registered
+// verbatim under the client's "Authorized redirect URIs" — one per origin.
+const redirectUri = () => `${window.location.origin}/`;
+
+const hex = (buffer: ArrayBuffer) =>
+  Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, "0")).join("");
+
+function randomHex(bytes = 32) {
+  const buf = new Uint8Array(bytes);
+  crypto.getRandomValues(buf);
+  return hex(buf.buffer);
+}
+
+const sha256Hex = async (value: string) =>
+  hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+
+// The redirect flow we started with. Still the fallback whenever the direct
+// flow can't run, and still what Discord uses.
+async function supabaseRedirectSignIn(redirectTo?: string) {
   if (!supabase) return;
   await supabase.auth.signInWithOAuth({
     provider: "google",
@@ -52,132 +53,82 @@ export async function googleRedirectSignIn(redirectTo?: string) {
   });
 }
 
-function loadScript(): Promise<GoogleIdentity> {
-  if (window.google?.accounts?.id) return Promise.resolve(window.google);
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${SRC}"]`);
-    const el = existing ?? document.createElement("script");
-    el.addEventListener("load", () => {
-      if (window.google?.accounts?.id) resolve(window.google);
-      else reject(new Error("GIS loaded without accounts.id"));
-    });
-    el.addEventListener("error", () => reject(new Error("GIS script blocked")));
-    if (!existing) {
-      el.src = SRC;
-      el.async = true;
-      el.defer = true;
-      document.head.appendChild(el);
-    }
-  });
-}
+/**
+ * Leaves the page for Google's account chooser. `returnTo` is the path to land
+ * back on — Google only ever redirects to the registered origin root, so we
+ * restore the deep link ourselves in completeGoogleSignIn.
+ */
+export async function startGoogleSignIn(returnTo?: string) {
+  if (!supabase) return;
+  const target = returnTo ?? window.location.pathname + window.location.search;
+  if (!CLIENT_ID) return supabaseRedirectSignIn(window.location.origin + target);
 
-const hex = (buffer: ArrayBuffer) =>
-  Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, "0")).join("");
+  // Google signs the HASHED nonce into the token; Supabase re-hashes the raw one
+  // we hand it and compares. `state` is the CSRF guard on the return leg.
+  const nonce = randomHex();
+  const state = randomHex(16);
+  sessionStorage.setItem(HANDOFF_KEY, JSON.stringify({ nonce, state, returnTo: target }));
 
-// Replay guard: Google signs the HASHED nonce into the ID token, Supabase
-// re-hashes the raw one we pass it and compares. One nonce per page load is
-// enough — it only has to be unpredictable and single-origin.
-async function makeNonce() {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  const raw = hex(bytes.buffer);
-  const hashed = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)));
-  return { raw, hashed };
-}
-
-// Where to send the user if the token exchange fails and we have to fall back
-// mid-flight. Set by whichever button was mounted last.
-let fallbackRedirectTo: string | undefined;
-let rawNonce = "";
-
-async function exchange(response: CredentialResponse) {
-  if (!supabase || !response.credential) return;
-  const { error } = await supabase.auth.signInWithIdToken({
-    provider: "google",
-    token: response.credential,
-    nonce: rawNonce,
-  });
-  if (!error) return;
-  // Most likely cause: the Google client ID isn't listed under the Supabase
-  // Google provider yet. Don't strand the user on a dead click — finish the
-  // sign-in the old way.
-  console.warn("[auth] Google ID token exchange failed, falling back to redirect:", error.message);
-  void googleRedirectSignIn(fallbackRedirectTo);
-}
-
-let initPromise: Promise<GoogleIdentity> | null = null;
-
-function init(): Promise<GoogleIdentity> {
-  if (!initPromise) {
-    initPromise = (async () => {
-      const [google, nonce] = await Promise.all([loadScript(), makeNonce()]);
-      rawNonce = nonce.raw;
-      google.accounts.id.initialize({
-        client_id: CLIENT_ID,
-        callback: exchange,
-        nonce: nonce.hashed,
-        auto_select: false,
-        itp_support: true,
-        use_fedcm_for_prompt: true,
-        ux_mode: "popup",
-      });
-      return google;
-    })().catch((err) => {
-      initPromise = null;
-      throw err;
-    });
-  }
-  return initPromise;
+  const url = new URL(AUTH_ENDPOINT);
+  url.search = new URLSearchParams({
+    client_id: CLIENT_ID,
+    redirect_uri: redirectUri(),
+    response_type: "id_token",
+    response_mode: "fragment",
+    scope: "openid email profile",
+    nonce: await sha256Hex(nonce),
+    state,
+    prompt: "select_account",
+  }).toString();
+  window.location.assign(url.toString());
 }
 
 /**
- * Renders an invisible GIS button filling `host`, so a real click on the
- * app-styled button underneath lands on Google's iframe instead. When this
- * never resolves (script blocked, no client ID) the host stays empty and the
- * click falls through to the styled button's own redirect handler.
- *
- * Returns a cleanup function.
+ * Consumes the `#id_token=…` Google leaves on the URL and trades it for a
+ * Supabase session. Safe to call on every load; resolves immediately when the
+ * fragment isn't ours. Call it BEFORE rendering, so the router never sees the
+ * fragment and the app boots already signed in.
  */
-export function mountGoogleButton(host: HTMLElement, options: { redirectTo?: string } = {}) {
-  fallbackRedirectTo = options.redirectTo;
-  if (!CLIENT_ID || !supabase) return () => {};
+export async function completeGoogleSignIn() {
+  const raw = window.location.hash.slice(1);
+  if (!raw.includes("id_token=") && !raw.includes("error=")) return;
 
-  let cancelled = false;
-  let lastWidth = 0;
+  const params = new URLSearchParams(raw);
+  const stored = sessionStorage.getItem(HANDOFF_KEY);
+  sessionStorage.removeItem(HANDOFF_KEY);
 
-  const draw = (google: GoogleIdentity) => {
-    const width = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, host.clientWidth || MIN_WIDTH)));
-    if (cancelled || width === lastWidth) return;
-    lastWidth = width;
-    host.replaceChildren();
-    google.accounts.id.renderButton(host, {
-      type: "standard",
-      theme: "outline",
-      size: "large",
-      text: "signin_with",
-      shape: "rectangular",
-      logo_alignment: "left",
-      width,
-    });
-  };
+  let handoff: { nonce?: string; state?: string; returnTo?: string } = {};
+  try {
+    handoff = stored ? JSON.parse(stored) : {};
+  } catch {
+    /* malformed handoff is treated as absent */
+  }
 
-  let observer: ResizeObserver | undefined;
-  init()
-    .then((google) => {
-      if (cancelled) return;
-      draw(google);
-      // The header dropdown and the home panel size differently; keep the hit
-      // area matched to whatever the styled button actually measures.
-      observer = new ResizeObserver(() => draw(google));
-      observer.observe(host);
-    })
-    .catch((err) => {
-      console.warn("[auth] Google Identity Services unavailable, using redirect sign-in:", err);
-    });
+  // Strip the token from the URL (and history) before anything else can read it,
+  // then put the user back where they started.
+  window.history.replaceState(null, "", handoff.returnTo || window.location.pathname);
 
-  return () => {
-    cancelled = true;
-    observer?.disconnect();
-    host.replaceChildren();
-  };
+  const token = params.get("id_token");
+  if (!token) {
+    console.warn("[auth] Google returned an error:", params.get("error"));
+    return;
+  }
+  // An id_token arriving without matching state is either a stale tab or a
+  // forced-login attempt. Drop it.
+  if (!handoff.state || handoff.state !== params.get("state")) {
+    console.warn("[auth] Discarding Google ID token: state mismatch");
+    return;
+  }
+  if (!supabase) return;
+
+  const { error } = await supabase.auth.signInWithIdToken({
+    provider: "google",
+    token,
+    nonce: handoff.nonce,
+  });
+  if (error) {
+    // Most likely the client ID isn't listed under the Supabase Google provider.
+    console.warn("[auth] Google ID token rejected, falling back to redirect:", error.message);
+    await supabaseRedirectSignIn();
+  }
 }
