@@ -40,6 +40,7 @@ import {
   Play,
   Printer,
   RotateCw,
+  Save,
   Scale,
   Search,
   Settings,
@@ -2830,16 +2831,109 @@ function AllianceTeamLinks({ teams, focusTeamId, dq }: { teams?: Match["alliance
   );
 }
 
+// ── Icon morph ────────────────────────────────────────────────────────────────
+// Apple-style "symbol replace": the resting glyph scales/spins out while the
+// confirmation glyph springs in. Used two ways —
+//   • persistent state (in tray / on picklist): morphed follows the state
+//   • transient confirm (copied, saved, exported): useConfirmFlash fires a timer
+
+/**
+ * One-shot confirmation flash. Fire it on the *constructive* action only —
+ * a check mark on a remove/delete reads as "done" and invites misclicks.
+ */
+function useConfirmFlash(duration = 760) {
+  const [flashing, setFlashing] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
+  const fire = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    setFlashing(true);
+    timer.current = window.setTimeout(() => setFlashing(false), duration);
+  };
+  return { flashing, fire };
+}
+
+/**
+ * Cross-morphs `children` (resting glyph) with `to` (confirmation glyph).
+ * tone: "gold" for collect/save-to-my-stuff, "success" for completed operations,
+ * "inherit" when the host button already colors itself (accent row buttons).
+ */
+function IconMorph({
+  morphed,
+  size,
+  tone = "gold",
+  to,
+  children,
+}: {
+  morphed: boolean;
+  size: number;
+  tone?: "gold" | "success" | "inherit";
+  to?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={`icon-morph tone-${tone}${morphed ? " morphed" : ""}`}
+      style={{ width: size, height: size }}
+    >
+      <span className="icon-morph-from">{children}</span>
+      <span className="icon-morph-to">{to ?? <Check size={size} strokeWidth={3} />}</span>
+    </span>
+  );
+}
+
+/** Button class suffix for the tinted "confirming" treatment. */
+function confirmClass(flashing: boolean, tone: "gold" | "success" = "gold") {
+  return flashing ? ` btn-confirming tone-${tone}` : "";
+}
+
+/**
+ * CSV/export button. A download is otherwise silent — the browser may drop the
+ * file into a folder the user never sees — so the arrow morphs to a check.
+ */
+function ExportButton({
+  onExport,
+  title,
+  label = "CSV",
+  className = "ws-csv-btn",
+}: {
+  onExport: () => void;
+  title: string;
+  label?: string;
+  className?: string;
+}) {
+  const { flashing, fire } = useConfirmFlash(1100);
+  return (
+    <button
+      type="button"
+      className={`${className}${confirmClass(flashing, "success")}`}
+      title={title}
+      onClick={() => { onExport(); fire(); }}
+    >
+      <IconMorph morphed={flashing} size={13} tone="success">
+        <Download size={13} />
+      </IconMorph>
+      {label}
+    </button>
+  );
+}
+
 function FavoriteButton({ id, kind }: { id: number | string; kind: "team" | "event" }) {
   const active = useFavorite(kind, id);
+  const { flashing, fire } = useConfirmFlash();
 
   return (
     <button
-      className={`icon-button ${active ? "active" : ""}`}
+      className={`icon-button ${active ? "active" : ""}${confirmClass(flashing)}`}
       title={active ? "Remove favorite" : "Favorite"}
-      onClick={() => toggleFavorite(kind, id)}
+      onClick={() => {
+        if (!active) fire();
+        toggleFavorite(kind, id);
+      }}
     >
-      <Star size={17} fill={active ? "currentColor" : "none"} />
+      <IconMorph morphed={flashing} size={17}>
+        <Star size={17} fill={active ? "currentColor" : "none"} />
+      </IconMorph>
     </button>
   );
 }
@@ -2861,31 +2955,46 @@ function SharedTeamFavBtn({
   onToggle?: () => void;
 }) {
   const active = useIsSharedTeamFavorite(sharedTeamId, kind, refId);
+  const { flashing, fire } = useConfirmFlash();
   return (
     <button
-      className={`icon-button${label ? " shared-team-fav-labeled-btn" : ""}${active ? " active" : ""}`}
+      className={`icon-button${label ? " shared-team-fav-labeled-btn" : ""}${active ? " active" : ""}${confirmClass(flashing)}`}
       title={active ? `Remove from ${label ?? "shared team"}` : `Add to ${label ?? "shared team"}`}
       onClick={() => {
+        if (!active) fire();
         void toggleSharedTeamFavorite(sharedTeamId, kind, refId);
         onToggle?.();
       }}
     >
       {label ? (
         <>
-          <Users size={14} />
-          <span>{label}</span>
+          <IconMorph morphed={flashing} size={14}>
+            <Users size={14} />
+          </IconMorph>
+          <span>{active ? `In ${label}` : `Add to ${label}`}</span>
         </>
       ) : (
-        <Users size={17} />
+        <IconMorph morphed={flashing} size={17}>
+          <Users size={17} />
+        </IconMorph>
       )}
     </button>
   );
 }
 
+/** Short identifier for a shared team: its team number when set, else its name. */
+function sharedTeamShortLabel(team: { name: string; teamNumber: string | null }): string {
+  return team.teamNumber?.trim() || team.name;
+}
+
+/** Beyond this many shared teams, collapse the inline buttons into a popover. */
+const SHARED_FAV_INLINE_MAX = 3;
+
 /**
  * Shared-team-favorite toggle button for TeamDetail / EventDetail headers.
- * Hidden when signed out or not in any shared team. Single: direct toggle.
- * Multiple: shows a small popover to choose which shared team.
+ * Hidden when signed out or not in any shared team. Up to SHARED_FAV_INLINE_MAX
+ * shared teams get one "Add to <team num>" button each; more than that collapses
+ * into a popover listing every shared team.
  */
 function SharedTeamFavoriteButton({ kind, refId }: { kind: "team" | "event"; refId: string }) {
   const { user } = useAuth();
@@ -2895,19 +3004,31 @@ function SharedTeamFavoriteButton({ kind, refId }: { kind: "team" | "event"; ref
 
   if (!user || sharedTeams.length === 0) return null;
 
-  if (sharedTeams.length === 1) {
-    return <SharedTeamFavBtn sharedTeamId={sharedTeams[0].sharedTeamId} kind={kind} refId={refId} label="Shared Team Favorite" />;
+  if (sharedTeams.length <= SHARED_FAV_INLINE_MAX) {
+    return (
+      <>
+        {sharedTeams.map((team) => (
+          <SharedTeamFavBtn
+            key={team.sharedTeamId}
+            sharedTeamId={team.sharedTeamId}
+            kind={kind}
+            refId={refId}
+            label={sharedTeamShortLabel(team)}
+          />
+        ))}
+      </>
+    );
   }
 
   return (
     <div style={{ position: "relative" }} ref={popoverRef}>
       <button
         className="icon-button shared-team-fav-labeled-btn"
-        title="Add to shared team favorites"
+        title="Add to a shared team"
         onClick={() => setOpen((v) => !v)}
       >
         <Users size={14} />
-        <span>Shared Team Favorite</span>
+        <span>Shared teams</span>
       </button>
       {open && (
         <div className="shared-team-fav-popover">
@@ -2917,7 +3038,7 @@ function SharedTeamFavoriteButton({ kind, refId }: { kind: "team" | "event"; ref
               sharedTeamId={team.sharedTeamId}
               kind={kind}
               refId={refId}
-              label={team.name}
+              label={sharedTeamShortLabel(team)}
               onToggle={() => setOpen(false)}
             />
           ))}
@@ -2945,7 +3066,9 @@ function CompareRowBtn({ teamId, teamNumber, programCode, teamName }: { teamId: 
         inTray ? removeFromTray(teamId) : addToTray({ teamId, teamNumber, programCode, teamName });
       }}
     >
-      {inTray ? <Check size={11} /> : <Plus size={11} />}
+      <IconMorph morphed={inTray} size={11} tone="inherit">
+        <Plus size={11} />
+      </IconMorph>
     </button>
   );
 }
@@ -2981,7 +3104,9 @@ function PicklistRowBtn({
         }
       }}
     >
-      {inList ? <Check size={11} /> : <Plus size={11} />}
+      <IconMorph morphed={inList} size={11} tone="inherit">
+        <Plus size={11} />
+      </IconMorph>
     </button>
   );
 }
@@ -8675,11 +8800,14 @@ function TeamRadar({
   const config: ChartConfig = { value: { label: "Rating", color: "#337ab7" } };
   const cardRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
+  // Fires only after the capture finishes, so the check never lands in the PNG.
+  const { flashing: dlDone, fire: fireDlDone } = useConfirmFlash(1100);
   const handleDownload = async () => {
     if (!cardRef.current || downloading) return;
     setDownloading(true);
     try {
       await downloadTeamProfile(cardRef.current, teamLabel);
+      fireDlDone();
     } finally {
       setDownloading(false);
     }
@@ -8759,13 +8887,15 @@ function TeamRadar({
         {hasAny && (
           <button
             type="button"
-            className="about-radar-dl"
+            className={`about-radar-dl${confirmClass(dlDone, "success")}`}
             onClick={handleDownload}
             disabled={downloading}
             title="Download as PNG"
             aria-label="Download team profile as PNG"
           >
-            <Download size={13} />
+            <IconMorph morphed={dlDone} size={13} tone="success">
+              <Download size={13} />
+            </IconMorph>
           </button>
         )}
       </div>
@@ -9695,7 +9825,9 @@ function QuickViewPicklistButton({ sharedTeamId, eventId, teamId, teamNumber, te
         else void addToPicklist(sharedTeamId, eventId, { teamId, teamNumber, teamName });
       }}
     >
-      {inList ? <Check size={14} /> : <Plus size={14} />}
+      <IconMorph morphed={inList} size={14} tone="inherit">
+        <Plus size={14} />
+      </IconMorph>
       {inList ? "On picklist" : "Picklist"}
     </button>
   );
@@ -9974,9 +10106,12 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
               disabled={teamId == null || (!canAddToTray() && !inTray)}
               onClick={() => teamId != null && addOrRemoveCompareTeam(teamId, state.teamNumber, programCode, team?.team_name)}
             >
-              <Scale size={13} /> {inTray ? "In compare" : "Compare"}
+              <IconMorph morphed={inTray} size={13} tone="inherit">
+                <Scale size={13} />
+              </IconMorph>{" "}
+              {inTray ? "In compare" : "Compare"}
             </button>
-            {primarySharedTeam && eventIdForPicklist != null && teamId != null && (
+            {primarySharedTeam && !isIq && eventIdForPicklist != null && teamId != null && (
               <QuickViewPicklistButton
                 sharedTeamId={primarySharedTeam.sharedTeamId}
                 eventId={String(eventIdForPicklist)}
@@ -13748,9 +13883,7 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, share
   }
 
   const exportBtn = displayRows.length ? (
-    <button type="button" className="ws-csv-btn" onClick={exportRankings} title="Download rankings (with OPR) as CSV">
-      <Download size={13} /> CSV
-    </button>
+    <ExportButton onExport={exportRankings} title="Download rankings (with OPR) as CSV" />
   ) : undefined;
 
   if (isIq) {
@@ -14500,9 +14633,7 @@ function WorldSkillsPageInner() {
           >
             <ListOrdered size={13} /> Where Would I Place?
           </button>
-          <button className="ws-csv-btn" onClick={downloadCSV} title="Download filtered CSV">
-            <Download size={13} /> CSV
-          </button>
+          <ExportButton onExport={downloadCSV} title="Download filtered CSV" />
         </div>
       </div>
 
@@ -15124,12 +15255,10 @@ function ProfileSettings() {
           <Button onClick={() => void save()} disabled={saving || !dirty}>
             {saving ? "Saving…" : "Save changes"}
           </Button>
-          {saved && (
-            <span className="settings-saved">
-              <Check size={15} />
-              Saved
-            </span>
-          )}
+          <span className={`settings-saved${saved ? " on" : ""}`} aria-live="polite">
+            <span className="settings-saved-icon"><Check size={15} /></span>
+            {saved ? "Saved" : ""}
+          </span>
         </div>
       </div>
     </div>
@@ -15798,10 +15927,13 @@ function SharedTeamOverviewTab({ sharedTeamId, team }: { sharedTeamId: string; t
         </div>
       </FieldGroup>
       <Button
-        className="self-start"
+        className={`self-start${confirmClass(saved, "success")}`}
         onClick={() => void handleSave()}
         disabled={saving || !name.trim()}
       >
+        <IconMorph morphed={saved} size={14} tone="success">
+          <Save size={14} />
+        </IconMorph>
         {saved ? "Saved!" : saving ? "Saving…" : "Save changes"}
       </Button>
 
@@ -16031,12 +16163,14 @@ function SharedTeamInvitesTab({ sharedTeamId }: { sharedTeamId: string }) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="shrink-0"
+                className={`shrink-0${confirmClass(copied === invite.id, "success")}`}
                 onClick={() => void handleCopy(invite.id)}
                 title="Copy link"
                 aria-label="Copy invite link"
               >
-                {copied === invite.id ? <Check size={13} /> : <LinkIcon size={13} />}
+                <IconMorph morphed={copied === invite.id} size={13} tone="success">
+                  <LinkIcon size={13} />
+                </IconMorph>
               </Button>
               <span className="shared-team-invite-expiry">{formatUses(invite)}</span>
               <span className="shared-team-invite-expiry">{formatExpiry(invite.expiresAt)}</span>
@@ -17411,8 +17545,15 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
             <strong>Compare Teams</strong>
           </div>
           <div className="compare-modal-header-actions">
-            <button type="button" className="compare-copy-link" onClick={copyLink} title="Copy shareable link">
-              {copyDone ? <Check size={14} /> : <Link2 size={14} />}
+            <button
+              type="button"
+              className={`compare-copy-link${confirmClass(copyDone, "success")}`}
+              onClick={copyLink}
+              title="Copy shareable link"
+            >
+              <IconMorph morphed={copyDone} size={14} tone="success">
+                <Link2 size={14} />
+              </IconMorph>
               <span>{copyDone ? "Copied!" : copyError ? "Copy failed" : "Copy link"}</span>
             </button>
             <CloseButton onClose={onClose} />
