@@ -18899,13 +18899,13 @@ function MyTeamDashboard() {
       <h2><span className="ttl">Up next</span><span className="myteam-act muted-act">Not currently at an event</span></h2>
       {nextEvent ? (
         <div className="myteam-upnext">
-          <Link className="myteam-cal" href={eventPath(nextEvent)}><div className="mo">{new Intl.DateTimeFormat("en-US", { month: "short" }).format(new Date(nextEvent.start ?? 0))}</div><div className="day">{new Date(nextEvent.start ?? 0).getDate()}</div></Link>
+          <Link className="myteam-cal" href={eventPath(nextEvent)}><div className="mo">{eventDayParts(nextEvent.start)?.mo ?? ""}</div><div className="day">{eventDayParts(nextEvent.start)?.day ?? ""}</div></Link>
           <div className="info">
             <Link className="nm" href={eventPath(nextEvent)}>{nextEvent.name}</Link>
             <div className="sub"><span>{locationLine(nextEvent)}</span><span className={`event-priority priority-${eventCategory(nextEvent).rank}`}>{eventCategory(nextEvent).label}</span><span>{myTeamDateLabel(nextEvent.start)}</span></div>
           </div>
           <div className="right">
-            <div className="count"><div className="n">{Math.max(0, Math.round((new Date(nextEvent.start ?? 0).getTime() - now) / oneDay))}</div><div className="l">days away</div></div>
+            <div className="count"><div className="n">{Math.max(0, daysUntilEventDay(nextEvent.start, eventTimeZone(nextEvent)) ?? 0)}</div><div className="l">days away</div></div>
             <div className="count"><div className="n">{nextEventTeamCount ?? "…"}</div><div className="l">teams</div></div>
           </div>
         </div>
