@@ -15316,8 +15316,15 @@ function WorldSkillsPageInner() {
 
 function InsightsPage() {
   const [program, setProgram] = useState<"v5rc" | "viqrc">("v5rc");
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const { data, loading, error } = useAsync(() => api.superscore(program, { per_page: 50 }), [program]);
   const leaders = data?.data ?? [];
+  const inColCount = 9;
+
+  useEffect(() => {
+    setExpandedRow(null);
+  }, [program]);
+
   const avgEpa = leaders.reduce((sum, row) => sum + (row.epa?.total ?? 0), 0) / Math.max(leaders.length, 1);
 
   return (
@@ -15340,35 +15347,71 @@ function InsightsPage() {
       </div>
       <Panel title={`${program.toUpperCase()} SuperScore Rankings`} icon={<BarChart3 />}>
         <Status loading={loading} error={error} />
-        <table>
+        <div className="in-mobile-head" aria-hidden="true">
+          <span>Rank</span>
+          <span>Team</span>
+          <span>Super</span>
+          <span />
+        </div>
+        <table className="insights-table">
           <thead>
             <tr>
               <th>Rank</th>
               <th>Team</th>
               <th>SuperScore</th>
-              <th>EPA</th>
-              <th>Auto Skill</th>
-              <th>TrueSkill</th>
-              <th>Matches</th>
-              <th>Signature Wins</th>
+              <th className="in-hide-mobile">EPA</th>
+              <th className="in-hide-mobile">Auto Skill</th>
+              <th className="in-hide-mobile">TrueSkill</th>
+              <th className="in-hide-mobile">Matches</th>
+              <th className="in-hide-mobile">Signature Wins</th>
             </tr>
           </thead>
-          <TableBodySwap loading={loading} columns={8}>
-              {leaders.map((row) => (
-                <tr key={`${row.rank}-${row.team.id}`}>
-                  <td>{row.rank}</td>
-                  <td>
+          <TableBodySwap loading={loading} columns={inColCount}>
+              {leaders.map((row) => {
+                const rowId = `${row.rank}-${row.team.id}`;
+                const expanded = expandedRow === rowId;
+                return (
+                <Fragment key={rowId}>
+                <tr className="in-row">
+                  <td className="in-m-rank">{row.rank}</td>
+                  <td className="in-m-team">
                     <CompareTeamLink teamId={row.team.id} teamNumber={row.team.number} programCode={program.toUpperCase()} />
                     <div className="muted">{row.team.name}</div>
                   </td>
-                  <td>{formatNumber(row.superscore, 2)}</td>
-                  <td>{formatNumber(row.epa?.total, 2)}</td>
-                  <td>{formatNumber(row.auto_skill, 2)}</td>
-                  <td>{formatNumber(row.trueskill?.mu, 2)}</td>
-                  <td>{row.total_matches ?? "-"}</td>
-                  <td>{row.signature_wins ?? "-"}</td>
+                  <td className="in-m-score">{formatNumber(row.superscore, 2)}</td>
+                  <td className="in-hide-mobile">{formatNumber(row.epa?.total, 2)}</td>
+                  <td className="in-hide-mobile">{formatNumber(row.auto_skill, 2)}</td>
+                  <td className="in-hide-mobile">{formatNumber(row.trueskill?.mu, 2)}</td>
+                  <td className="in-hide-mobile">{row.total_matches ?? "-"}</td>
+                  <td className="in-hide-mobile">{row.signature_wins ?? "-"}</td>
+                  <td className="in-m-toggle">
+                    <button
+                      type="button"
+                      className={`in-m-toggle-btn${expanded ? " expanded" : ""}`}
+                      aria-expanded={expanded}
+                      aria-label={`${expanded ? "Hide" : "Show"} details for ${row.team.number}`}
+                      onClick={() => setExpandedRow(expanded ? null : rowId)}
+                    >
+                      <ChevronDown size={16} />
+                    </button>
+                  </td>
                 </tr>
-              ))}
+                {expanded && (
+                  <tr className="in-m-detail">
+                    <td colSpan={inColCount}>
+                      <dl className="in-detail-grid">
+                        <div><dt>EPA</dt><dd>{formatNumber(row.epa?.total, 2)}</dd></div>
+                        <div><dt>Auto Skill</dt><dd>{formatNumber(row.auto_skill, 2)}</dd></div>
+                        <div><dt>TrueSkill</dt><dd>{formatNumber(row.trueskill?.mu, 2)}</dd></div>
+                        <div><dt>Matches</dt><dd>{row.total_matches ?? "—"}</dd></div>
+                        <div className="in-detail-wide"><dt>Signature Wins</dt><dd>{row.signature_wins ?? "—"}</dd></div>
+                      </dl>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
+                );
+              })}
         </TableBodySwap>
         </table>
       </Panel>
