@@ -5004,7 +5004,10 @@ function NearMeLocationBar({ location, radius, onRadiusChange }: { location: Hom
   );
 }
 
-const HOME_EVENTS_PAGE_SIZE = 7;
+// Rows per page in the home event lists. 6 rather than 7 keeps the panel from
+// dominating the page now that it grows with its content instead of scrolling
+// inside a fixed height — one row shorter is ~15% off the list.
+const HOME_EVENTS_PAGE_SIZE = 6;
 // Radius choices for a point (city / GPS / IP) Near me search. States and
 // countries ignore these entirely — see GeoArea.
 const NEAR_ME_RADIUS_OPTIONS = [25, 50, 75, 150, 250];
