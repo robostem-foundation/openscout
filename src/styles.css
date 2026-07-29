@@ -7653,6 +7653,37 @@ footer {
   width: 50%;
 }
 
+/* The bracket already scrolls inside .bracket-modal-body, so this is a
+   space-reclaim pass, not an overflow fix: on a phone the modal's inset margin
+   and the 178px rounds mean barely one round is legible at a time. Go
+   edge-to-edge and narrow each round so two rounds fit at 375px. The modal is a
+   Radix DialogContent at z-index 600, well above .mobile-tabbar (90), so no
+   --mobile-tabbar-clear allowance is needed. */
+@media (max-width: 560px) {
+  .bracket-modal {
+    width: 100vw;
+    max-height: 100vh;
+    border-radius: 0;
+    border-inline: 0;
+  }
+
+  .bracket-modal-header {
+    padding: 11px 12px;
+  }
+
+  .bracket-modal-body {
+    padding: 14px 12px;
+  }
+
+  .bracket-round {
+    width: 138px;
+  }
+
+  .bracket-connector {
+    width: 22px;
+  }
+}
+
 /* Grade column in event table */
 th.grade-col,
 td.grade-col {
