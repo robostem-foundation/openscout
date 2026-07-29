@@ -20,10 +20,22 @@ import type {
 } from "./types";
 
 import { noteEventsForSpotlightTier } from "./spotlightTier";
+import { noteSeasonNames } from "./world-skills-cache";
 
-/** Pass a paginated event page through the Spotlight-tier trigger unchanged. */
+/**
+ * Pass a paginated event page through the Spotlight-tier trigger unchanged, and
+ * record the seasons it mentions — every event carries its season's name, which
+ * is what tells the world-skills cache whether a season is still being played.
+ */
 const notedEvents = (page: Paginated<Event>) => {
   noteEventsForSpotlightTier(page.data);
+  noteSeasonNames(page.data.map((event) => event.season));
+  return page;
+};
+
+/** Same, for the seasons endpoints — the authoritative source of season names. */
+const notedSeasons = (page: Paginated<Season>) => {
+  noteSeasonNames(page.data);
   return page;
 };
 
@@ -96,8 +108,8 @@ const jumperJson = <T,>(path: string, query: Query = {}) => jsonFrom<T>("jumper"
 
 export const api = {
   programs: () => rseJson<Paginated<Program>>("programs", { per_page: 50 }),
-  seasons: (query: Query = {}) => rseJson<Paginated<Season>>("seasons", { per_page: 50, ...query }),
-  robotEventsSeasons: (query: Query = {}) => robotEventsJson<Paginated<Season>>("seasons", { per_page: 250, ...query }),
+  seasons: (query: Query = {}) => rseJson<Paginated<Season>>("seasons", { per_page: 50, ...query }).then(notedSeasons),
+  robotEventsSeasons: (query: Query = {}) => robotEventsJson<Paginated<Season>>("seasons", { per_page: 250, ...query }).then(notedSeasons),
   robotEventsCountries: () => robotEventsRootJson<CountryGroup[]>("api/countries", { common: 1 }),
   robotEventsRegions: (countryId?: string | number) => robotEventsRootJson<CountryRegion[]>(countryId ? `api/regions/${countryId}` : "api/regions"),
   // The three event endpoints tap noteEventsForSpotlightTier: seeing a `level:

@@ -68,6 +68,7 @@ import JumperPage from "./jumper/JumperPage.jsx";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { readSearchBias, syncSearchBias, toGradeCode, useSearchBias } from "./search-bias";
+import { loadCachedWorldSkills, useWorldSkillsVersion, worldSkillsMeta } from "./world-skills-cache";
 import { getSpotlightTierVersion, isSpotlightSku, subscribeSpotlightTier, useSpotlightTier } from "./spotlightTier";
 import { setTheme as applyTheme, useTheme } from "./theme";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
@@ -234,10 +235,10 @@ let globalEventSearchCache:     { data?: Event[]; updatedAt: number; promise?: P
 let prevSeasonEventSearchCache: { data?: Event[]; updatedAt: number; promise?: Promise<Event[]> } = { updatedAt: 0 };
 let olderSeasonEventSearchCache:{ data?: Event[]; updatedAt: number; promise?: Promise<Event[]> } = { updatedAt: 0 };
 
-// World skills leaderboards are large (multi-MB) but change slowly, so cache the
-// in-flight promise per season+grade for the whole session — subsequent team
-// views in the same season reuse it instantly.
-const worldSkillsCache = new Map<string, Promise<WorldSkillsEntry[]>>();
+/** Cache key for one world-skills board. Shared by the loader and the meta read. */
+function worldSkillsKey(seasonId: number, grade: string) {
+  return `${seasonId}:${worldSkillsGrade(grade)}`;
+}
 // The world-skills endpoint's `grade_level` vocabulary differs from the grade
 // stored on team profiles: profiles say "Elementary School", but the endpoint
 // only accepts "Elementary" (and rejects "Elementary School" with an "Invalid
@@ -247,24 +248,19 @@ function worldSkillsGrade(grade: string) {
   return grade === "Elementary School" ? "Elementary" : grade;
 }
 
+// Boards are large (multi-MB) but change slowly, so they are cached in IndexedDB
+// across visits — 120 days for a finished season, 7 days plus a background
+// refresh for the season being played. See src/world-skills-cache.ts.
 function loadWorldSkills(seasonId: number, grade: string) {
   const gradeLevel = worldSkillsGrade(grade);
-  const key = `${seasonId}:${gradeLevel}`;
-  let promise = worldSkillsCache.get(key);
-  if (!promise) {
-    promise = api.worldSkills(seasonId, gradeLevel)
+  return loadCachedWorldSkills(worldSkillsKey(seasonId, grade), seasonId, () =>
+    api.worldSkills(seasonId, gradeLevel)
       // Defense-in-depth: an unsupported grade level makes the endpoint answer
       // HTTP 200 with a non-array error object `{ error, data }` instead of
       // rejecting. Normalize any non-array payload to [] so every consumer can
       // safely treat the result as a list (this is what prevented the crash).
-      .then((res) => (Array.isArray(res) ? res : []))
-      .catch((err: Error) => {
-        worldSkillsCache.delete(key);
-        throw err;
-      });
-    worldSkillsCache.set(key, promise);
-  }
-  return promise;
+      .then((res) => (Array.isArray(res) ? res : [])),
+  );
 }
 
 function emptyBucket<T>(): AsyncBucket<T> {
@@ -14358,7 +14354,18 @@ function AwardsList({ awards }: { awards: Award[] }) {
 // ---------------------------------------------------------------------------
 
 const WS_PREFS_KEY = "ws-prefs-v2";
-const WS_CACHE_PREFIX = "ws-cache:";
+// Boards used to be cached here, a few MB at a time, until IndexedDB took over
+// (src/world-skills-cache.ts). Clear the old keys once so returning visitors get
+// that localStorage budget back.
+const WS_LEGACY_CACHE_PREFIX = "ws-cache:";
+(function dropLegacyWsCache() {
+  try {
+    const stale = Object.keys(localStorage).filter((key) => key.startsWith(WS_LEGACY_CACHE_PREFIX));
+    stale.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // storage unavailable — nothing to reclaim
+  }
+})();
 
 type WsPrefs = { program?: string; grade?: string; seasonByProgram?: Record<string, number>; gradeByProgram?: Record<string, string> };
 
@@ -14378,15 +14385,6 @@ function wsGradeFromParam(p: string | null): string | null {
   if (p === "ms") return "Middle School";
   if (p === "es") return "Elementary";
   return null;
-}
-function getCachedSkills(seasonId: number, grade: string): WorldSkillsEntry[] | null {
-  try {
-    const raw = localStorage.getItem(`${WS_CACHE_PREFIX}${seasonId}:${grade}`);
-    return raw ? (JSON.parse(raw) as WorldSkillsEntry[]) : null;
-  } catch { return null; }
-}
-function setCachedSkills(seasonId: number, grade: string, data: WorldSkillsEntry[]) {
-  try { localStorage.setItem(`${WS_CACHE_PREFIX}${seasonId}:${grade}`, JSON.stringify(data)); } catch {}
 }
 
 const WS_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"] as const;
@@ -14540,37 +14538,39 @@ function WorldSkillsPageInner() {
   const [wsError, setWsError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // loadWorldSkills is the stale-while-revalidate layer now (IndexedDB, 7 days
+  // for the live season and 120 for a finished one), so this only has to render
+  // what it hands back: the cached board resolves immediately, and a background
+  // refresh bumps `wsVersion`, which re-runs this and picks up the new numbers.
+  const wsVersion = useWorldSkillsVersion();
   useEffect(() => {
     if (!resolvedSeasonId) return;
 
-    const stale = getCachedSkills(resolvedSeasonId, grade);
-    if (stale) {
-      setWsData(stale);
-      setWsLoading(false);
-      setIsRefreshing(true);
-    } else {
-      setWsLoading(true);
-      setIsRefreshing(false);
-    }
-    setWsError(null);
-
     let live = true;
+    const hadData = wsData !== null;
+    if (!hadData) setWsLoading(true);
+    setWsError(null);
+    // Only claims to be refreshing if a refresh is actually in flight for this
+    // board — a hit inside the TTL does no network work at all.
+    setIsRefreshing(worldSkillsMeta(worldSkillsKey(resolvedSeasonId, grade)).revalidating);
+
     loadWorldSkills(resolvedSeasonId, grade)
       .then((fresh) => {
         if (!live) return;
         setWsData(fresh);
         setWsLoading(false);
-        setIsRefreshing(false);
-        setCachedSkills(resolvedSeasonId, grade, fresh);
+        setIsRefreshing(worldSkillsMeta(worldSkillsKey(resolvedSeasonId, grade)).revalidating);
       })
       .catch((err: Error) => {
         if (!live) return;
         setIsRefreshing(false);
-        if (!stale) { setWsLoading(false); setWsError(err.message); }
+        if (!hadData) { setWsLoading(false); setWsError(err.message); }
       });
 
     return () => { live = false; };
-  }, [resolvedSeasonId, grade]);
+    // wsData is deliberately not a dependency — it is read only to decide whether
+    // to show the skeleton, and listing it would re-run this on every load.
+  }, [resolvedSeasonId, grade, wsVersion]);
 
   const countryOptions = useMemo(() => {
     const set = new Set<string>();
@@ -18231,10 +18231,12 @@ function MyTeamDashboard() {
   }, [id, seasonId], 900);
 
   const grade = team?.grade ?? "";
+  // Re-reads the board when a background refresh lands (see world-skills-cache).
+  const wsVersion = useWorldSkillsVersion();
   const worldSkills = useAsync(async () => {
     if (!seasonId || !grade) return null;
     return loadWorldSkills(seasonId, grade);
-  }, [seasonId, grade]);
+  }, [seasonId, grade, wsVersion]);
   const wsEntry = useMemo(() => {
     if (!worldSkills.data || !team) return null;
     return (
