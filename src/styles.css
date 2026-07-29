@@ -5140,8 +5140,13 @@ a.team-card-num:hover {
 }
 
 @media (max-width: 1200px) {
+  /* The first track floors at 0, not 720px: a 720px floor plus the 18px gap and
+     the 220px alliance track made this grid 958px wide minimum, which overflowed
+     (and was silently clipped by `body { overflow-x: clip }`) everywhere between
+     the 900px collapse below and 958px. `.results-column { min-width: 0 }` lets
+     the match table shrink inside the track instead of pushing it out. */
   .results-layout {
-    grid-template-columns: minmax(720px, max-content) minmax(220px, 1fr);
+    grid-template-columns: minmax(0, max-content) minmax(220px, 1fr);
     gap: 18px;
   }
 
@@ -5155,20 +5160,42 @@ a.team-card-num:hover {
   }
 }
 
-/* ═══ Mobile: single-column match schedule + density pass ═══
-   The 2-col results grid (fixed-width tables) overflows horizontally on phones.
-   Stack it to one column (reusing the .view-tabs-vertical collapse), let the
-   tables flow to the width, tighten padding, and drop the low-value time/field
-   columns. Each table is wrapped in .results-table-scroll as an overflow safety
-   net. Desktop layout is untouched (this only applies ≤560px). */
-@media (max-width: 560px) {
+/* Single owner of the results two-col → one-col collapse. Below 900px the
+   alliance column can no longer sit beside the match table without squeezing
+   both, so it drops underneath and each gets the full body width. */
+@media (max-width: 900px) {
   .results-layout {
     grid-template-columns: minmax(0, 1fr);
     gap: 22px;
   }
+
   .results-column:first-child {
     max-width: 100%;
   }
+
+  /* Stacked, the alliance table has the whole width — undo the ≤1200px squeeze
+     and go back to the base cell padding. */
+  .alliance-selection-table th,
+  .alliance-selection-table td {
+    padding-inline: 7px;
+  }
+
+  /* Turn the scroll guard on from the same breakpoint as the collapse, not only
+     at ≤560px: between 561 and 640px the blanket `table { min-width: 720px }` is
+     already in force while the stacked column is narrower than that, so without
+     this the match table clips the page instead of scrolling. */
+  .results-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ═══ Mobile: match schedule density pass ═══
+   The single-column collapse lives in the ≤900px block above (one owner); this
+   block is density only — let the tables flow to the width, tighten padding, and
+   drop the low-value time/field columns. Each table is wrapped in
+   .results-table-scroll as an overflow safety net. */
+@media (max-width: 560px) {
   .results-column h2 {
     font-size: 22px;
     margin-bottom: 10px;
@@ -5247,6 +5274,25 @@ a.team-card-num:hover {
 
 .alliance-selection-table {
   margin-bottom: 28px;
+  /* Opt out of the global mobile `table { min-width: 720px }`. This table has
+     three narrow columns and always fits; the blanket floor was stretching it to
+     720px and pushing "Pick 1" out of reach. */
+  min-width: 0;
+}
+
+/* `table-layout: fixed` splits the width into three equal tracks, which wastes
+   the Seed column's share once the table is only as wide as a phone. Let the
+   columns size to their content instead, and allow the team links to wrap rather
+   than push the table wider than the viewport. */
+@media (max-width: 760px) {
+  .alliance-selection-table {
+    table-layout: auto;
+  }
+
+  .alliance-selection-table th,
+  .alliance-selection-table td {
+    overflow-wrap: anywhere;
+  }
 }
 
 .alliance-selection-table td {
@@ -7323,12 +7369,27 @@ footer {
     grid-template-columns: 1fr;
   }
 
-  .panel {
-    overflow-x: auto;
-  }
+  /* NOTE: `.panel { overflow-x: auto }` and a blanket `table { min-width: 720px }`
+     used to live here. Both are gone deliberately — see the opt-in block below.
+     The blanket floor forced every table to 1.9× a phone viewport, which either
+     produced a drag-scroller (when the table happened to sit in a `.panel`) or
+     silently clipped the right-hand columns against `body { overflow-x: clip }`
+     (when it didn't). Worse, its failure mode was page-level horizontal
+     overflow, which shifts the fixed mobile tab bar off-screen on iOS Safari.
+     Tables now reflow into cards at ≤760px; the few that read better scrolled
+     opt in explicitly. */
+}
 
-  table {
-    min-width: 720px;
+/* The only tables that must NOT reflow: a match row is a red-alliance | score |
+   blue-alliance comparison, and stacking it vertically destroys the head-to-head
+   read that is the entire point of the row. These keep a horizontal scroller —
+   each is wrapped in `.results-table-scroll` / DragScroll, so the overflow is
+   contained inside the wrapper and never reaches the page. */
+@media (max-width: 640px) {
+  .results-match-table,
+  .team-match-table,
+  .team-event-match-preview {
+    min-width: 620px;
   }
 }
 
@@ -7407,6 +7468,13 @@ footer {
   overflow: auto;
 }
 
+/* GUARD: `width: max-content` means .bracket is as wide as all its rounds put
+   together and will NOT shrink to its container. That is only safe because its
+   sole render site (EliminationBracket, inside .bracket-modal-body) has an
+   `overflow: auto` ancestor to scroll it. If the bracket is ever rendered inline
+   on a page, wrap it in its own scroll container first — otherwise it becomes
+   page-level horizontal overflow, which shifts the fixed mobile tab bar
+   off-screen on iOS Safari. */
 .bracket {
   display: flex;
   align-items: stretch;
@@ -11957,6 +12025,14 @@ a.shared-team-note-row:hover { background: var(--surface-2); }
     background: rgba(255, 255, 255, 0.6);
     -webkit-backdrop-filter: saturate(180%) blur(24px);
     backdrop-filter: saturate(180%) blur(24px);
+    /* Promote the island to its own compositing layer and isolate it. A fixed
+       element carrying a backdrop-filter is the classic iOS Safari
+       vanish-on-scroll case: it can be repainted against, or dragged by, an
+       ancestor's paint. This is belt-and-braces — the real cause of the bar
+       disappearing was page-level horizontal overflow (see the conventions
+       banner at the end of this file), which is fixed at each source. */
+    transform: translateZ(0);
+    isolation: isolate;
     border: 1px solid var(--border);
     border-radius: 999px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -13219,6 +13295,15 @@ td.col-muted { color: var(--text-2); }
       14051  .tm-card-table
       18057  .shortcuts-table
    ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Grid and flex children floor at their content width by default, which is
+   half of why the results layout and the Event → Teams tab clip on phones.
+   `.view-tabs-vertical .view-tabs-body` already has this; the horizontal
+   variant had no rule at all. */
+.results-column,
+.view-tabs-body {
+  min-width: 0;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    MOBILE CARD REFLOW — per-table blocks. See the conventions banner above.
