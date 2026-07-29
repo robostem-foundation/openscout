@@ -13908,3 +13908,203 @@ td.col-muted { color: var(--text-2); }
   }
 }
 
+/* ── A4 · TeamRankingsByEvent ── */
+
+/* The Team → Rankings tab (both the V5RC and the IQ variant use `.rbe-table`).
+   Desktop is untouched: the two mobile-only cells are display:none globally and
+   only switched on inside the ≤760px block, so an expanded row cannot leak onto
+   desktop after a resize — no JS breakpoint. */
+.rbe-m-toggle,
+.rbe-m-detail {
+  display: none;
+}
+
+/* ═══ Mobile: one card per event-ranking ═══
+   Two tracks. The event name owns the left column (2-line clamp + its SKU/tier
+   sub-line underneath); the rank is a single big number in a right rail, which is
+   the one figure worth scanning down a season's worth of events. Division,
+   Record, WP/AP/SP and Avg (IQ: Division, Avg, High, Low, dropped scores) move
+   behind the chevron. No head strip: the `#` glyph already labels the rail and
+   these lists are one season long. */
+@media (max-width: 760px) {
+  .rbe-table {
+    min-width: 0;
+  }
+  .rbe-table thead {
+    display: none;
+  }
+  .rbe-table,
+  .rbe-table tbody,
+  .rbe-table tr {
+    display: block;
+  }
+  .rbe-table td {
+    padding: 0;
+    border: 0;
+    grid-column: 1;
+  }
+  .rbe-table .rbe-hide-mobile {
+    display: none;
+  }
+
+  .rbe-table tbody tr.rbe-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: 12px;
+    row-gap: 2px;
+    align-items: start;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  /* The expanded detail row carries the divider for the pair, so the card it
+     belongs to drops its own. */
+  .rbe-table tbody tr.rbe-row:has(+ tr.rbe-m-detail) {
+    border-bottom: 0;
+  }
+  .rbe-table tbody tr:last-child {
+    border-bottom: 0;
+    scroll-margin-bottom: var(--mobile-tabbar-clear, 92px);
+  }
+
+  /* Clamp the wrapper, keep the link/button inline. A `display: -webkit-box`
+     anchor is one rectangle, so the blank space beside a short second line
+     navigates too; an inline anchor is hit-tested line by line. Both branches of
+     this cell render an inline box (`.event-group-name-btn` is display:inline),
+     so one wrapper covers them. */
+  .rbe-table .rbe-name-clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .rbe-table .rbe-name-clamp a,
+  .rbe-table .rbe-name-clamp button {
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .rbe-table .event-sku-tier-line {
+    margin-top: 2px;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Right rail: the rank, big, with a faint `#` standing in for the column head.
+     Tabular figures + a floor width so #7 and #124 sit on the same axis and the
+     rail never collapses. */
+  .rbe-table .rbe-m-rank {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    align-self: center;
+    justify-self: end;
+    display: flex;
+    align-items: baseline;
+    gap: 1px;
+    min-width: 2.75ch;
+    justify-content: flex-end;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .rbe-table .rbe-m-rank::before {
+    content: "#";
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-faint);
+  }
+
+  /* Disclosure. 40px square tap target; the glyph itself stays small. */
+  .rbe-table .rbe-m-toggle {
+    display: grid;
+    place-items: center;
+    grid-column: 3;
+    grid-row: 1 / -1;
+    align-self: center;
+    margin-right: -8px;
+  }
+  .rbe-toggle-btn {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 120ms ease, background 120ms ease;
+  }
+  .rbe-toggle-btn:hover,
+  .rbe-toggle-btn:focus-visible {
+    color: var(--text);
+    background: var(--surface-2);
+  }
+  .rbe-toggle-btn svg {
+    transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .rbe-toggle-btn.expanded {
+    color: var(--link);
+  }
+  .rbe-toggle-btn.expanded svg {
+    transform: rotate(180deg);
+  }
+
+  /* Detail sheet. Recessed a step so it reads as belonging to the card above
+     rather than as a sibling card. Two columns of label/value pairs; the wide
+     modifier is for the IQ dropped-scores list, which is a run of chips. */
+  .rbe-table tr.rbe-m-detail {
+    display: block;
+  }
+  .rbe-table tr.rbe-m-detail > td {
+    display: block;
+    padding: 2px 14px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--surface-2);
+  }
+  .rbe-table tbody tr.rbe-m-detail:last-child > td {
+    border-bottom: 0;
+  }
+  .rbe-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 14px;
+    margin: 0;
+    animation: rbe-detail-in 160ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .rbe-detail-grid > div {
+    min-width: 0;
+  }
+  .rbe-detail-wide {
+    grid-column: 1 / -1;
+  }
+  .rbe-detail-grid dt {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  .rbe-detail-grid dd {
+    margin: 1px 0 0;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  @keyframes rbe-detail-in {
+    from {
+      opacity: 0;
+      transform: translateY(-3px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rbe-detail-grid {
+      animation: none;
+    }
+    .rbe-toggle-btn svg {
+      transition: none;
+    }
+  }
+}
+

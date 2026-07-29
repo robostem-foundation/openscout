@@ -11518,6 +11518,7 @@ function TeamRankingsByEvent({
   onViewMatches?: (eventId: number) => void;
 }) {
   const groups = groupItemsByEvent(rankings, eventIndex, seasonId, direction);
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const matchesByEvent = useMemo(() => {
     const map = new Map<number, Match[]>();
     matches.forEach((match) => {
@@ -11527,52 +11528,87 @@ function TeamRankingsByEvent({
   }, [matches]);
 
   if (isIq) {
+    // 7 real columns + the mobile-only disclosure cell.
+    const iqColCount = 8;
     return (
       <Panel title="Rankings" icon={<BarChart3 />}>
-        <table>
+        <table className="rbe-table">
           <thead>
             <tr>
               <th>Event</th>
-              <th>Division</th>
+              <th className="rbe-hide-mobile">Division</th>
               <th>Rank</th>
-              <th>Avg</th>
-              <th>High</th>
-              <th>Low</th>
-              <th>Dropped scores</th>
+              <th className="rbe-hide-mobile">Avg</th>
+              <th className="rbe-hide-mobile">High</th>
+              <th className="rbe-hide-mobile">Low</th>
+              <th className="rbe-hide-mobile">Dropped scores</th>
+              <th className="rbe-m-toggle" />
             </tr>
           </thead>
           <tbody>
             {groups.flatMap((group) =>
               group.items.map((row) => {
                 const stats = iqTeamQualStats(matchesByEvent.get(group.eventRef.id) ?? [], focusTeamId ?? row.team.id, row);
+                const expanded = expandedRow === row.id;
                 return (
-                  <tr key={row.id}>
+                  <Fragment key={row.id}>
+                  <tr className="rbe-row">
                     <td>
-                      {onViewMatches ? (
-                        <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
-                      ) : (
-                        <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
-                      )}
+                      {/* Clamp on the wrapper, never on the <a>/<button>: a clamped
+                          anchor is one block box, clickable across the blank space
+                          after a short last line (commit 7c2e029). */}
+                      <span className="rbe-name-clamp">
+                        {onViewMatches ? (
+                          <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
+                        ) : (
+                          <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
+                        )}
+                      </span>
                       <div className="muted event-sku-tier-line">
                     {group.event?.sku ?? group.eventRef.code}
                     <EventTierTag event={group.event} />
                   </div>
                     </td>
-                    <td>{row.division?.name ?? "-"}</td>
-                    <td>{row.rank}</td>
-                    <td>{formatNumber(stats.avg)}</td>
-                    <td>{stats.high ?? "-"}</td>
-                    <td>{stats.low ?? "-"}</td>
-                    <td>
+                    <td className="rbe-hide-mobile">{row.division?.name ?? "-"}</td>
+                    <td className="rbe-m-rank">{row.rank}</td>
+                    <td className="rbe-hide-mobile">{formatNumber(stats.avg)}</td>
+                    <td className="rbe-hide-mobile">{stats.high ?? "-"}</td>
+                    <td className="rbe-hide-mobile">{stats.low ?? "-"}</td>
+                    <td className="rbe-hide-mobile">
                       <DroppedScores dropped={stats.dropped} />
                     </td>
+                    <td className="rbe-m-toggle">
+                      <button
+                        type="button"
+                        className={`rbe-toggle-btn${expanded ? " expanded" : ""}`}
+                        aria-expanded={expanded}
+                        aria-label={`${expanded ? "Hide" : "Show"} more stats for ${group.eventRef.name}`}
+                        onClick={(e) => { e.stopPropagation(); setExpandedRow(expanded ? null : row.id); }}
+                      >
+                        <ChevronDown size={16} />
+                      </button>
+                    </td>
                   </tr>
+                  {expanded && (
+                    <tr className="rbe-m-detail">
+                      <td colSpan={iqColCount}>
+                        <dl className="rbe-detail-grid">
+                          <div><dt>Division</dt><dd>{row.division?.name ?? "-"}</dd></div>
+                          <div><dt>Avg</dt><dd>{formatNumber(stats.avg)}</dd></div>
+                          <div><dt>High</dt><dd>{stats.high ?? "-"}</dd></div>
+                          <div><dt>Low</dt><dd>{stats.low ?? "-"}</dd></div>
+                          <div className="rbe-detail-wide"><dt>Dropped scores</dt><dd><DroppedScores dropped={stats.dropped} /></dd></div>
+                        </dl>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               }),
             )}
             {!groups.length && (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={iqColCount}>
                   <Empty>No rankings returned for this season.</Empty>
                 </td>
               </tr>
@@ -11583,51 +11619,89 @@ function TeamRankingsByEvent({
     );
   }
 
+  // 8 real columns + the mobile-only disclosure cell.
+  const v5ColCount = 9;
+
   return (
     <Panel title="Rankings" icon={<BarChart3 />}>
-      <table>
+      <table className="rbe-table">
         <thead>
           <tr>
             <th>Event</th>
-            <th>Division</th>
+            <th className="rbe-hide-mobile">Division</th>
             <th>Rank</th>
-            <th>Record</th>
-            <th>WP</th>
-            <th>AP</th>
-            <th>SP</th>
-            <th>Avg</th>
+            <th className="rbe-hide-mobile">Record</th>
+            <th className="rbe-hide-mobile">WP</th>
+            <th className="rbe-hide-mobile">AP</th>
+            <th className="rbe-hide-mobile">SP</th>
+            <th className="rbe-hide-mobile">Avg</th>
+            <th className="rbe-m-toggle" />
           </tr>
         </thead>
         <tbody>
           {groups.flatMap((group) =>
-            group.items.map((row) => (
-              <tr key={row.id}>
+            group.items.map((row) => {
+              const expanded = expandedRow === row.id;
+              return (
+              <Fragment key={row.id}>
+              <tr className="rbe-row">
                 <td>
-                  {onViewMatches ? (
-                    <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
-                  ) : (
-                    <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
-                  )}
+                  {/* Clamp on the wrapper, never on the <a>/<button> — see the IQ
+                      branch above and commit 7c2e029. */}
+                  <span className="rbe-name-clamp">
+                    {onViewMatches ? (
+                      <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
+                    ) : (
+                      <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
+                    )}
+                  </span>
                   <div className="muted event-sku-tier-line">
                     {group.event?.sku ?? group.eventRef.code}
                     <EventTierTag event={group.event} />
                   </div>
                 </td>
-                <td>{row.division?.name ?? "-"}</td>
-                <td>{row.rank}</td>
-                <td>
+                <td className="rbe-hide-mobile">{row.division?.name ?? "-"}</td>
+                <td className="rbe-m-rank">{row.rank}</td>
+                <td className="rbe-hide-mobile">
                   {row.wins ?? 0}-{row.losses ?? 0}-{row.ties ?? 0}
                 </td>
-                <td>{row.wp ?? "-"}</td>
-                <td>{row.ap ?? "-"}</td>
-                <td>{row.sp ?? "-"}</td>
-                <td>{formatNumber(row.average_points)}</td>
+                <td className="rbe-hide-mobile">{row.wp ?? "-"}</td>
+                <td className="rbe-hide-mobile">{row.ap ?? "-"}</td>
+                <td className="rbe-hide-mobile">{row.sp ?? "-"}</td>
+                <td className="rbe-hide-mobile">{formatNumber(row.average_points)}</td>
+                <td className="rbe-m-toggle">
+                  <button
+                    type="button"
+                    className={`rbe-toggle-btn${expanded ? " expanded" : ""}`}
+                    aria-expanded={expanded}
+                    aria-label={`${expanded ? "Hide" : "Show"} more stats for ${group.eventRef.name}`}
+                    onClick={(e) => { e.stopPropagation(); setExpandedRow(expanded ? null : row.id); }}
+                  >
+                    <ChevronDown size={16} />
+                  </button>
+                </td>
               </tr>
-            )),
+              {expanded && (
+                <tr className="rbe-m-detail">
+                  <td colSpan={v5ColCount}>
+                    <dl className="rbe-detail-grid">
+                      <div><dt>Division</dt><dd>{row.division?.name ?? "-"}</dd></div>
+                      <div><dt>Record</dt><dd>{row.wins ?? 0}-{row.losses ?? 0}-{row.ties ?? 0}</dd></div>
+                      <div><dt>WP</dt><dd>{row.wp ?? "-"}</dd></div>
+                      <div><dt>AP</dt><dd>{row.ap ?? "-"}</dd></div>
+                      <div><dt>SP</dt><dd>{row.sp ?? "-"}</dd></div>
+                      <div><dt>Avg</dt><dd>{formatNumber(row.average_points)}</dd></div>
+                    </dl>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+              );
+            }),
           )}
           {!groups.length && (
             <tr>
-              <td colSpan={8}>
+              <td colSpan={v5ColCount}>
                 <Empty>No rankings returned for this season.</Empty>
               </td>
             </tr>
