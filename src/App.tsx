@@ -67,6 +67,7 @@ import { api } from "./api";
 import JumperPage from "./jumper/JumperPage.jsx";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
+import { dayToNumber, daysUntilEventDay, eventDayMs, eventDayNumber, eventDayToUtcNoon, eventDayYear, eventDayParts, formatEventDay, formatEventDayPadded, todayInZone } from "./event-dates";
 import { readSearchBias, syncSearchBias, toGradeCode, useSearchBias } from "./search-bias";
 import { loadCachedWorldSkills, useWorldSkillsVersion, worldSkillsMeta } from "./world-skills-cache";
 import { getSpotlightTierVersion, isSpotlightSku, subscribeSpotlightTier, useSpotlightTier } from "./spotlightTier";
@@ -1353,9 +1354,11 @@ async function loadCachedTeams(cacheKey: string, queries: Parameters<typeof api.
   }
 }
 
+// Event dates are calendar days recorded at a fixed US-Eastern midnight, so they
+// are formatted from their own components rather than converted into the viewer's
+// timezone — see src/event-dates.ts.
 function formatDate(value?: string | null) {
-  if (!value) return "TBD";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+  return formatEventDay(value);
 }
 
 function formatEventDateRange(start?: string | null, end?: string | null) {
@@ -1368,14 +1371,9 @@ function formatEventDateRange(start?: string | null, end?: string | null) {
 // "Aug 30 - Sep 2, 2026", or "Dec 30, 2026 - Jan 2, 2027".
 function formatEventDateRangeShort(start?: string | null, end?: string | null) {
   if (!start) return formatEventDateRange(start, end);
-  const fmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
-  const parts = (d: Date) => {
-    const p = fmt.formatToParts(d);
-    const get = (t: string) => p.find((x) => x.type === t)?.value ?? "";
-    return { mo: get("month"), day: get("day"), yr: get("year") };
-  };
-  const s = parts(new Date(start));
-  const e = parts(new Date(end ?? start));
+  const s = eventDayParts(start);
+  const e = eventDayParts(end ?? start);
+  if (!s || !e) return formatEventDateRange(start, end);
   if (s.mo === e.mo && s.yr === e.yr && s.day === e.day) return `${s.mo} ${s.day}, ${s.yr}`;
   if (s.mo === e.mo && s.yr === e.yr) return `${s.mo} ${s.day}-${e.day}, ${s.yr}`;
   if (s.yr === e.yr) return `${s.mo} ${s.day} - ${e.mo} ${e.day}, ${s.yr}`;
@@ -1481,12 +1479,21 @@ function isMarqueeEvent(event?: Event | null) {
   return event ? eventCategory(event).label !== "Other" : false;
 }
 
+// How far the event is from today, in whole days expressed as ms so the existing
+// comparators keep working. 0 while it is running. Both sides are calendar days —
+// the event's own dates, and today *in the event's timezone* — so an event never
+// counts as yesterday's just because the reader is west of it.
 function eventDistance(event: Event) {
-  const start = new Date(event.start ?? 0).getTime();
-  const end = new Date(event.end ?? event.start ?? 0).getTime();
-  const now = today.getTime();
-  if (start <= now && now <= end + oneDay) return 0;
+  const start = eventDayMs(event.start) ?? 0;
+  const end = eventDayMs(event.end ?? event.start) ?? start;
+  const now = eventTodayMs(event);
+  if (start <= now && now <= end) return 0;
   return Math.min(Math.abs(start - now), Math.abs(end - now));
+}
+
+/** Midday-UTC anchor for "today" as the event's own locale would call it. */
+function eventTodayMs(event: Event) {
+  return eventDayToUtcNoon(todayInZone(eventTimeZone(event))).getTime();
 }
 
 // True while an event is running today (within its date window). Used to gate
@@ -2690,10 +2697,7 @@ function eventWindowFetchKey(eventWindow: EventWindow): EventWindow {
 // tab: the end date is given a day of grace so an event still counts on its
 // final day regardless of the time-of-day component.
 function eventIsToday(event: Event) {
-  const start = new Date(event.start ?? 0).getTime();
-  const end = new Date(event.end ?? event.start ?? 0).getTime();
-  const now = today.getTime();
-  return start <= now && now <= end + oneDay;
+  return eventDistance(event) === 0;
 }
 
 function Empty({ children = "Nothing here yet." }: { children?: ReactNode }) {
@@ -5348,10 +5352,10 @@ function Home() {
       return filterEventsNearLocation(baseHomeEvents, { coords: userCoords, area: userArea, bbox: userBbox }, nearMeRadius, true);
     }
     // Upcoming: today's events plus everything still ahead, chronological
-    // (grouped by level downstream). `today` carries a time-of-day, so events
-    // that started earlier today need eventIsToday to survive the cutoff.
+    // (grouped by level downstream). Both sides are calendar days, so an event
+    // starting today survives the cutoff no matter the reader's timezone.
     return baseHomeEvents
-      .filter((event) => eventIsToday(event) || new Date(event.start ?? 0).getTime() >= today.getTime())
+      .filter((event) => eventIsToday(event) || (eventDayNumber(event.start) ?? 0) >= dayToNumber(todayInZone(null)))
       .sort(compareEventsChronological);
   }, [baseHomeEvents, homeEventTab, userCoords, userArea, userBbox, nearMeRadius]);
 
@@ -8146,17 +8150,13 @@ function EventDetail({ param }: { param: string }) {
 
 function formatEventDate(start: string | undefined, end: string | undefined): string {
   if (!start && !end) return "—";
-  if (!start || !end) return start ?? end ?? "—";
-  try {
-    const s = new Date(start);
-    const e = new Date(end);
-    const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-    const sStr = s.toLocaleDateString(undefined, opts);
-    const eStr = e.toLocaleDateString(undefined, { ...opts, year: "numeric" });
-    return s.toDateString() === e.toDateString() ? eStr : `${sStr} – ${eStr}`;
-  } catch {
-    return `${start} – ${end}`;
-  }
+  if (!start || !end) return formatEventDay(start ?? end, "—");
+  const s = eventDayParts(start);
+  const e = eventDayParts(end);
+  if (!s || !e) return `${start} – ${end}`;
+  // Same day → one label with the year; otherwise the year rides on the end date.
+  if (s.mo === e.mo && s.day === e.day && s.yr === e.yr) return `${e.mo} ${e.day}, ${e.yr}`;
+  return `${s.mo} ${s.day} – ${e.mo} ${e.day}, ${e.yr}`;
 }
 
 function EventStatCard({ label, value, wide }: { label: string; value: ReactNode; wide?: boolean }) {
@@ -8502,9 +8502,14 @@ function EventInfoTab({
 // Team About tab — profile + season stat cards + lightweight SVG trend charts
 // ---------------------------------------------------------------------------
 
+// Chart axis ticks. The timestamps these get are parsed from event dates, i.e.
+// midnight US Eastern, so formatting in UTC (04:00/05:00 the same day) yields the
+// event's own month — formatting in the viewer's zone would tick a Sep 1 event as
+// "Aug" for anyone out west.
+const MONTH_YEAR_UTC = new Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
 function shortMonthYear(ts: number) {
   if (!ts) return "";
-  return new Date(ts).toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  return MONTH_YEAR_UTC.format(new Date(ts));
 }
 
 type ChartSeries = { name: string; color: string; values: Array<number | null> };
@@ -9243,7 +9248,7 @@ function TeamAboutTab({
   }, [worldSkills.data, team.id, team.number]);
 
   const years = useMemo(() => {
-    const ys = allEvents.map((e) => (e.start ? new Date(e.start).getFullYear() : 0)).filter((y) => y > 0);
+    const ys = allEvents.map((e) => eventDayYear(e.start) ?? 0).filter((y) => y > 0);
     if (!ys.length) return null;
     return { first: Math.min(...ys), last: Math.max(...ys) };
   }, [allEvents]);
@@ -18072,10 +18077,7 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
 const SHOW_TEAM_SHARE_CARD = false;
 
 function myTeamDateLabel(iso?: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", year: "numeric" }).format(d);
+  return formatEventDayPadded(iso);
 }
 
 type MyTeamTimelineWins = {
@@ -18387,7 +18389,7 @@ function MyTeamDashboard() {
   // Next upcoming event (any season) for the idle "Up next" panel.
   const now = today.getTime();
   const upcoming = useMemo(
-    () => teamEvents.filter((e) => new Date(e.start ?? 0).getTime() > now && !eventIsLive(e)).sort((a, b) => new Date(a.start ?? 0).getTime() - new Date(b.start ?? 0).getTime()),
+    () => teamEvents.filter((e) => (daysUntilEventDay(e.start, eventTimeZone(e)) ?? -1) > 0 && !eventIsLive(e)).sort((a, b) => new Date(a.start ?? 0).getTime() - new Date(b.start ?? 0).getTime()),
     [teamEvents, now],
   );
   const nextEvent = upcoming[0] ?? null;
@@ -18403,7 +18405,10 @@ function MyTeamDashboard() {
     const rows = source.map((event) => {
       const start = new Date(event.start ?? 0).getTime();
       const live = eventIsLive(event);
-      const up = !live && start > now;
+      // Calendar days, so an event starting today is never already "done" for a
+      // reader west of it (and the countdown below can't be a day out).
+      const untilDays = daysUntilEventDay(event.start, eventTimeZone(event));
+      const up = !live && (untilDays ?? 0) > 0;
       const state: MyTeamTimelineRow["state"] = live ? "live" : up ? "up" : "done";
       const eventAwards = seasonAwards.filter((a) => a.event.id === event.id);
       const wins = team ? computeEventAwardWins(event, eventAwards, team.id, isIq) : computeEventAwardWins(event, [], 0, isIq);
@@ -18421,7 +18426,7 @@ function MyTeamDashboard() {
         record: isIq ? null : (rk ? `${rk.wins ?? 0}–${rk.losses ?? 0}` : null),
         avgScore: isIq ? (rk?.average_points ?? null) : null,
         skills: sk.combined ?? null,
-        days: up ? Math.max(0, Math.round((start - now) / oneDay)) : null,
+        days: up ? Math.max(0, untilDays ?? 0) : null,
         nextMatch: live && nextUp ? shortMatchName(nextUp.name) : null,
       };
     });
