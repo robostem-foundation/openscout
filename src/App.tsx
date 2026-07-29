@@ -66,7 +66,7 @@ import DOMPurify from "dompurify";
 import { api } from "./api";
 import JumperPage from "./jumper/JumperPage.jsx";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
-import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
+import { AUTH_PROGRAMS, AuthSlot, GoogleSignInButton, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { dayToNumber, daysUntilEventDay, eventDayMs, eventDayNumber, eventDayToUtcNoon, eventDayYear, eventDayParts, formatEventDay, formatEventDayPadded, todayInZone } from "./event-dates";
 import { readSearchBias, syncSearchBias, toGradeCode, useSearchBias } from "./search-bias";
 import { loadCachedWorldSkills, useWorldSkillsVersion, worldSkillsMeta } from "./world-skills-cache";
@@ -16118,10 +16118,7 @@ function JoinSharedTeamPage({ token }: { token: string }) {
                     <LogIn size={16} />
                     Sign in with Discord
                   </button>
-                  <button type="button" className="auth-btn auth-btn-google" onClick={() => void signInForJoin("google")}>
-                    <LogIn size={16} />
-                    Sign in with Google
-                  </button>
+                  <GoogleSignInButton redirectTo={window.location.href} icon={<LogIn size={16} />} />
                 </div>
               </>
             )}

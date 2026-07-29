@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { ChevronRight, LogOut, Settings, User as UserIcon } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./supabase";
+import { googleRedirectSignIn, mountGoogleButton } from "./google-signin";
 import { useSharedTeams } from "./shared-teams";
 import { setTheme, useTheme } from "./theme";
 import { Button } from "@/components/ui/button";
@@ -59,8 +60,9 @@ type AuthValue = {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
+  // Google has no context method on purpose: it goes through
+  // <GoogleSignInButton />, which needs a DOM node to host Google's own button.
   signInWithDiscord: () => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (patch: Partial<Profile>) => Promise<void>;
   openProfileEditor: () => void;
@@ -159,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (profile?.theme) setTheme(profile.theme);
   }, [profile?.theme]);
 
-  const signInWith = useCallback(async (provider: "discord" | "google") => {
+  const signInWith = useCallback(async (provider: "discord") => {
     if (!supabase) return;
     await supabase.auth.signInWithOAuth({
       provider,
@@ -194,7 +196,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       profile,
       signInWithDiscord: () => signInWith("discord"),
-      signInWithGoogle: () => signInWith("google"),
       signOut,
       updateProfile,
       openProfileEditor: () => setProfileEditorOpen(true),
@@ -247,8 +248,39 @@ function navTo(href: string) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+/**
+ * Google sign-in styled like the rest of the app, but driven by Google Identity
+ * Services so Google's account chooser says "openscout.ing" instead of the
+ * Supabase project URL (see google-signin.ts).
+ *
+ * The GIS button is rendered invisibly on top of ours and swallows the click.
+ * If it never renders — script blocked, no client ID configured — the click
+ * reaches our button's own handler and takes the original redirect route.
+ */
+export function GoogleSignInButton({ redirectTo, icon }: { redirectTo?: string; icon?: ReactNode }) {
+  const host = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    if (!host.current) return;
+    return mountGoogleButton(host.current, { redirectTo });
+  }, [redirectTo]);
+
+  return (
+    <span className="auth-btn-google-wrap">
+      <button
+        type="button"
+        className="auth-btn auth-btn-google"
+        onClick={() => void googleRedirectSignIn(redirectTo)}
+      >
+        {icon ?? <GoogleLogo />}
+        Sign in with Google
+      </button>
+      <span className="auth-btn-google-gis" ref={host} aria-hidden="true" />
+    </span>
+  );
+}
+
 export function SignInButtons() {
-  const { signInWithDiscord, signInWithGoogle, configured } = useAuth();
+  const { signInWithDiscord, configured } = useAuth();
   if (!configured) return null;
   return (
     <div className="auth-buttons">
@@ -257,10 +289,7 @@ export function SignInButtons() {
         <DiscordLogo />
         Sign in with Discord
       </button>
-      <button type="button" className="auth-btn auth-btn-google" onClick={() => void signInWithGoogle()}>
-        <GoogleLogo />
-        Sign in with Google
-      </button>
+      <GoogleSignInButton />
       <p className="auth-appearance-hint">Log in to change appearance!</p>
       <p className="auth-legal">
         By signing up you agree to our{" "}
