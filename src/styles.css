@@ -508,52 +508,25 @@ main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 345px;
   gap: 20px;
-  /* stretch (not start) so the events column can fill the row height the
-     sidebar defines — see .home-events-col. */
-  align-items: stretch;
+  /* Each column is as tall as its own content — the events panel grows with the
+     list and the page scrolls, rather than the list scrolling inside a fixed-
+     height panel. */
+  align-items: start;
 }
 
-/* The events panel is height-locked to the sidebar: it's taken out of flow so
-   the grid row height comes from the sidebar column alone, and the event list
-   scrolls inside the panel. Both columns end at the same y at every list
-   length. On mobile (<=900px) the columns stack and this is reset. */
+/* The events panel is a plain grid child; its only job here is to not shrink
+   below the column width. */
 .home-events-col {
-  position: relative;
-  min-height: 0;
+  min-width: 0;
 }
 
+/* Never a scroll container: the list grows the panel and the page scrolls. The
+   `overflow` is spelled out because the shared mobile `.panel { overflow-x: auto }`
+   rule would otherwise turn overflow-y into `auto` too (a non-visible value on one
+   axis forces the other), which showed up as a stray 8px of internal scroll. */
 .home-events-col > .panel {
-  position: absolute;
-  inset: 0;
   margin: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-/* A slim, track-less bar so the list doesn't lose 17px of width to a classic
-   scrollbar on platforms that reserve space for one. */
-.home-events-col > .panel::-webkit-scrollbar {
-  width: 10px;
-}
-
-.home-events-col > .panel::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.home-events-col > .panel::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  background-clip: content-box;
-  border: 3px solid transparent;
-  border-radius: 999px;
-}
-
-/* Keep the filter/tab header in view while the list scrolls under it. */
-.home-events-col > .panel > h2 {
-  position: sticky;
-  top: 0;
-  z-index: 2;
+  overflow: visible;
 }
 
 /* Events panel leads, sidebar sits on the right. The sidebar stays first in the
@@ -7247,17 +7220,6 @@ footer {
 
   .home-sidebar {
     order: 0;
-  }
-
-  /* Stacked layout: no column to match, so the events panel flows normally. */
-  .home-events-col > .panel {
-    position: static;
-    inset: auto;
-    overflow: visible;
-  }
-
-  .home-events-col > .panel > h2 {
-    position: static;
   }
 
   /* Wide events page collapses back to the normal centered width on mobile */
