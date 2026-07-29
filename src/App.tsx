@@ -3304,7 +3304,7 @@ function AllianceBoard({
 // ── Picklist tab ──────────────────────────────────────────────────────────────
 
 /** Full picklist panel rendered as a tab in EventDetail. */
-function PicklistTab({ event, sharedTeamId, rankings = [], isIq = false }: { event: { id: number; name: string }; sharedTeamId: string; rankings?: Ranking[]; isIq?: boolean }) {
+function PicklistTab({ event, sharedTeamId, rankings = [] }: { event: { id: number; name: string }; sharedTeamId: string; rankings?: Ranking[] }) {
   const { entries, ready } = usePicklist(sharedTeamId, String(event.id));
   const [allianceMode, setAllianceMode] = useState(false);
   const [boardMode, setBoardMode] = useState(false);
@@ -3345,7 +3345,7 @@ function PicklistTab({ event, sharedTeamId, rankings = [], isIq = false }: { eve
     return <div className="picklist-empty"><span className="muted">Loading…</span></div>;
   }
 
-  const showBoard = !isIq && rankings.length > 0;
+  const showBoard = rankings.length > 0;
 
   return (
     <div>
@@ -7534,6 +7534,14 @@ function EventDetail({ param }: { param: string }) {
 
   const keyAwards = useMemo(() => highlightAwards(eventAwards, event), [eventAwards, event]);
 
+  // IQ has no alliance selection, so the picklist is hidden everywhere for IQ events.
+  const eventIsIq = isIqProgram(event);
+  const picklistSharedTeamId = eventIsIq ? undefined : primarySharedTeam?.sharedTeamId;
+  // A #picklist deep link into an IQ event lands on a tab that doesn't exist there.
+  useEffect(() => {
+    if (eventIsIq && tab === "picklist") goToTab("matches");
+  }, [eventIsIq, tab, goToTab]);
+
   // Shared search query — declared before all filtered memos that depend on it
   const searchQ = teamSearch.trim().toLowerCase();
 
@@ -7755,7 +7763,7 @@ function EventDetail({ param }: { param: string }) {
           ["skills", "Skills", <Activity size={15} />],
           ["awards", "Awards", <AwardIcon size={15} />],
           ["teams", `Teams ${teams.data?.meta.total ?? ""}`, <Users size={15} />],
-          ["picklist", "Picklist", <ListOrdered size={15} />],
+          ...(eventIsIq ? [] : [["picklist", "Picklist", <ListOrdered size={15} />] as [string, string, ReactNode]]),
         ]}
       />
       <div className="view-tabs-body">
@@ -7851,7 +7859,7 @@ function EventDetail({ param }: { param: string }) {
           focusTeamId={searchFocusTeamId}
         />
       )}
-      {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} allMatches={matches.data?.data ?? []} sharedTeamId={primarySharedTeam?.sharedTeamId} eventId={String(event.id)} />}
+      {tab === "rankings" && <RankingsTable rankings={filteredRankings} isIq={isIqProgram(event)} matches={filteredMatches} allMatches={matches.data?.data ?? []} sharedTeamId={picklistSharedTeamId} eventId={String(event.id)} />}
       {tab === "skills" && <SkillsTable skills={filteredSkills} />}
       {tab === "awards" && <AwardsList awards={filteredAwards} />}
       {tab === "teams" && divisions.length > 1 && (
@@ -7871,10 +7879,10 @@ function EventDetail({ param }: { param: string }) {
           {teams.data.data.length.toLocaleString()} teams{teamsDivFilter ? ` in ${divisions.find((d) => d.id === teamsDivFilter)?.name ?? "division"}` : ""}.
         </div>
       )}
-      {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} eventId={event.id} sharedTeamId={primarySharedTeam?.sharedTeamId} divisionMap={teamDivisionNameMap} />}
-      {tab === "picklist" && (
+      {tab === "teams" && <TeamTable teams={filteredTeams} loading={teams.loading} eventId={event.id} sharedTeamId={picklistSharedTeamId} divisionMap={teamDivisionNameMap} />}
+      {tab === "picklist" && !eventIsIq && (
         primarySharedTeam
-          ? <PicklistTab event={event} sharedTeamId={primarySharedTeam.sharedTeamId} rankings={rankings.data?.data ?? []} isIq={isIqProgram(event)} />
+          ? <PicklistTab event={event} sharedTeamId={primarySharedTeam.sharedTeamId} rankings={rankings.data?.data ?? []} />
           : <div className="picklist-empty"><p>Join or create a shared team to use shared picklists.</p></div>
       )}
       </div>
