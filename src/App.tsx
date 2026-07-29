@@ -7100,12 +7100,12 @@ function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divis
           <tr>
             <th>Team</th>
             {splitName && <th>Name</th>}
-            <th>Program</th>
-            <th>Level</th>
-            <th>Organization</th>
-            <th>Location</th>
+            <th className="tm-hide-mobile">Program</th>
+            <th className="tm-hide-mobile">Level</th>
+            <th className="tm-hide-mobile">Organization</th>
+            <th className="tm-hide-mobile">Location</th>
             {skills && <th className="team-skills-col">Skills</th>}
-            <th>
+            <th className="tm-hide-mobile">
               {divisionMap
                 ? "Division"
                 : <span className="status-disclaimer" data-tooltip="Push Back Season registration status. Override registrations will be updated soon.">Status</span>
@@ -7147,16 +7147,16 @@ function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divis
                         {team.team_name ? <TranslatedText text={team.team_name} country={team.location?.country} /> : "—"}
                       </td>
                     )}
-                    <td>
+                    <td className="tm-hide-mobile">
                       <ProgramBadge program={team.program} />
                     </td>
-                    <td>
+                    <td className="tm-hide-mobile">
                       <GradeBadge grade={team.grade} />
                     </td>
-                    <td className="truncate-cell">
+                    <td className="truncate-cell tm-hide-mobile">
                       {team.organization ? <TranslatedText text={team.organization} country={team.location?.country} /> : "-"}
                     </td>
-                    <td className="truncate-cell">{locationLine(team)}</td>
+                    <td className="truncate-cell tm-hide-mobile">{locationLine(team)}</td>
                     {skills && (
                       <td className="team-skills-col">
                         {skills.loading ? (
@@ -7168,7 +7168,7 @@ function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divis
                         )}
                       </td>
                     )}
-                    <td>{divisionMap ? (divisionMap.get(team.id) ?? "—") : (team.registered ? "Registered" : "Inactive")}</td>
+                    <td className="tm-hide-mobile">{divisionMap ? (divisionMap.get(team.id) ?? "—") : (team.registered ? "Registered" : "Inactive")}</td>
                     <td
                       className="quick-look-col"
                       onClick={(e) => {
@@ -7217,8 +7217,17 @@ function TeamTable({ teams, loading, localPageSize, eventId, sharedTeamId, divis
                                   ? <TranslatedText text={team.organization} country={team.location?.country} />
                                   : "No organization listed"}
                               </div>
+                              {/* Every value the mobile card hides (`tm-hide-mobile`: program,
+                                  level, organization, location, division/status) has to be
+                                  readable here — this row is the card's only disclosure. */}
                               <div>
-                                {locationLine(team)} · {team.grade ?? "Grade unknown"} · {team.registered ? "Registered" : "Inactive"}
+                                {[
+                                  team.program?.code ?? team.program?.name,
+                                  locationLine(team),
+                                  team.grade ?? "Grade unknown",
+                                  team.registered ? "Registered" : "Inactive",
+                                  divisionMap ? (divisionMap.get(team.id) ?? null) : null,
+                                ].filter(Boolean).join(" · ")}
                               </div>
                             </div>
                             <button className="quick-look-close" onClick={() => setExpandedTeamId(null)}>✕</button>

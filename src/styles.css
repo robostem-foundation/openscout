@@ -13141,3 +13141,282 @@ td.col-muted { color: var(--text-2); }
     transition: opacity 120ms ease;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE CARD REFLOW — conventions
+   ═══════════════════════════════════════════════════════════════════════════
+   Below 760px a wide <table> stops being a table and each <tr> becomes a card.
+   Two reference implementations already ship this: `.ws-table` (World Skills,
+   grid tracks — uniform numbers) and `.event-table` (Events, flex-wrap —
+   variable-count chips). Copy whichever fits the cell mix; do not invent a
+   third idiom, and do not try to factor out a shared base class: the technique
+   depends on the real <td>s becoming grid items of the <tr>, so half of any
+   base would be overridden per table anyway.
+
+   Each table owns a two-letter prefix and four markers:
+
+     <p>-hide-mobile   real desktop <td>, display:none ≤760px
+     <p>-m-<slot>      real <td> that survives and gets an explicit grid slot
+     <p>-m-toggle      mobile-only <td>, appended LAST, holds the disclosure
+                       chevron for the values that moved off the card
+     <p>-m-detail      mobile-only <tr> holding those values when expanded
+
+   Rules:
+   · Append the mobile-only cells last so existing nth-child width rules don't
+     shift, and bump the table's colCount / colSpan constant to match.
+   · Declare `-m-toggle` and `-m-detail` display:none globally and re-enable
+     them inside the media block. An expanded row then cannot leak onto
+     desktop after a resize, with no JS breakpoint needed.
+   · Do NOT put aria-hidden on `-m-detail`. Unlike the decorative `.ws-m-tag`
+     it carries the only copy of that data on mobile; the desktop cells are
+     already out of the a11y tree via display:none.
+   · Clamp on a wrapper <span>, never on the <a> — a clamped anchor becomes a
+     block whose whole rectangle is clickable (see commit 7c2e029).
+   · A page must never be wider than the viewport at ≤560px: page-level
+     horizontal overflow shifts the fixed mobile tab bar off-screen on iOS
+     Safari. Every reflowed table therefore sets `min-width: 0`.
+
+   Standard preamble, repeated verbatim per table:
+
+     .xx-table { min-width: 0; }
+     .xx-table thead { display: none; }
+     .xx-table, .xx-table tbody, .xx-table tr { display: block; }
+     .xx-table td { padding: 0; border: 0; }
+
+   CAVEAT — head strips inside a <Panel>: `.panel { overflow-x: auto }` at
+   ≤640px makes the panel a scroll container on both axes, so a
+   `position: sticky; top: 0` head strip anchors to the panel, not the
+   viewport, and never sticks. Panel-hosted strips ship non-sticky.
+   `.ws-mobile-head` gets away with sticky only because `.ws-table-wrap` is
+   not inside a panel.
+
+   Breakpoints for this work: 760 (table → card), 560 (phone chrome and
+   density), 900 (two-col → one-col). No new values.
+
+   TABLE INVENTORY (all 19 <table>s in src/App.tsx) — the gate on inverting
+   the blanket `table { min-width: 720px }`:
+
+     REFLOW to cards ≤760px
+       6401  .event-table                 done (reference)
+       7098  .team-table[-dir]            A1  prefix tm
+      11566  (unclassed) TeamRankingsByEvent V5   A4  prefix rbe
+      11510  (unclassed) TeamRankingsByEvent IQ   A4  prefix rbe
+      11647  .skills-table.team-skills-table      A5
+      14202  (unclassed) RankingsTable IQ         A2  prefix rk
+      14258  (unclassed) RankingsTable V5RC       A2  prefix rk
+      14332  .skills-table                        A3
+      15031  .ws-table                    done (reference)
+      15148  (unclassed) InsightsPage             A7  prefix in
+     SCROLL (head-to-head reads that must not stack)
+      11302  .team-event-match-preview
+      11386  .team-match-table
+      12949  .results-match-table
+      18683  .results-match-table  (My Team — NEEDS a DragScroll wrapper)
+     ALREADY FITS (≤4 narrow columns; only needs min-width:0)
+       7397  .team-preview-matches table
+      13605  .alliance-selection-table
+      13984  .tm-card-table
+      14051  .tm-card-table
+      18057  .shortcuts-table
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE CARD REFLOW — per-table blocks. See the conventions banner above.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── A1 · TeamTable ── */
+
+/* ═══ Mobile: team tables become identity cards with an icon rail ═══
+   `.team-table` serves two shapes — the /teams directory (`.team-table-dir`:
+   name split out, Skills column) and the Event → Teams tab (name inline in the
+   team cell, Division instead of Status). Both reflow to the same card: team
+   number over team name on the left, a right-hand rail of actions.
+
+   Grid, not flex, is deliberate. The rail is the only part of this table a
+   thumb aims at, so eye / compare / picklist must land on the same x across
+   every card; flex-wrap would let a long team name nudge them row by row.
+
+   Program, level, organization, location and division/status leave the card
+   (`tm-hide-mobile`). They are not lost: the eye button already expands
+   `.team-detail-row`, which carries all five plus the match preview, so this
+   table needs no `tm-m-toggle` / `tm-m-detail` pair of its own. */
+@media (max-width: 760px) {
+  .team-table {
+    min-width: 0;
+    /* Percentage `nth-child` widths below need `auto` to stop mattering. */
+    table-layout: auto;
+  }
+  .team-table thead {
+    display: none;
+  }
+  .team-table,
+  .team-table tbody,
+  .team-table tr {
+    display: block;
+  }
+  .team-table td {
+    padding: 0;
+    border: 0;
+  }
+  /* The desktop layout is `table-layout: fixed` driven by `.team-table[-dir]
+     td:nth-child(n)` percentages. A grid item honours `width`, so 28% of the
+     card would survive the reflow. Matching those selectors' specificity
+     (0,2,1) from a later block neutralises them without `!important`. */
+  .team-table td:nth-child(n) {
+    width: auto;
+    min-width: 0;
+  }
+  .team-table .tm-hide-mobile {
+    display: none;
+  }
+
+  /* ── The card ──
+     content | skills | eye | compare | picklist. Only one of skills/picklist is
+     ever present (skills is directory-only, picklist needs an event + shared
+     team), and unused trailing tracks resolve to 0 — so spacing lives in each
+     cell's own margin, never in `column-gap`, which would otherwise leave a
+     phantom gutter beside an absent column. */
+  .team-table tr.team-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+    align-items: center;
+    row-gap: 1px;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .team-table tbody tr.team-row:last-child {
+    border-bottom: 0;
+  }
+
+  /* Team number, and — in the event variant, where there is no separate Name
+     column — the team name beneath it rather than trailing on the same line. */
+  .team-table .team-cell {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    font-size: 15px;
+    line-height: 1.25;
+    white-space: normal;
+  }
+  .team-table .team-cell > span {
+    display: block;
+    margin-top: 1px;
+    color: var(--text-2);
+    font-size: 12.5px;
+    line-height: 1.3;
+  }
+  /* The desktop " - " separator only makes sense while the name is inline. */
+  .team-table .team-cell > span::before {
+    content: none;
+  }
+  .team-table .team-cell .team-number {
+    font-weight: 600;
+  }
+
+  /* Directory variant: the name is its own cell, so it takes the second line.
+     It keeps `.truncate-cell`'s single-line ellipsis on purpose — every card
+     then has the same height, which is what makes the icon rail read as a
+     column rather than a scatter. */
+  .team-table .team-name-cell {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+    color: var(--text-2);
+    font-size: 12.5px;
+    line-height: 1.3;
+  }
+
+  /* Skills score keeps its own micro-label: the <thead> is gone and a bare
+     number beside a team would read as anything (cf. `.ws-m-tag`). */
+  .team-table .team-skills-col {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    justify-self: end;
+    margin-left: 10px;
+    text-align: right;
+  }
+  .team-table .team-skills-col::before {
+    content: "SKILLS";
+    display: block;
+    color: var(--text-faint);
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    line-height: 1.4;
+  }
+  .team-table .team-skills-score {
+    font-size: 14px;
+  }
+
+  /* ── Icon rail ──
+     Fixed order, right-aligned, spanning the card's full height so the icons
+     sit on the card's optical centre no matter how many text lines there are.
+     Each drops its desktop 38/88px column width — a grid item would otherwise
+     reserve it. */
+  .team-table .quick-look-col {
+    grid-column: 3;
+    grid-row: 1 / -1;
+    width: auto;
+    min-width: 0;
+    margin-left: 8px;
+    padding: 0;
+  }
+  .team-table .compare-col {
+    grid-column: 4;
+    grid-row: 1 / -1;
+    width: auto;
+    min-width: 0;
+    margin-left: 4px;
+  }
+  .team-table .picklist-col {
+    grid-column: 5;
+    grid-row: 1 / -1;
+    width: auto;
+    min-width: 0;
+    margin-left: 4px;
+  }
+  /* 26/24px hit areas are fine for a mouse and too small for a thumb; 34px
+     square inside an 11px-padded card clears the 44px guidance vertically and
+     keeps three icons inside 120px. */
+  .team-table .quick-look-btn,
+  .team-table .compare-row-btn,
+  .team-table .picklist-row-btn {
+    height: 34px;
+    width: 34px;
+  }
+
+  /* ── Disclosure ──
+     Opt out of the card grid entirely; as a grid item this row's single wide
+     <td> would be shredded into the five action tracks. */
+  .team-table tr.team-detail-row {
+    display: block;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .team-table tr.team-detail-row > td {
+    display: block;
+    padding: 10px 14px;
+  }
+  .team-table .team-detail-top {
+    gap: 10px;
+  }
+
+  /* Loading skeletons and the empty state are plain <tr>s with no `.team-row`,
+     so they keep block layout — but they still lost their cell padding to the
+     preamble above, and a skeleton row would otherwise stack one bar per
+     desktop column. Show two, matching the two lines of a real card. */
+  .team-table tbody > tr:not(.team-row):not(.team-detail-row) {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .team-table tbody > tr:not(.team-row):not(.team-detail-row) > td {
+    padding: 3px 0;
+  }
+  .team-table tbody > tr:not(.team-row):not(.team-detail-row) > td:nth-child(n + 3) {
+    display: none;
+  }
+
+  /* Last card must clear the fixed mobile tab bar when scrolled to. */
+  .team-table tbody tr:last-child {
+    scroll-margin-bottom: var(--mobile-tabbar-clear, 92px);
+  }
+}
+
