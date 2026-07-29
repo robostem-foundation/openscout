@@ -9222,6 +9222,23 @@ td.quick-look-col {
   .settings-layout,
   .view-tabs-vertical {
     flex-direction: column;
+    /* CRITICAL: the base rule sets `align-items: flex-start`, which is fine while
+       this is a row (it top-aligns the rail against the body). Once it becomes a
+       column, width is the CROSS axis — so `flex-start` makes each child size to
+       its own content and blow past the viewport, and `min-width: 0` on the body
+       does nothing because that only constrains the MAIN axis. This was the whole
+       Team-page overflow: the body measured 1708px inside a 355px container, on
+       every tab. Stretch is what makes a column child obey its container. */
+    align-items: stretch;
+  }
+
+  /* Belt-and-braces: even with stretch, a wide descendant (season strip, table)
+     must not be able to push this box out again. */
+  .view-tabs-vertical .view-tabs-body,
+  .view-tabs-horizontal .view-tabs-body {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .settings-tabs {
@@ -9231,10 +9248,41 @@ td.quick-look-col {
     position: static;
   }
 
-  /* On narrow screens the vertical rail folds back to a top bar, matching how
-     the settings rail collapses. */
+  /* On narrow screens the vertical rail folds back to a top bar. It used to
+     `flex-wrap: wrap` with `flex: 1 1 0` children, which produced ragged rows
+     of unequal width (3 tabs at 116px, then 2 at 176px) and a taller active tab
+     whenever its count badge wrapped to a second line. Make it a single-row
+     scroller instead — the same idiom the topbar nav and season strips already
+     use, and it scales to the event page's 7 tabs without changing height. */
   .view-tabs-rail.settings-tabs {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .view-tabs-rail.settings-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  /* Two more properties that mean the opposite thing once the parent is a column:
+     `.view-tabs-vertical .view-tabs-rail { flex: 0 0 178px }` sized the rail's
+     WIDTH as a row item, but becomes a 178px-tall dead box here; and
+     `.settings-tab { width: 100% }` made each tab fill the column, which in a row
+     makes every tab as wide as the whole rail (one tab per screen). */
+  .view-tabs-vertical .view-tabs-rail {
+    flex: 0 0 auto;
+  }
+  .view-tabs-rail .settings-tab {
+    flex: 0 0 auto;
+    width: auto;
+    gap: 7px;
+    padding-inline: 13px;
+    white-space: nowrap;
+    border-bottom: 0;
+  }
+  /* The rail is a horizontal strip now, so the divider belongs on the inline edge. */
+  .view-tabs-rail .settings-tab:not(:last-child) {
+    border-right: 1px solid var(--border-soft);
   }
 
   .settings-tab {
@@ -13605,7 +13653,7 @@ td.col-muted { color: var(--text-2); }
 @media (max-width: 760px) {
   .rk-mobile-head {
     display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) 46px 46px auto auto;
+    grid-template-columns: 30px minmax(0, 1fr) 46px 46px auto auto;
     column-gap: 10px;
     align-items: end;
     padding: 5px 12px 6px;
@@ -13618,7 +13666,7 @@ td.col-muted { color: var(--text-2); }
   }
   /* IQ has no Record line, so its rail is one track shorter. */
   .rk-mobile-head-iq {
-    grid-template-columns: 26px minmax(0, 1fr) 46px 46px auto;
+    grid-template-columns: 30px minmax(0, 1fr) 46px 46px auto;
   }
   .rk-mobile-head span:nth-child(n + 3) {
     justify-self: end;
@@ -13653,7 +13701,7 @@ td.col-muted { color: var(--text-2); }
   /* ── The card ────────────────────────────────────────────────────────── */
   .rk-table tbody tr.rk-row {
     display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) 46px 46px auto auto;
+    grid-template-columns: 30px minmax(0, 1fr) 46px 46px auto auto;
     column-gap: 10px;
     row-gap: 1px;
     align-items: center;
@@ -13663,7 +13711,7 @@ td.col-muted { color: var(--text-2); }
   }
   .rk-table-iq tbody tr.rk-row {
     /* Single-line card: nothing sits under the team number. */
-    grid-template-columns: 26px minmax(0, 1fr) 46px 46px auto;
+    grid-template-columns: 30px minmax(0, 1fr) 46px 46px auto;
     row-gap: 0;
   }
   .rk-table tbody tr.rk-row:last-child {
@@ -13890,7 +13938,7 @@ td.col-muted { color: var(--text-2); }
   /* ── A3 · the card: rank gutter | team over the two scores | total rail ── */
   .sk-mobile-head {
     display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) auto;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
     column-gap: 10px;
     align-items: end;
     padding: 5px 12px 6px;
@@ -13907,7 +13955,7 @@ td.col-muted { color: var(--text-2); }
 
   .skills-table tbody tr.sk-row {
     display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) auto;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
     column-gap: 10px;
     row-gap: 1px;
     align-items: center;
@@ -14274,7 +14322,7 @@ td.col-muted { color: var(--text-2); }
 @media (max-width: 760px) {
   .in-mobile-head {
     display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) auto 30px;
+    grid-template-columns: 30px minmax(0, 1fr) auto 30px;
     column-gap: 10px;
     padding: 6px 12px;
     background: var(--surface-2);
@@ -14310,7 +14358,7 @@ td.col-muted { color: var(--text-2); }
 
   .insights-table tbody tr.in-row {
     display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) auto 30px;
+    grid-template-columns: 30px minmax(0, 1fr) auto 30px;
     column-gap: 10px;
     row-gap: 1px;
     align-items: center;
@@ -14567,3 +14615,557 @@ td.col-muted { color: var(--text-2); }
    The `.is-more-left`/`.is-more-right` mask idiom needs useScrollStrip to toggle
    those classes; wiring DragScroll around .compare-grid is a follow-up in
    App.tsx (see the report). */
+
+/* ── Team → Events cards (`.event-group`) ─────────────────────────────────────
+   Desktop lays the summary out as one row: [name + SKU | crowns · badge ·
+   city · dates | chevron]. On a phone the right-hand meta block claims its
+   natural width first, squeezing the name column to ~145px — which wrapped a
+   signature event's title one word per line, six lines tall. Same fix as the
+   events table: the name owns its own full-width line, the meta chips wrap
+   beneath it, and the chevron keeps a fixed corner. */
+@media (max-width: 760px) {
+  .event-group summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 7px 10px;
+    padding: 12px 14px;
+  }
+
+  .event-group-head-main {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .event-group-chevron {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    margin-top: 1px;
+  }
+
+  /* Full width on its own row, and left-aligned — `flex-end` is a desktop
+     concern (it right-aligns against the name column) and reads as a ragged
+     second block once it spans the card. */
+  .event-group summary .event-card-info {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    align-items: flex-start;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .event-group summary .event-card-meta-row {
+    justify-content: flex-start;
+    gap: 5px 8px;
+    min-width: 0;
+  }
+
+  /* The city/state is the one meta item that can be long; let it wrap rather
+     than force the row wider than the card. */
+  .event-group summary .event-card-location {
+    white-space: normal;
+  }
+
+  .event-group-name-btn {
+    white-space: normal;
+    line-height: 1.32;
+    font-weight: 600;
+    text-align: left;
+  }
+}
+
+/* The folded tab rail advertises hidden tabs with the same edge-fade idiom as
+   `.topbar-nav` (useScrollStrip toggles the classes; see VerticalTabRail). */
+.view-tabs-rail.is-more-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent 100%);
+}
+.view-tabs-rail.is-more-left {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 22px);
+  mask-image: linear-gradient(to right, transparent, #000 22px);
+}
+.view-tabs-rail.is-more-left.is-more-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 22px, #000 calc(100% - 22px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent, #000 22px, #000 calc(100% - 22px), transparent 100%);
+}
+
+/* ── Event detail: horizontal tab bar + highlights strip ──────────────────────
+   The event page hardcodes `.view-tabs-horizontal`, so the folded-rail rules
+   above never reach it. Its `.tabs` bar is `flex-wrap: wrap`, which at 375px
+   breaks 7 tabs into two ragged rows and leaves the compare action stranded
+   beside them at the wrong vertical centre. Same treatment as the rail: one
+   scrolling row. */
+@media (max-width: 760px) {
+  .view-tabs-horizontal .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .view-tabs-horizontal .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .view-tabs-horizontal .tabs button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* Keep the action pinned to the top of the bar rather than centred against a
+     row it no longer shares. */
+  .view-tabs-bar {
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .view-tabs-bar-action {
+    margin-top: 1px;
+  }
+
+  /* The highlights strip is a flex ROW of [team-search | award cards]. At phone
+     width the search collapsed to a 69px sliver (a magnifier and one clipped
+     letter) while the cards took the rest. Stack them: search full width, then
+     the cards, one per row. */
+  .event-highlights-strip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  /* Full width, but it has to read as a search affordance rather than an empty
+     box: the button is only an icon plus a `F` hotkey chip, and a keyboard
+     shortcut means nothing on a phone. Drop the chip, add a label. */
+  .event-highlights-strip .event-team-search-toggle {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 11px 13px;
+  }
+  .event-team-search-toggle .event-team-search-kbd {
+    display: none;
+  }
+  .event-team-search-toggle::after {
+    content: "Search teams";
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .event-highlights {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* An award name is the point of the card — wrap it instead of ellipsising
+     "Tournament Champions" down to "Tournament Cham…". */
+  .event-highlights strong {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+    font-size: 11.5px;
+    line-height: 1.25;
+  }
+
+  /* These are a glanceable summary sitting above the real Awards panel, so they
+     have to stay cheap vertically: the 48px desktop min-height plus 8px padding
+     made three awards eat a third of the viewport. Thin rows instead. */
+  .event-highlights {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+  .event-highlights article {
+    align-items: center;
+    gap: 7px;
+    min-height: 0;
+    padding: 5px 8px;
+    border-radius: 7px;
+  }
+  .event-highlight-icon {
+    width: 14px;
+    height: 14px;
+  }
+  .event-highlight-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+  .event-highlight-body {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 7px;
+  }
+  /* Team chips inside the row shrink to match the tighter type. */
+  .event-highlights a,
+  .event-highlights .event-highlight-body span {
+    padding: 1px 5px;
+    font-size: 10.5px;
+  }
+}
+
+/* Edge fades for the event page's scrolling tab bar. Scoped to the horizontal
+   view-tabs so the generic `.tabs`/`.segmented` bars elsewhere are untouched.
+   The mask is only applied while the bar actually overflows — useScrollStrip
+   toggles these classes — so a short bar never gets a phantom faded edge. */
+@media (max-width: 760px) {
+  .view-tabs-horizontal .tabs.is-more-right {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent 100%);
+  }
+  .view-tabs-horizontal .tabs.is-more-left {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 20px);
+    mask-image: linear-gradient(to right, transparent, #000 20px);
+  }
+  .view-tabs-horizontal .tabs.is-more-left.is-more-right {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent 100%);
+  }
+}
+
+/* ── Match tables on phones: fit, don't scroll ────────────────────────────────
+   Match rows deliberately do NOT reflow into cards — a row is a red-alliance |
+   score | blue-alliance comparison and stacking it vertically destroys the only
+   thing it communicates. But the 620px scroll floor meant that at 375px you saw
+   Match + Red and the SCORE — the actual result — sat off-screen behind a
+   horizontal scroll. Wrong trade: the head-to-head read is preserved by keeping
+   the three groups side by side, not by keeping desktop column widths.
+
+   So at phone width the table fits the viewport instead. Desktop and tablet are
+   untouched; 561–640px keeps the scroll floor, where there's room for it. */
+@media (max-width: 560px) {
+  .results-match-table,
+  .team-match-table {
+    min-width: 0;
+    width: 100%;
+    table-layout: fixed;
+    font-size: 12px;
+  }
+
+  /* Fixed-width ends, alliances split whatever is left. Now that each alliance
+     is a single column of chips it only needs one chip's width, so the label and
+     the score can have the room instead. */
+  .results-play-col { width: 26px; }
+  .results-match-col { width: 76px; }
+  .results-score-col { width: 68px; }
+  .results-alliance-col { width: auto; }
+
+  .results-match-table th,
+  .results-match-table td,
+  .team-match-table th,
+  .team-match-table td {
+    padding: 5px 4px;
+  }
+
+  .results-match-table .result-match-label,
+  .team-match-table .result-match-label {
+    font-size: 11px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  /* Centre the label in its column so a short "Q6" doesn't leave a ragged gap
+     before the red alliance — everything else in the row is centred. */
+  .results-match-table .result-match-name,
+  .results-match-table .result-match-line {
+    text-align: center;
+    justify-content: center;
+  }
+
+  /* The base `thead th { white-space: nowrap }` makes "Red Alliance" (89px) and
+     "Blue Alliance" (93px) overflow their ~70px columns at 320px. Let them wrap
+     to two lines — the data cells themselves already fit. */
+  .results-match-table thead th,
+  .team-match-table thead th {
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  /* One team per line, always. `.team-link-list` is a wrapping flex row, so an
+     alliance would fit 2 chips on one line or spill to two depending on how long
+     the team numbers happened to be — giving neighbouring rows different heights
+     and misaligning the red/blue comparison. A column forces N teams → N lines,
+     so every row in an alliance-vs-alliance table is the same height, and the
+     column only has to be one chip wide. */
+  /* NOTE: three different cell classes carry an alliance across the app —
+     `.alliance-cell` (event Results), and `.red-alliance-cell`/`.blue-alliance-cell`
+     (team + quick-view match tables). All three need this or you get one table
+     stacking and another not. */
+  .results-match-table .alliance-cell .team-link-list,
+  .team-match-table .alliance-cell .team-link-list,
+  .results-match-table .red-alliance-cell .team-link-list,
+  .results-match-table .blue-alliance-cell .team-link-list,
+  .team-match-table .red-alliance-cell .team-link-list,
+  .team-match-table .blue-alliance-cell .team-link-list {
+    display: flex;
+    flex-direction: column;
+    /* Centered, matching the elimination tables — a left-aligned stack reads as
+       ragged against the centred score column between the two alliances. */
+    align-items: center;
+    gap: 2px;
+  }
+  .results-match-table .alliance-cell,
+  .team-match-table .alliance-cell,
+  .results-match-table .red-alliance-cell,
+  .results-match-table .blue-alliance-cell,
+  .team-match-table .red-alliance-cell,
+  .team-match-table .blue-alliance-cell {
+    text-align: center;
+  }
+  .results-match-table .alliance-cell,
+  .team-match-table .alliance-cell,
+  .results-match-table .red-alliance-cell,
+  .results-match-table .blue-alliance-cell,
+  .team-match-table .red-alliance-cell,
+  .team-match-table .blue-alliance-cell {
+    overflow-wrap: anywhere;
+  }
+
+  /* An odd number of stat cells otherwise leaves a bare grey half-row. */
+  .about-stats > .about-stat:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .results-match-table .score-cell,
+  .team-match-table .score-cell {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* The play button is a 44px desktop target; keep it tappable but narrow. */
+  .results-match-table .play-cell,
+  .team-match-table .play-cell {
+    padding-inline: 2px;
+  }
+}
+
+/* ── Match table: stop the score badges clipping into Blue, tighten Match ─────
+   With `table-layout: fixed`, content wider than its column simply overflows
+   into the next one — the score cell held two 42px badges plus gaps (92px) in a
+   68px column, so the blue score visibly sat on top of the Blue alliance's team
+   numbers. Shrink the badges to what a 1–3 digit score needs, size the column to
+   the real content, and give the reclaimed space to the alliances. */
+@media (max-width: 560px) {
+  .results-match-table .score,
+  .team-match-table .score {
+    min-width: 30px;
+    margin-right: 3px;
+    padding: 2px 4px;
+    font-size: 11.5px;
+  }
+  .results-match-table .score:last-child,
+  .team-match-table .score:last-child {
+    margin-right: 0;
+  }
+
+  /* "Q12" / "R16 #1-1" is all this column ever holds on a phone — the time and
+     field name are already hidden — so it needs ~58px, not 76px of white space. */
+  .results-match-col { width: 58px; }
+  .results-score-col { width: 76px; }
+
+  /* The elimination tables live in `.results-column:last-child`, which carries its
+     own (0,3,0) column widths — 36/88/94 — tuned for the NARROW right-hand column
+     of the desktop two-column layout. Once that layout collapses to a single
+     full-width column those widths are wrong: they left each alliance only ~40px
+     at 320px and clipped every team number. Match the quals widths. */
+  .results-column:last-child .results-play-col { width: 26px; }
+  .results-column:last-child .results-match-col { width: 62px; }
+  .results-column:last-child .results-score-col { width: 76px; }
+  .results-column:last-child .results-alliance-col { width: auto; }
+  .results-column:last-child .alliance-cell { padding: 4px 3px; }
+
+  .results-match-table .score-cell,
+  .team-match-table .score-cell {
+    padding-inline: 2px;
+    white-space: nowrap;
+  }
+
+  /* Sticky section headers ("Qualifications", "Round of 16", …) so the collapse
+     control is always reachable inside a long schedule. Parks directly beneath
+     the sticky topbar (56px tall, z-index 80) and sits BELOW it in the stacking
+     order, so the two can never overlap. */
+  .schedule-collapse > summary,
+  .results-column .alliances-header {
+    position: sticky;
+    top: 56px;
+    z-index: 20;
+    background: var(--bg);
+  }
+  .schedule-collapse > summary {
+    margin-inline: -2px;
+    padding-inline: 4px;
+    box-shadow: 0 1px 0 var(--border-soft);
+  }
+}
+
+/* ── Two overflow/clip fixes found by sweeping the event tabs ────────────────── */
+@media (max-width: 760px) {
+  /* The "WORLD" annotation is a decorative vertical label parked OUTSIDE its
+     panel (`left: calc(100% + 14px)`) next to a hairline bracket. At 375px that
+     put its right edge 5px past the viewport — page-level overflow, which is the
+     iOS fixed-tab-bar hazard. The stat it annotates already carries a "WORLD
+     SKILLS" text label, so the bracket + rotated caption are pure decoration
+     here and there is no room for them. */
+  .event-stat-world-label {
+    display: none;
+  }
+  .event-stat-world-group::after {
+    content: none;
+  }
+
+  /* The disclosure chevron is a 32px tap target pulled 6px into the rail with a
+     negative margin, which sized its grid track to 26px and then clipped the
+     button. Let the track be the button's real width. */
+  .rk-table .rk-toggle-btn,
+  .insights-table .in-m-toggle-btn {
+    margin-right: 0;
+  }
+}
+
+/* ── Quick view panel on phones ───────────────────────────────────────────────
+   The header is one flex row — [heading | Full view | Compare | ×] — and the two
+   action buttons plus the close button claim ~190px of a 375px screen, leaving
+   the heading ~185px. That truncated the team to "10B · Exot…" and broke the
+   location into one word per line. Give the heading its own row and let the
+   actions sit beneath it. */
+@media (max-width: 760px) {
+  .quick-view-header {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding: 11px 14px;
+  }
+  .quick-view-heading {
+    flex: 1 1 100%;
+    align-items: flex-start;
+    flex-direction: column;
+    row-gap: 5px;
+  }
+  .quick-view-title {
+    /* Full width now, so it no longer needs to ellipsise mid-word. */
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    font-size: 16px;
+    line-height: 1.25;
+  }
+  .quick-view-meta {
+    gap: 5px 8px;
+    font-size: 12px;
+  }
+  .quick-view-actions {
+    flex: 1 1 auto;
+  }
+  .quick-view-action {
+    padding: 7px 11px;
+    font-size: 12.5px;
+  }
+  /* The Esc keycap is meaningless without a keyboard. */
+  .quick-view-header .esc-hint {
+    display: none;
+  }
+
+  /* The stats rail is a 1-column grid of 9 hairline cells — 540px of vertical
+     scrolling before the match list even starts. Two-up (auto-fit at 140px) halves
+     it and still leaves room for the sub-notes like "119-18-1 record". */
+  /* `.about-overview > .about-stats` is (0,2,0), so a bare `.about-stats` here
+     loses to the existing ≤480px single-column rule on the team About tab. Match
+     its specificity. Two-up turns a ~500px stack of hairline cells into ~250px,
+     and 176px per cell still fits the longest sub-note ("119-18-1 record"). */
+  .about-stats,
+  .about-overview > .about-stats {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  /* The rail is `flex: 0 0 380px` and sticky — both wrong once the panel is a
+     single narrow column. */
+  .quick-view-cols {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .quick-view-stats-col {
+    flex: 1 1 auto;
+    position: static;
+    width: 100%;
+  }
+
+  /* 4 equal 80px columns plus "Red Alliance"/"Blue Alliance" headers overran the
+     column by ~9px. Short headers already exist for this; use them and tighten. */
+  .quick-view-matches-col .team-match-table {
+    font-size: 11.5px;
+  }
+  .quick-view-matches-col .team-match-table th,
+  .quick-view-matches-col .team-match-table td {
+    padding: 5px 3px;
+  }
+  /* `table-layout: fixed` gives each of the 4 columns 80px; "Red Alliance" needs
+     84 and simply overflowed into its neighbour. Let the header wrap to two
+     lines instead — the base rule sets `white-space: nowrap` on thead cells. */
+  .quick-view-matches-col .team-match-table thead th {
+    white-space: normal;
+    line-height: 1.2;
+  }
+}
+
+/* ── Collapsed topbar search popup ───────────────────────────────────────────
+   The popup is absolutely positioned against the 34px trigger with `right: 0;
+   left: -286px; width: 320px`, so it grows leftwards from the trigger. The
+   trigger sits ~103px from the right edge, which put the popup's left edge 48px
+   OFF-SCREEN — the search field visibly hung past the left of the viewport.
+   Anchor it to the viewport instead of the trigger; there isn't room to do this
+   relative to a control that close to the edge. */
+@media (max-width: 560px) {
+  .global-search-wrap.topbar-search.is-compact .global-search-popup {
+    position: fixed;
+    top: calc(56px + 6px); /* clears the 56px sticky topbar */
+    left: 12px;
+    right: 12px;
+    left: max(12px, env(safe-area-inset-left));
+    width: auto;
+    max-width: none;
+    z-index: 120;
+  }
+  .global-search-wrap.topbar-search.is-compact .global-search-input-row,
+  .global-search-wrap.topbar-search.is-compact .global-search-input {
+    width: 100%;
+    max-width: 100%;
+  }
+  /* Results list hangs off the popup, so it inherits the new box. */
+  .global-search-wrap.topbar-search.is-compact .global-search-dropdown {
+    left: 0;
+    right: 0;
+    width: auto;
+    max-width: none;
+  }
+}
+
+/* ── Teams panel heading ──────────────────────────────────────────────────────
+   Two bugs, both visible in the "Team List" header.
+
+   1. `.panel h2 svg { display: none }` blanket-hides decorative icons in panel
+      headings, and each real control opts back in (`.teams-reload-btn`,
+      `.team-view-toggle`, `.season-more`). The compare-mode button never did, so
+      it rendered as an empty white box. This is not mobile-specific — it was
+      blank on desktop too. */
+.panel h2 .compare-mode-btn svg {
+  display: inline-block;
+}
+
+/* 2. `.panel-heading-action` is `flex: 0 0 auto` in a `nowrap` flex row, so it
+      refuses to shrink and starves the title: "Team List" was squeezed to 14px
+      and wrapped to "Tea/List" under the controls. Let the heading wrap on narrow
+      screens — title on its own line, controls beneath — and let the controls
+      themselves wrap rather than force a horizontal overflow. */
+@media (max-width: 760px) {
+  .panel h2:has(.panel-heading-action) {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 8px;
+  }
+  .panel h2 .panel-heading-title {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .panel h2 .panel-heading-action {
+    flex: 1 1 100%;
+  }
+  .teams-list-controls,
+  .teams-cache-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+}
