@@ -3645,6 +3645,32 @@ a.team-card-num:hover {
    Spotlight is the tier VEX added for 2026-2027; green keeps it inside this
    palette's Bootstrap-era family while sitting clearly between Signature's amber
    and Other's grey, and leaves Championship's blue alone. */
+/* Event tier chip for the team Rankings / Skills / Awards tabs. Rides on a muted
+   line that already exists (the SKU line, or an award card's date line), so it
+   must not be taller than that line: 10px text in a 14px line box sits inside the
+   12px/1.4 line it joins, leaving row heights untouched.
+
+   Declared above .priority-N on purpose — same trick .event-priority uses, so the
+   lighter tiers can override this colour with their own dark ink. */
+.event-tier-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  color: var(--on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+/* The line the chip joins stays a single line even when the SKU is long. */
+.event-sku-tier-line {
+  white-space: nowrap;
+}
+
 .priority-0 {
   background: var(--danger);
 }

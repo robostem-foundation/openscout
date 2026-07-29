@@ -2887,6 +2887,23 @@ function ScoreBreakdown({ combined, programming, driver }: { combined: number | 
   );
 }
 
+/**
+ * The event's tier (Worlds / Signature / Spotlight / Championship) as a chip small
+ * enough to ride along on a line of muted text that is already there — the SKU
+ * line in the team Rankings/Skills tables, the date line on an award card — so it
+ * costs no row height. Ordinary tournaments ("Other") get nothing: a chip on
+ * every row would be noise rather than information.
+ *
+ * Colours come from the shared .priority-N classes, the same ones the events list
+ * and the event header use, so a Signature reads Signature everywhere.
+ */
+function EventTierTag({ event }: { event?: Event | null }) {
+  if (!event) return null;
+  const category = eventCategory(event);
+  if (category.label === "Other") return null;
+  return <span className={`event-tier-tag priority-${category.rank}`}>{category.label}</span>;
+}
+
 function ProgramBadge({ program }: { program?: { code?: string | null; name?: string } }) {
   return <Badge variant="secondary">{program?.code ?? program?.name ?? "VEX"}</Badge>;
 }
@@ -11506,7 +11523,10 @@ function TeamRankingsByEvent({
                       ) : (
                         <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
                       )}
-                      <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
+                      <div className="muted event-sku-tier-line">
+                    {group.event?.sku ?? group.eventRef.code}
+                    <EventTierTag event={group.event} />
+                  </div>
                     </td>
                     <td>{row.division?.name ?? "-"}</td>
                     <td>{row.rank}</td>
@@ -11558,7 +11578,10 @@ function TeamRankingsByEvent({
                   ) : (
                     <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
                   )}
-                  <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
+                  <div className="muted event-sku-tier-line">
+                    {group.event?.sku ?? group.eventRef.code}
+                    <EventTierTag event={group.event} />
+                  </div>
                 </td>
                 <td>{row.division?.name ?? "-"}</td>
                 <td>{row.rank}</td>
@@ -11641,7 +11664,10 @@ function TeamSkillsByEvent({
                   ) : (
                     <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
                   )}
-                  <div className="muted">{group.event?.sku ?? group.eventRef.code}</div>
+                  <div className="muted event-sku-tier-line">
+                    {group.event?.sku ?? group.eventRef.code}
+                    <EventTierTag event={group.event} />
+                  </div>
                 </td>
                 <td>{rank ?? "-"}</td>
                 <td>{total || "-"}</td>
@@ -11771,6 +11797,7 @@ function TeamAwardsByEvent({
               </span>
               <div className="award-card-event-meta">
                 {group.event ? formatEventDateRange(group.event.start, group.event.end) : "Date unavailable"}
+                <EventTierTag event={group.event} />
               </div>
               {(group.event?.sku || group.eventRef.code) && (
                 <div className="award-card-event-sku">{group.event?.sku ?? group.eventRef.code}</div>
