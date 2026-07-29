@@ -549,7 +549,7 @@ export function OnboardingModal() {
                 value={teamNumber}
                 onChange={(event) => setTeamNumber(event.target.value.toUpperCase())}
                 maxLength={10}
-                placeholder="169W"
+                placeholder="10B"
               />
             </Field>
             <Field>
