@@ -38,6 +38,11 @@
   --award-inset: rgba(255, 255, 255, 0.65);
   /* filled award crowns — bright gold, distinct from the muted --award-text brown */
   --crown-gold: #cc9a1f;
+  /* favorite "just added" check flash — matches the gold of .icon-button.active */
+  --fav-confirm-gold: #d99320;
+  --fav-confirm-tint: rgba(240, 173, 78, 0.14);
+  /* completed-operation confirmations (copied, saved, exported) */
+  --success-tint: rgba(69, 165, 87, 0.12);
   /* text on light-colored solid badges (cyan/amber meta pills). White in light
      mode keeps the original look; dark mode swaps to dark ink for contrast. */
   --badge-ink: #ffffff;
@@ -103,6 +108,9 @@
   --award-text: #e8c971;
   --award-inset: transparent;
   --crown-gold: #f2bc3e;
+  --fav-confirm-gold: #f2bc3e;
+  --fav-confirm-tint: rgba(242, 188, 62, 0.14);
+  --success-tint: rgba(98, 192, 115, 0.14);
   /* dark ink on the light cyan/amber badges so their text is legible on dark */
   --badge-ink: #06232b;
   /* team numbers in accent (cyan), bright for the dark row tints */
@@ -12779,4 +12787,111 @@ td.col-muted { color: var(--text-2); }
 
 @media (prefers-reduced-motion: reduce) {
   .translate-toggle.is-pending { animation: none; opacity: 0.6; }
+}
+
+/* ── Icon morph ───────────────────────────────────────────────────────────────
+   Apple-style "symbol replace": the resting glyph scales and spins out while the
+   confirmation glyph springs in over it. Both glyphs are stacked absolutely so
+   the button never changes width mid-morph.
+
+   Two usages:
+     • persistent state  — .morphed follows the state (in tray, on picklist)
+     • transient confirm — .morphed is held for ~0.8s (favorited, copied, saved)
+   Constructive actions only: a check on a remove/delete reads as "done".
+
+   Tone: gold = collect/save-to-my-stuff, success = operation completed,
+   inherit = the host button already colors itself (accent row buttons).
+
+   Kept last in the file on purpose: .btn-confirming is a single class, so it has
+   to come after the per-button rules (.ws-csv-btn, .compare-copy-link, …) it
+   tints, otherwise those win the cascade on equal specificity. */
+
+.icon-morph {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.icon-morph.tone-gold { --morph-tone: var(--fav-confirm-gold); }
+.icon-morph.tone-success { --morph-tone: var(--success); }
+.icon-morph.tone-inherit { --morph-tone: currentColor; }
+
+.icon-morph > span {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 160ms ease;
+}
+.icon-morph-to {
+  color: var(--morph-tone);
+  transform: scale(0.35) rotate(-25deg);
+  opacity: 0;
+}
+.icon-morph.morphed .icon-morph-from {
+  transform: scale(0.3) rotate(20deg);
+  opacity: 0;
+}
+.icon-morph.morphed .icon-morph-to {
+  transform: scale(1) rotate(0deg);
+  opacity: 1;
+}
+
+/* Tinted button treatment while a transient confirm is showing. */
+.btn-confirming,
+.btn-confirming:hover {
+  color: var(--confirm-tone);
+  border-color: var(--confirm-tone);
+  background: var(--confirm-tint);
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.btn-confirming.tone-gold {
+  --confirm-tone: var(--fav-confirm-gold);
+  --confirm-tint: var(--fav-confirm-tint);
+}
+.btn-confirming.tone-success {
+  --confirm-tone: var(--success);
+  --confirm-tint: var(--success-tint);
+}
+
+/* Settings "Saved" indicator — springs in next to the save button, then fades.
+   Always mounted (empty when idle) so the row never reflows. */
+.settings-saved {
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity 180ms ease,
+    transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+.settings-saved.on {
+  opacity: 1;
+  transform: none;
+}
+.settings-saved-icon {
+  display: inline-flex;
+  transform: scale(0.4) rotate(-25deg);
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.settings-saved.on .settings-saved-icon {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-morph > span {
+    transition: opacity 120ms ease;
+  }
+  .icon-morph-to,
+  .icon-morph.morphed .icon-morph-from,
+  .settings-saved,
+  .settings-saved-icon {
+    transform: none;
+  }
+  .settings-saved {
+    transition: opacity 120ms ease;
+  }
 }
