@@ -12015,36 +12015,101 @@ function Tabs({
 }) {
   if (orientation === "vertical") {
     return (
-      <nav className="settings-tabs view-tabs-rail">
-        {tabs.map(([id, label, icon, onClose]) => (
-          <button
-            key={id}
-            className={`settings-tab ${active === id ? "active" : ""}`}
-            onClick={() => onChange(id)}
-          >
-            {icon}
-            {label}
-            {onClose && (
-              <span
-                className="tab-close-btn"
-                role="button"
-                aria-label={`Close ${label} tab`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClose();
-                }}
-              >
-                ×
-              </span>
-            )}
-          </button>
-        ))}
-        {action && <div className="view-tabs-rail-action">{action}</div>}
-      </nav>
+      <VerticalTabRail tabs={tabs} active={active} onChange={onChange} action={action} />
     );
   }
+  return <HorizontalTabBar tabs={tabs} active={active} onChange={onChange} action={action} />;
+}
+
+// The vertical rail folds into a single-row horizontal scroller below 720px (see
+// styles.css). That means the active tab can sit off-screen — so reuse the same
+// edge-fade/drag hook the topbar nav and season strips use, and scroll the active
+// tab into view whenever it changes (e.g. arriving on a #hash sub-route).
+function VerticalTabRail({
+  tabs,
+  active,
+  onChange,
+  action,
+}: {
+  tabs: Array<[string, string, ReactNode, (() => void)?]>;
+  active: string;
+  onChange: (tab: string) => void;
+  action?: ReactNode;
+}) {
+  const railRef = useRef<HTMLElement>(null);
+  const edges = useScrollStrip(railRef, { deps: [tabs.length] });
+
+  useEffect(() => {
+    const el = railRef.current;
+    if (!el) return;
+    // Only meaningful while the rail is actually a scroller (phone widths).
+    if (el.scrollWidth <= el.clientWidth + 1) return;
+    const btn = el.querySelector<HTMLElement>(".settings-tab.active");
+    btn?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active, tabs.length]);
+
+  return (
+    <nav
+      ref={railRef}
+      className={`settings-tabs view-tabs-rail${edges.moreLeft ? " is-more-left" : ""}${edges.moreRight ? " is-more-right" : ""}`}
+    >
+      {tabs.map(([id, label, icon, onClose]) => (
+        <button
+          key={id}
+          className={`settings-tab ${active === id ? "active" : ""}`}
+          onClick={() => onChange(id)}
+        >
+          {icon}
+          {label}
+          {onClose && (
+            <span
+              className="tab-close-btn"
+              role="button"
+              aria-label={`Close ${label} tab`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+            >
+              ×
+            </span>
+          )}
+        </button>
+      ))}
+      {action && <div className="view-tabs-rail-action">{action}</div>}
+    </nav>
+  );
+}
+
+function HorizontalTabBar({
+  tabs,
+  active,
+  onChange,
+  action,
+}: {
+  tabs: Array<[string, string, ReactNode, (() => void)?]>;
+  active: string;
+  onChange: (tab: string) => void;
+  action?: ReactNode;
+}) {
+  // Below 760px this bar becomes a single scrolling row (see styles.css), so the
+  // active tab can start off-screen — same edge-fade + scroll-into-view treatment
+  // as the folded vertical rail.
+  const barRef = useRef<HTMLDivElement>(null);
+  const edges = useScrollStrip(barRef, { deps: [tabs.length] });
+
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    if (el.scrollWidth <= el.clientWidth + 1) return;
+    el.querySelector<HTMLElement>("button.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active, tabs.length]);
+
   const bar = (
-    <div className="tabs">
+    <div
+      ref={barRef}
+      className={`tabs${edges.moreLeft ? " is-more-left" : ""}${edges.moreRight ? " is-more-right" : ""}`}
+    >
       {tabs.map(([id, label, icon, onClose]) => (
         <button key={id} className={active === id ? "active" : ""} onClick={() => onChange(id)}>
           {icon}
@@ -13111,7 +13176,11 @@ function ResultsMatchTable({
           const iqResult = isIq ? iqMatchResult(match) : null;
           const timestamp = timestampMap?.get(match.id);
           const canPlay = presetSupported && timestamp && timestamp.timestamp !== null && timestamp.videoId;
-          const displayName = labelFor?.(match) ?? match.name;
+          // Abbreviate "Qualification 12" → "Q12" so the match column stays narrow
+          // (the team match tables already do this via shortMatchName). `labelFor`
+          // wins where the caller supplies its own label, e.g. elimination
+          // "R16 #1-1", which is already short.
+          const displayName = labelFor?.(match) ?? shortMatchName(match.name);
 
           let dayDivider: ReactNode = null;
           if (dayNumbers && index > 0) {
