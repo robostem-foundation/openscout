@@ -18918,6 +18918,12 @@ function MyTeamDashboard() {
   const matchesPanel = liveEvent && (
     <div className="panel myteam-matches-panel" ref={matchesPanelRef}>
       <h2><span className="ttl">Matches</span><span className="myteam-act muted-act">{liveEvent.name}</span></h2>
+      {/* Match tables opt out of the card reflow (a red | score | blue row has to
+          stay side-by-side), so they need their own scroll container. `.panel`
+          used to supply one incidentally via `overflow-x: auto`; that blanket
+          rule is gone, and page-level overflow pushes the fixed mobile tab bar
+          off-screen on iOS — so wrap it explicitly, like every other match table. */}
+      <DragScroll className="results-table-scroll">
       <table className="results-match-table">
         <colgroup>
           <col className="results-play-col" />
@@ -18966,6 +18972,7 @@ function MyTeamDashboard() {
           {!liveMatches.length && <tr><td colSpan={5}><Empty>No matches posted yet.</Empty></td></tr>}
         </tbody>
       </table>
+      </DragScroll>
     </div>
   );
 
