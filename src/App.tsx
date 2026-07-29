@@ -10556,6 +10556,37 @@ function useScrollStrip(
   return { moreLeft, moreRight, updateEdges };
 }
 
+/**
+ * A horizontally scrolling container that drags like the control strips do.
+ * Wraps the wide tables (match results, world skills), which were the only
+ * horizontal scrollers left that could not be dragged — the season/tab strips
+ * and the header nav already share useScrollStrip.
+ *
+ * The edge classes drive the grab cursor, and the hook only arms the drag while
+ * the content actually overflows, so a table that fits behaves exactly as before.
+ */
+function DragScroll({
+  className = "",
+  children,
+  deps = [],
+}: {
+  className?: string;
+  children: ReactNode;
+  // Anything that changes the content width — the hook re-measures on it.
+  deps?: unknown[];
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { moreLeft, moreRight } = useScrollStrip(ref, { deps });
+  return (
+    <div
+      ref={ref}
+      className={`${className}${moreLeft ? " is-more-left" : ""}${moreRight ? " is-more-right" : ""}`}
+    >
+      {children}
+    </div>
+  );
+}
+
 function SeasonSelector({
   seasons,
   selectedSeasonId,
@@ -11091,7 +11122,7 @@ function TeamEventCard({
           column the event page's focus-team view shows. Already inside the
           event-card <details>, so no extra collapse; just an overflow guard. */}
       {!detailsLoading && eventMatches.length > 0 && (
-        <div className="results-table-scroll">
+        <DragScroll className="results-table-scroll">
           <TeamMatchTable
             matches={eventMatches}
             focusTeamId={focusTeamId}
@@ -11104,7 +11135,7 @@ function TeamEventCard({
             timestampMap={timestampMap}
             onOpenMatch={onOpenMatch}
           />
-        </div>
+        </DragScroll>
       )}
       {/* Footer: open full event page */}
       <div className="event-card-footer">
@@ -12033,7 +12064,7 @@ function MatchesTable({
           // Playoff rounds are short — keep them open by default even on phones.
           <section className="playoff-round" key={key}>
             <ScheduleCollapse title={playoffRoundLabel(key)} count={roundMatches.length} headingLevel="h3">
-              <div className="results-table-scroll">
+              <DragScroll className="results-table-scroll">
                 <ResultsMatchTable
                   matches={roundMatches}
                   emptyText="No playoff matches returned."
@@ -12052,7 +12083,7 @@ function MatchesTable({
                   onFocusConsumed={onFocusConsumed}
                   focusTeamId={focusTeamId}
                 />
-              </div>
+              </DragScroll>
             </ScheduleCollapse>
           </section>
         );
@@ -12094,7 +12125,7 @@ function MatchesTable({
                 <span><i className="dot-bronze" /> Top 20% score</span>
               </div>
             )}
-            <div className="results-table-scroll">
+            <DragScroll className="results-table-scroll">
               <ResultsMatchTable
                 matches={qualificationMatches}
                 emptyText="No qualification matches returned."
@@ -12116,7 +12147,7 @@ function MatchesTable({
                 focusMatchId={focusMatchId}
                 onFocusConsumed={onFocusConsumed}
               />
-            </div>
+            </DragScroll>
           </ScheduleCollapse>
         )}
       </section>
@@ -12136,7 +12167,7 @@ function MatchesTable({
             <div className="iq-score-legend">
               <span><i className="dot-win" /> Winning score</span>
             </div>
-            <div className="results-table-scroll">
+            <DragScroll className="results-table-scroll">
               <ResultsMatchTable
                 matches={iqFinals}
                 emptyText="No finals matches returned."
@@ -12154,7 +12185,7 @@ function MatchesTable({
                 focusMatchId={focusMatchId}
                 onFocusConsumed={onFocusConsumed}
               />
-            </div>
+            </DragScroll>
           </ScheduleCollapse>
         ) : (
           !noQuals && (
@@ -13865,7 +13896,7 @@ function TeamMatchesTab({
     <div className="team-matches-layout">
       <div className="tm-col tm-col-matches">
         <Panel title={`${focusTeam.number}'s Matches`} icon={<Gamepad2 />}>
-          <div className="results-table-scroll">
+          <DragScroll className="results-table-scroll">
             <TeamMatchTable
               matches={matches}
               focusTeamId={focusTeam.id}
@@ -13879,7 +13910,7 @@ function TeamMatchesTab({
               timestampMap={timestampMap}
               onOpenMatch={onOpenMatch}
             />
-          </div>
+          </DragScroll>
         </Panel>
         <TeamScoreTrendCard matches={matches} focusTeamId={focusTeam.id} isIq={isIq} onJumpToMatch={onJumpToMatch} />
       </div>
@@ -14952,7 +14983,7 @@ function WorldSkillsPageInner() {
         <div className="ws-mobile-head" aria-hidden="true">
           <span>Rank</span><span>Team</span><span>Score</span><span>Auto / Driver</span>
         </div>
-        <div className="ws-table-wrap">
+        <DragScroll className="ws-table-wrap">
           <table className="ws-table">
             <colgroup>
               <col style={{ width: "24px" }} />   {/* # */}
@@ -15036,7 +15067,7 @@ function WorldSkillsPageInner() {
               )}
             </tbody>
           </table>
-        </div>
+        </DragScroll>
         </CrossFade>
       )}
       <LocalPager page={page} totalPages={totalPages} onPage={setPage} />
