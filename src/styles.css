@@ -8413,34 +8413,6 @@ td.quick-look-col {
   box-shadow: 0 1px 3px rgba(60, 64, 67, 0.15);
 }
 
-/* Google Identity Services renders its own (unstylable) button; we overlay it
-   invisibly on ours so Google sees a genuine click on its iframe while the user
-   sees our button. Google's is 40px tall against our 36 — the overflow is
-   clipped, and the click area still covers the whole button. */
-.auth-btn-google-wrap {
-  position: relative;
-  display: flex;
-  overflow: hidden;
-  border-radius: 6px;
-}
-
-.auth-btn-google-wrap > .auth-btn {
-  flex: 1 1 auto;
-}
-
-/* pointer-events stay off the empty host, so a click falls through to our
-   button (and its redirect fallback) until Google's iframe actually exists. */
-.auth-btn-google-gis {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.auth-btn-google-gis > * {
-  pointer-events: auto;
-}
-
 /* Account menu */
 .auth-menu {
   padding: 12px;

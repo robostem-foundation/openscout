@@ -16118,7 +16118,7 @@ function JoinSharedTeamPage({ token }: { token: string }) {
                     <LogIn size={16} />
                     Sign in with Discord
                   </button>
-                  <GoogleSignInButton redirectTo={window.location.href} icon={<LogIn size={16} />} />
+                  <GoogleSignInButton icon={<LogIn size={16} />} />
                 </div>
               </>
             )}

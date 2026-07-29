@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { ChevronRight, LogOut, Settings, User as UserIcon } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "./supabase";
-import { googleRedirectSignIn, mountGoogleButton } from "./google-signin";
+import { startGoogleSignIn } from "./google-signin";
 import { useSharedTeams } from "./shared-teams";
 import { setTheme, useTheme } from "./theme";
 import { Button } from "@/components/ui/button";
@@ -249,33 +249,22 @@ function navTo(href: string) {
 }
 
 /**
- * Google sign-in styled like the rest of the app, but driven by Google Identity
- * Services so Google's account chooser says "openscout.ing" instead of the
- * Supabase project URL (see google-signin.ts).
+ * Google sign-in. Goes straight to Google rather than through
+ * supabase.auth.signInWithOAuth, so the account chooser is branded with our
+ * domain instead of the Supabase project URL — see google-signin.ts.
  *
- * The GIS button is rendered invisibly on top of ours and swallows the click.
- * If it never renders — script blocked, no client ID configured — the click
- * reaches our button's own handler and takes the original redirect route.
+ * `returnTo` is the path to come back to; it defaults to the current one.
  */
-export function GoogleSignInButton({ redirectTo, icon }: { redirectTo?: string; icon?: ReactNode }) {
-  const host = useRef<HTMLSpanElement | null>(null);
-  useEffect(() => {
-    if (!host.current) return;
-    return mountGoogleButton(host.current, { redirectTo });
-  }, [redirectTo]);
-
+export function GoogleSignInButton({ returnTo, icon }: { returnTo?: string; icon?: ReactNode }) {
   return (
-    <span className="auth-btn-google-wrap">
-      <button
-        type="button"
-        className="auth-btn auth-btn-google"
-        onClick={() => void googleRedirectSignIn(redirectTo)}
-      >
-        {icon ?? <GoogleLogo />}
-        Sign in with Google
-      </button>
-      <span className="auth-btn-google-gis" ref={host} aria-hidden="true" />
-    </span>
+    <button
+      type="button"
+      className="auth-btn auth-btn-google"
+      onClick={() => void startGoogleSignIn(returnTo)}
+    >
+      {icon ?? <GoogleLogo />}
+      Sign in with Google
+    </button>
   );
 }
 
