@@ -11011,10 +11011,23 @@ function skillSummary(skills: Skill[]) {
   };
 }
 
+// "Driver 85 Attempts 3" on desktop. Below 760px the two rows stack inside one
+// card with no column headers beside them, so the words shrink to a grey "D"/"P"
+// prefix plus a faint "att" suffix; the full words stay in the a11y tree
+// (visually clipped, not display:none) so the reading order never loses them.
 function SkillScoreAttempt({ label, entry }: { label: string; entry?: Skill }) {
   return (
     <span className="skill-score-attempt">
-      <strong>{label}</strong> {entry?.score ?? "-"} <strong>Attempts</strong> {entry?.attempts ?? "-"}
+      <strong className="sk-a-label">{label}</strong>
+      <span className="sk-m-tag" aria-hidden="true">
+        {label === "Driver" ? "D" : "P"}
+      </span>
+      <span className="sk-a-score">{entry?.score ?? "-"}</span>
+      <strong className="sk-a-att-label">Attempts</strong>
+      <span className="sk-a-att">{entry?.attempts ?? "-"}</span>
+      <span className="sk-m-tag sk-m-tag-suffix" aria-hidden="true">
+        att
+      </span>
     </span>
   );
 }
@@ -11674,24 +11687,38 @@ function TeamSkillsByEvent({
             const total = entries.reduce((sum, entry) => sum + (entry.score ?? 0), 0);
 
             return (
-              <tr key={group.eventRef.id}>
-                <td>
-                  {onViewMatches ? (
-                    <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
-                  ) : (
-                    <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
-                  )}
+              <tr key={group.eventRef.id} className="sk-row">
+                <td className="sk-m-event">
+                  {/* Clamp lives on this wrapper, never on the link: a clamped
+                      anchor becomes one rectangle and the blank space beside a
+                      short second line navigates too (commit 7c2e029). */}
+                  <span className="sk-m-event-clamp">
+                    {onViewMatches ? (
+                      <button className="event-group-name-btn" onClick={() => onViewMatches(group.eventRef.id)}>{group.eventRef.name}</button>
+                    ) : (
+                      <Link href={group.event ? eventPath(group.event) : `/event/${group.eventRef.code ?? group.eventRef.id}`}>{group.eventRef.name}</Link>
+                    )}
+                  </span>
                   <div className="muted event-sku-tier-line">
                     {group.event?.sku ?? group.eventRef.code}
                     <EventTierTag event={group.event} />
                   </div>
                 </td>
-                <td>{rank ?? "-"}</td>
-                <td>{total || "-"}</td>
-                <td>
+                <td className="sk-m-rank">
+                  {rank != null ? (
+                    <>
+                      <span className="sk-m-tag" aria-hidden="true">#</span>
+                      {rank}
+                    </>
+                  ) : (
+                    "-"
+                  )}
+                </td>
+                <td className="sk-m-total">{total || "-"}</td>
+                <td className="sk-m-driver">
                   <SkillScoreAttempt label="Driver" entry={driver} />
                 </td>
-                <td>
+                <td className="sk-m-prog">
                   <SkillScoreAttempt label="Programming" entry={programming} />
                 </td>
               </tr>
@@ -14415,6 +14442,14 @@ function SkillsTable({ skills, focusTeamId }: { skills: Skill[]; focusTeamId?: n
 
   return (
     <Panel title="Skills" icon={<Activity />}>
+      {/* Column key for the ≤760px card list, where the real <thead> is hidden.
+          Non-sticky on purpose: `.panel { overflow-x: auto }` makes the panel the
+          scroll container, so a sticky strip would anchor to it and never stick. */}
+      <div className="sk-mobile-head" aria-hidden="true">
+        <span>Rank</span>
+        <span>Team</span>
+        <span>Total</span>
+      </div>
       <table className="skills-table">
         <thead>
           <tr>
@@ -14435,17 +14470,17 @@ function SkillsTable({ skills, focusTeamId }: { skills: Skill[]; focusTeamId?: n
               <tr
                 key={row.team.id}
                 ref={focusTeamId != null && row.team.id === focusTeamId ? focusRowRef : undefined}
-                className={focusTeamId != null && row.team.id === focusTeamId ? "skills-row-focus" : undefined}
+                className={`sk-row${focusTeamId != null && row.team.id === focusTeamId ? " skills-row-focus" : ""}`}
               >
-                <td>{row.rank ?? "-"}</td>
-                <td>
+                <td className="sk-m-rank">{row.rank ?? "-"}</td>
+                <td className="sk-m-team">
                   <CompareTeamLink teamId={row.team.id} teamNumber={row.team.name} programCode={programCode} />
                 </td>
-                <td>{total || "-"}</td>
-                <td>
+                <td className="sk-m-total">{total || "-"}</td>
+                <td className="sk-m-driver">
                   <SkillScoreAttempt label="Driver" entry={driver} />
                 </td>
-                <td>
+                <td className="sk-m-prog">
                   <SkillScoreAttempt label="Programming" entry={programming} />
                 </td>
               </tr>

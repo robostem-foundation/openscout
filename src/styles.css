@@ -13676,3 +13676,235 @@ td.col-muted { color: var(--text-2); }
   }
 }
 
+/* ── A3+A5 · Skills tables ── */
+
+/* Both skills tables reflow to cards ≤760px: `.skills-table` (Event → Skills,
+   one row per team) and `.skills-table.team-skills-table` (Team → Skills, one
+   row per event). Prefix `sk`. They share this block because they share the
+   selector and, critically, the `white-space: nowrap` on every `.skills-table
+   th, td` further up this file — with the blanket `table { min-width: 720px }`
+   that guarantees permanent horizontal scroll, so the reflow has to undo it.
+
+   Explicit `sk-m-*` markers rather than `nth-child`: both variants really are a
+   fixed 5-cell shape, but each `<tbody>` also holds a single-cell `colSpan={5}`
+   empty-state row, and an nth-child map would hand that cell the rank gutter's
+   grid slot. Markers also keep the two variants' different column-1 meanings
+   (team number vs event name) honest.
+
+   Neither table needs a disclosure: five cells fit a card at 375px once the
+   Driver/Programming pair stacks under the primary line. No `-m-toggle` /
+   `-m-detail` exists here.
+
+   Follows the `.ws-table` grid-track idiom from the MOBILE CARD REFLOW banner
+   and matches the `.rk-table` (A2) type scale so the event Rankings and Skills
+   tabs read as siblings: 13px muted rank, 15.5px/600 primary, 17px/700 accent
+   number, 11px muted secondaries. */
+
+/* Column key drawn above the mobile card list, because the real <thead> is
+   hidden ≤760px. Desktop-hidden. */
+.sk-mobile-head {
+  display: none;
+}
+
+/* Abbreviated "D" / "P" / "att" labels on the stacked skills numbers. Only
+   meaningful on mobile, where the two scores sit under the team number with no
+   header beside them; the desktop table has real Driver / Programming columns. */
+.sk-m-tag {
+  display: none;
+}
+
+/* ═══ Mobile: both Skills tables become dense card lists ═══ */
+@media (max-width: 760px) {
+  /* ── Standard preamble ───────────────────────────────────────────────── */
+  .skills-table {
+    min-width: 0;
+  }
+  .skills-table thead {
+    display: none;
+  }
+  .skills-table,
+  .skills-table tbody,
+  .skills-table tr {
+    display: block;
+  }
+  /* `white-space: normal` is the load-bearing half of this: without it every
+     card is as wide as its longest cell and the panel scrolls sideways forever. */
+  .skills-table td {
+    padding: 0;
+    border: 0;
+    white-space: normal;
+  }
+  /* Desktop gives column 1 a 48% width to hold the event name; the card gives it
+     the whole left track instead. */
+  .team-skills-table td:first-child {
+    width: auto;
+  }
+
+  /* ── A3 · the card: rank gutter | team over the two scores | total rail ── */
+  .sk-mobile-head {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    column-gap: 10px;
+    align-items: end;
+    padding: 5px 12px 6px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  .sk-mobile-head span:nth-child(3) {
+    justify-self: end;
+  }
+
+  .skills-table tbody tr.sk-row {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    column-gap: 10px;
+    row-gap: 1px;
+    align-items: center;
+    /* Vertical padding is light because the card is already three lines tall. */
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    font-variant-numeric: tabular-nums;
+  }
+  .skills-table tbody tr.sk-row:last-child {
+    border-bottom: 0;
+  }
+
+  .skills-table .sk-m-rank {
+    grid-area: 1 / 1 / 4 / 2;
+    font-size: 13px;
+    line-height: 1.2;
+    color: var(--text-muted);
+  }
+  .skills-table .sk-m-team {
+    grid-area: 1 / 2 / 2 / 3;
+    min-width: 0;
+    font-size: 15.5px;
+    line-height: 1.2;
+  }
+  /* Vertical padding on the inline anchor grows its hit box past 40px without
+     changing the line box — the row keeps its density, the thumb gets a target. */
+  .skills-table .sk-m-team a {
+    padding: 10px 4px;
+    color: var(--text);
+    font-weight: 600;
+  }
+  /* The accent number, spanning the full card height on the right rail. */
+  .skills-table .sk-m-total {
+    grid-area: 1 / 3 / 4 / 4;
+    justify-self: end;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--link);
+  }
+  .skills-table .sk-m-driver {
+    grid-area: 2 / 2 / 3 / 3;
+  }
+  .skills-table .sk-m-prog {
+    grid-area: 3 / 2 / 4 / 3;
+  }
+  .skills-table .sk-m-driver,
+  .skills-table .sk-m-prog {
+    min-width: 0;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--text-muted);
+  }
+
+  /* ── The stacked score lines: "D 85 3 att" ───────────────────────────── */
+  .skills-table .sk-m-tag {
+    display: inline;
+    color: var(--text-faint);
+    font-weight: 500;
+  }
+  .skills-table .sk-m-tag-suffix {
+    color: var(--text-faint);
+  }
+  /* The full words stay for assistive tech — clipped, not display:none, so the
+     mobile card never drops "Driver" / "Attempts" from the reading order. */
+  .skills-table .sk-a-label,
+  .skills-table .sk-a-att-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .skills-table .sk-a-score {
+    font-weight: 600;
+    color: var(--text);
+  }
+  /* Attempts trail the score, one notch fainter, with a gap wide enough to read
+     as a separate value without needing a divider glyph. */
+  .skills-table .sk-a-att {
+    margin-left: 5px;
+    color: var(--text-faint);
+  }
+  .skills-table .skill-score-attempt {
+    gap: 3px;
+    flex-wrap: wrap;
+  }
+
+  /* ── A5 · Team → Skills: event name left, rank over total on the rail ─── */
+  .skills-table.team-skills-table tbody tr.sk-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    row-gap: 2px;
+    padding: 10px 12px 11px;
+  }
+  .skills-table.team-skills-table .sk-m-event {
+    grid-area: 1 / 1 / 2 / 2;
+    min-width: 0;
+    margin-bottom: 3px;
+  }
+  /* Two lines of event name, then ellipsis. Clamping the wrapper keeps the link
+     inline so it is hit-tested line by line (see `.event-name-clamp`). */
+  .sk-m-event-clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 14.5px;
+    line-height: 1.3;
+  }
+  .skills-table.team-skills-table .event-sku-tier-line {
+    /* Desktop keeps SKU + tier chip on one line; on a 375px card it may need two
+       rather than push the rail off the edge. */
+    white-space: normal;
+    margin-top: 3px;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  /* Rank at this event — small, above the total. Kept, not hidden: it is the
+     team's skills standing at that event and it is the point of the row. */
+  .skills-table.team-skills-table .sk-m-rank {
+    grid-area: 1 / 2 / 2 / 3;
+    justify-self: end;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .skills-table.team-skills-table .sk-m-total {
+    grid-area: 2 / 2 / 4 / 3;
+    align-self: start;
+  }
+  .skills-table.team-skills-table .sk-m-driver {
+    grid-area: 2 / 1 / 3 / 2;
+  }
+  .skills-table.team-skills-table .sk-m-prog {
+    grid-area: 3 / 1 / 4 / 2;
+  }
+
+  /* Last card clears the fixed mobile tab bar when scrolled into view — the
+     Event → Skills table scrolls its focused team row into the centre. */
+  .skills-table tbody tr:last-child {
+    scroll-margin-bottom: var(--mobile-tabbar-clear, 92px);
+  }
+}
+
