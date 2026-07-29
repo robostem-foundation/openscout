@@ -67,6 +67,7 @@ import { api } from "./api";
 import JumperPage from "./jumper/JumperPage.jsx";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
 import { AUTH_PROGRAMS, AuthSlot, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
+import { readSearchBias, syncSearchBias, toGradeCode, useSearchBias } from "./search-bias";
 import { getSpotlightTierVersion, isSpotlightSku, subscribeSpotlightTier, useSpotlightTier } from "./spotlightTier";
 import { setTheme as applyTheme, useTheme } from "./theme";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
@@ -859,6 +860,9 @@ function GlobalSearch({ className = "" }: { className?: string }) {
   const [eventsLoading, setEventsLoading] = useState(false);
 
   const wrapRef = useRef<HTMLDivElement>(null);
+  // Re-runs the search when the profile's program/grade lands (it arrives after
+  // the first paint), so early results aren't stuck in the unbiased order.
+  const searchBias = useSearchBias();
 
   // Fire both searches independently when debounced query changes
   useEffect(() => {
@@ -887,7 +891,7 @@ function GlobalSearch({ className = "" }: { className?: string }) {
       .finally(() => { if (live) setEventsLoading(false); });
 
     return () => { live = false; };
-  }, [debounced]);
+  }, [debounced, searchBias]);
 
   // Track the narrow-header breakpoint (topbar only).
   useEffect(() => {
@@ -1418,6 +1422,62 @@ function compareEvents(a: Event, b: Event, sort: EventSort) {
   return new Date(a.start ?? 0).getTime() - new Date(b.start ?? 0).getTime() || aCategory.rank - bCategory.rank;
 }
 
+// ── "My program / my grade" search nudge ─────────────────────────────────────
+// Search results lean toward the program and grade level on the user's profile
+// (see src/search-bias.ts) — deliberately by a little, not a lot. The nudge is
+// expressed in *days of calendar distance*, so it only ever reorders results that
+// are already close together: a matching event reads as if it were up to three
+// weeks nearer than it is. It can never outrank event tier, and it can never pull
+// a match from next season above a non-match happening this weekend.
+//
+// Two same-named events one grade apart (the "V5RC HS Blast" / "V5RC MS Blast"
+// case) both still match the query, so both still lead the list — mine first.
+const AFFINITY_PROGRAM_DAYS = 10;
+const AFFINITY_GRADE_DAYS = 11;
+
+/** Days of calendar distance to forgive an event for being mine. 0 = no bias. */
+function eventAffinityDays(event: Event): number {
+  const { programId, gradeCode } = readSearchBias();
+  if (programId == null) return 0;
+  if (Number(event.program?.id) !== programId) return 0;
+  // Grade credit needs the event's own level; until /api/event-grades resolves it,
+  // eventGradeCodesBest returns the program span, which contains every grade the
+  // program serves — so every event of my program gets the credit equally and the
+  // grade half of the nudge is simply inert. It sharpens once grades land.
+  if (gradeCode && eventGradeCodesBest(event).includes(gradeCode)) {
+    return AFFINITY_PROGRAM_DAYS + AFFINITY_GRADE_DAYS;
+  }
+  return AFFINITY_PROGRAM_DAYS;
+}
+
+/** Ranks matches ahead of non-matches. Used as a last-resort tiebreaker only. */
+function eventAffinityRank(event: Event): number {
+  return -eventAffinityDays(event);
+}
+
+/**
+ * Search-result ordering: `compareEvents` with the affinity nudge folded in.
+ * For "smart" (what every search bar uses) it discounts the calendar-distance
+ * key; for an explicitly chosen sort it only breaks exact ties, so the user's
+ * chosen column always wins.
+ */
+function compareEventsForSearch(a: Event, b: Event, sort: EventSort) {
+  if (readSearchBias().programId == null) return compareEvents(a, b, sort);
+
+  if (sort === "smart") {
+    const aCategory = eventCategory(a);
+    const bCategory = eventCategory(b);
+    return (
+      aCategory.rank - bCategory.rank ||
+      (eventDistance(a) - eventAffinityDays(a) * oneDay) - (eventDistance(b) - eventAffinityDays(b) * oneDay) ||
+      new Date(a.start ?? 0).getTime() - new Date(b.start ?? 0).getTime() ||
+      a.name.localeCompare(b.name)
+    );
+  }
+
+  return compareEvents(a, b, sort) || eventAffinityRank(a) - eventAffinityRank(b);
+}
+
 function compareEventsChronological(a?: Event, b?: Event) {
   const aTime = new Date(a?.start ?? 0).getTime();
   const bTime = new Date(b?.start ?? 0).getTime();
@@ -1477,8 +1537,22 @@ function teamSearchRank(team: Team, query: string) {
   return 5;
 }
 
+// How well a team matches the user's own program / grade (see the event nudge
+// above): 0 = both, 1 = program only, 2 = neither. Applied *after* text relevance,
+// so an exact number match is never displaced — it only settles which of several
+// equally-good matches ("2982A" across four programs) reads first.
+function teamAffinityRank(team: Team): number {
+  const { programId, gradeCode } = readSearchBias();
+  if (programId == null) return 0;
+  if (Number(team.program?.id) !== programId) return 2;
+  return gradeCode && toGradeCode(team.grade) === gradeCode ? 0 : 1;
+}
+
 function compareTeamsForSearch(query: string) {
-  return (a: Team, b: Team) => teamSearchRank(a, query) - teamSearchRank(b, query) || compareTeamsNatural(a, b);
+  return (a: Team, b: Team) =>
+    teamSearchRank(a, query) - teamSearchRank(b, query) ||
+    teamAffinityRank(a) - teamAffinityRank(b) ||
+    compareTeamsNatural(a, b);
 }
 
 // Any kind of match (number, name, organization, location) — teamSearchRank 0-4; 5 = nothing matched.
@@ -2443,7 +2517,10 @@ function filterAndSortEvents(events: Event[], options: {
       if (grades.length && !eventGradeCodesBest(event).some((code) => grades.includes(code))) return false;
       return vexProgramIds.includes(event.program.id);
     })
-    .sort((a, b) => compareEvents(a, b, options.sort ?? "smart"));
+    // The "my program / my grade" nudge applies to *searching* only. Browsing a
+    // filtered list is an explicit request for that list, so its order is left
+    // exactly as the user asked for it.
+    .sort((a, b) => (needle ? compareEventsForSearch(a, b, options.sort ?? "smart") : compareEvents(a, b, options.sort ?? "smart")));
 }
 
 // Fetch bounds for a time window. "today" has none of its own: it reuses the
@@ -5482,6 +5559,8 @@ function EventsPageInner() {
     [userCoords],
   );
   const spotlightTier = useSpotlightTier();
+  // Feeds the quick-search re-sort below; the browse ordering itself is unbiased.
+  const searchBias = useSearchBias();
   const filteredEvents = useMemo(
     () =>
       filterAndSortEvents(data?.data ?? [], {
@@ -5515,11 +5594,16 @@ function EventsPageInner() {
     return events;
   }, [filteredEvents, eventWindow, nearMe, userCoords, userArea, userBbox, nearMeRadius, sort]);
   // Quick search live-filters the visible events directly (no results dropdown).
+  // Matches are re-sorted with the "my program / my grade" nudge — but not when the
+  // list is distance-sorted, since that order was resolved from real coordinates
+  // upstream and re-sorting here would throw it away.
   const searchedEvents = useMemo(() => {
     const needle = quickSearch.trim().toLowerCase();
     if (!needle) return visibleEvents;
-    return visibleEvents.filter((event) => event.name.toLowerCase().includes(needle));
-  }, [visibleEvents, quickSearch]);
+    const matched = visibleEvents.filter((event) => event.name.toLowerCase().includes(needle));
+    if (sort === "distance") return matched;
+    return matched.sort((a, b) => compareEventsForSearch(a, b, isPastSeasonView ? "past-season" : sort));
+  }, [visibleEvents, quickSearch, sort, isPastSeasonView, searchBias]);
   const pageSize = 40;
   const totalPages = Math.max(1, Math.ceil(searchedEvents.length / pageSize));
   const pageEvents = searchedEvents.slice((page - 1) * pageSize, page * pageSize);
@@ -6323,6 +6407,8 @@ function TeamsPage() {
   const cacheKey = cachedTeamsKey(program, registered, selectedRegionKeys);
   const committedSearch = submittedSearch.trim();
   const isSearchingTeams = !!committedSearch;
+  // Re-ranks the search results once the profile's program/grade is known.
+  const searchBias = useSearchBias();
   const countries = useAsync(() => api.robotEventsCountries(), []);
   const countryRegions = useAsync(() => api.robotEventsRegions(), []);
   const baseQuery = useMemo(
@@ -6521,7 +6607,7 @@ function TeamsPage() {
       }),
       search,
     );
-  }, [quickSourceTeams, search]);
+  }, [quickSourceTeams, search, searchBias]);
 
   const quickResults = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -6536,9 +6622,9 @@ function TeamsPage() {
       }),
       search,
     );
-  }, [localQuickResults, quickData, search]);
+  }, [localQuickResults, quickData, search, searchBias]);
 
-  const sortedTeams = useMemo(() => [...(data?.data ?? [])].sort(isSearchingTeams ? compareTeamsForSearch(committedSearch) : compareTeamsNatural), [committedSearch, data, isSearchingTeams]);
+  const sortedTeams = useMemo(() => [...(data?.data ?? [])].sort(isSearchingTeams ? compareTeamsForSearch(committedSearch) : compareTeamsNatural), [committedSearch, data, isSearchingTeams, searchBias]);
 
   const tableTeams = useMemo(
     () => (isSearchingTeams ? sortedTeams : data?.data ?? []),
@@ -16746,6 +16832,8 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const recent = useRecentlyViewed();
   const trayEntries = useCompareTray();
+  // See GlobalSearch: re-search once the profile's program/grade is known.
+  const searchBias = useSearchBias();
 
   const RECENT_COLLAPSED_LIMIT = 4;
   const RECENT_MAX = 10;
@@ -16819,7 +16907,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     });
 
     return () => { live = false; };
-  }, [debounced]);
+  }, [debounced, searchBias]);
 
   // Reset active row when results change
   useEffect(() => { setActiveIndex(0); }, [debounced]);
@@ -18601,6 +18689,13 @@ export default function App() {
   // api layer, only when an events payload actually contains a `level: "World"`
   // row — see src/spotlightTier.ts.
   useSyncExternalStore(subscribeSpotlightTier, getSpotlightTierVersion, getSpotlightTierVersion);
+
+  // Keep the search nudge pointed at the profile's own team (never the shared
+  // teams). Clears itself on sign-out, so a signed-out visitor searches unbiased.
+  const { profile } = useAuth();
+  useEffect(() => {
+    syncSearchBias(profile?.team_program, profile?.team_number);
+  }, [profile?.team_program, profile?.team_number]);
 
   useEffect(() => {
     loadYouTubeApi();
