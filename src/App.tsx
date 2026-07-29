@@ -5148,17 +5148,19 @@ function Home() {
       <div className="home-dashboard">
         <aside className="home-sidebar">
           {/* Hidden on mobile (see .home-signin-card) — phone users sign in via
-              the header account button instead of a full-width card. */}
-          <div className="home-signin-card">
-            <SignedOut>
+              the header account button instead of a full-width card. The wrapper
+              lives inside SignedOut so it leaves no empty grid row when signed in,
+              which would push the sidebar out of line with the events panel. */}
+          <SignedOut>
+            <div className="home-signin-card">
               <Panel title="Sign up / Log in" icon={<Star />}>
                 <div className="auth-card-body">
                   <p className="auth-card-copy">Sign in to sync your favorites and settings across devices.</p>
                   <SignInButtons />
                 </div>
               </Panel>
-            </SignedOut>
-          </div>
+            </div>
+          </SignedOut>
           <RecentlyViewedPanel />
           <FavoritesPanel />
           <SharedTeamPanel />
@@ -5166,45 +5168,47 @@ function Home() {
           <SkillsLeaderboardPanel />
         </aside>
 
-        <Panel
-          title={
-            <div className="home-events-header">
-              <HomeProgramToggle selected={selectedProgramIds} onChange={setSelectedProgramIds} />
-              <SeasonSelector
-                seasons={homeEventTabs.map((tab, index) => ({ id: index, label: tab.label }))}
-                selectedSeasonId={homeEventTabs.findIndex((tab) => tab.value === homeEventTab)}
-                onChange={(index) => setHomeEventTab(homeEventTabs[index].value)}
-                loading={false}
-                hideCount
-                hideLabel
+        <div className="home-events-col">
+          <Panel
+            title={
+              <div className="home-events-header">
+                <HomeProgramToggle selected={selectedProgramIds} onChange={setSelectedProgramIds} />
+                <SeasonSelector
+                  seasons={homeEventTabs.map((tab, index) => ({ id: index, label: tab.label }))}
+                  selectedSeasonId={homeEventTabs.findIndex((tab) => tab.value === homeEventTab)}
+                  onChange={(index) => setHomeEventTab(homeEventTabs[index].value)}
+                  loading={false}
+                  hideCount
+                  hideLabel
+                />
+                <Link href="/events" className="home-events-seeall">All Events</Link>
+              </div>
+            }
+            icon={<CalendarDays />}
+          >
+            <Status loading={eventsLoading} error={eventsError} />
+            {homeEventTab === "nearMe" && <NearMeLocationBar location={location} radius={nearMeRadius} onRadiusChange={setNearMeRadius} />}
+            {homeEventTab === "upcoming" ? (
+              <UpcomingGroupedEvents events={homeEvents} loading={eventsLoading} />
+            ) : homeEventTab === "nearMe" && userCoords && !eventsLoading && homeEvents.length === 0 ? (
+              <div className="notice subtle">
+                {userArea ? (
+                  <>No events in {location.label ?? "that area"}. </>
+                ) : (
+                  <>No events within {nearMeRadius} mi. </>
+                )}
+                Try <strong>Near Today</strong> or open the full events list.
+              </div>
+            ) : (
+              <PaginatedEventList
+                events={homeEvents}
+                loading={eventsLoading}
+                showDistance={homeEventTab === "nearMe" && !!userCoords}
+                distanceFor={homeEventTab === "nearMe" ? distanceFor : undefined}
               />
-              <Link href="/events" className="home-events-seeall">All Events</Link>
-            </div>
-          }
-          icon={<CalendarDays />}
-        >
-          <Status loading={eventsLoading} error={eventsError} />
-          {homeEventTab === "nearMe" && <NearMeLocationBar location={location} radius={nearMeRadius} onRadiusChange={setNearMeRadius} />}
-          {homeEventTab === "upcoming" ? (
-            <UpcomingGroupedEvents events={homeEvents} loading={eventsLoading} />
-          ) : homeEventTab === "nearMe" && userCoords && !eventsLoading && homeEvents.length === 0 ? (
-            <div className="notice subtle">
-              {userArea ? (
-                <>No events in {location.label ?? "that area"}. </>
-              ) : (
-                <>No events within {nearMeRadius} mi. </>
-              )}
-              Try <strong>Near Today</strong> or open the full events list.
-            </div>
-          ) : (
-            <PaginatedEventList
-              events={homeEvents}
-              loading={eventsLoading}
-              showDistance={homeEventTab === "nearMe" && !!userCoords}
-              distanceFor={homeEventTab === "nearMe" ? distanceFor : undefined}
-            />
-          )}
-        </Panel>
+            )}
+          </Panel>
+        </div>
       </div>
     </section>
   );

@@ -506,15 +506,63 @@ main {
 
 .home-dashboard {
   display: grid;
-  grid-template-columns: 345px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 345px;
   gap: 20px;
-  align-items: start;
+  /* stretch (not start) so the events column can fill the row height the
+     sidebar defines — see .home-events-col. */
+  align-items: stretch;
 }
 
+/* The events panel is height-locked to the sidebar: it's taken out of flow so
+   the grid row height comes from the sidebar column alone, and the event list
+   scrolls inside the panel. Both columns end at the same y at every list
+   length. On mobile (<=900px) the columns stack and this is reset. */
+.home-events-col {
+  position: relative;
+  min-height: 0;
+}
+
+.home-events-col > .panel {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* A slim, track-less bar so the list doesn't lose 17px of width to a classic
+   scrollbar on platforms that reserve space for one. */
+.home-events-col > .panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.home-events-col > .panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.home-events-col > .panel::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+/* Keep the filter/tab header in view while the list scrolls under it. */
+.home-events-col > .panel > h2 {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* Events panel leads, sidebar sits on the right. The sidebar stays first in the
+   DOM (and first in the stack on mobile, where `order` is reset). */
 .home-sidebar {
   display: grid;
   gap: 15px;
   align-content: start;
+  order: 2;
 }
 
 .home-search-panel {
@@ -5433,17 +5481,37 @@ a.team-card-num:hover {
 }
 
 .date-direction-toggle {
-  margin-top: -10px;
   margin-bottom: 15px;
-  padding-top: 10px;
+}
+
+/* Stacked toolbars read as one card, not two: the upper strip squares off its
+   bottom corners and its bottom border becomes the divider between the rows.
+   Either strip can appear alone (SeasonSelector renders nothing while seasons
+   are loading), so the joined treatment is scoped to the adjacency itself. */
+.season-toolbar:has(+ .date-direction-toggle) {
+  margin-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.season-toolbar + .date-direction-toggle {
+  margin-top: 0;
   border-top: 0;
-  border-radius: 0 0 4px 4px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .season-toolbar span,
 .date-direction-toggle span {
   color: var(--text-2);
   font-weight: 700;
+}
+
+/* Line the row controls up with each other — "Season" and "Order" are different
+   widths, and inside one card the ragged left edge is what reads as sloppy. */
+.season-toolbar > span,
+.date-direction-toggle > span {
+  min-width: 54px;
 }
 
 /* Labelless variant (events filter sidebar): drop the boxed chrome so the
@@ -5623,6 +5691,14 @@ a.team-card-num:hover {
 
 .event-group:hover {
   border-color: var(--border-strong);
+}
+
+/* The award-crowns popup is absolutely positioned and taller than the summary
+   row, so the card's corner clip cuts it off. Lift the clip only while the popup
+   is actually open — the rest of the time the rounded corners still need it. */
+.event-group:has(.myteam-crowns:hover),
+.event-group:has(.myteam-crowns:focus-within) {
+  overflow: visible;
 }
 
 .event-group[open] {
@@ -6981,6 +7057,21 @@ footer {
   .events-page-wide .events-layout,
   .stats-row {
     grid-template-columns: 1fr;
+  }
+
+  .home-sidebar {
+    order: 0;
+  }
+
+  /* Stacked layout: no column to match, so the events panel flows normally. */
+  .home-events-col > .panel {
+    position: static;
+    inset: auto;
+    overflow: visible;
+  }
+
+  .home-events-col > .panel > h2 {
+    position: static;
   }
 
   /* Wide events page collapses back to the normal centered width on mobile */
