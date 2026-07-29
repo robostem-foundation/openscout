@@ -6400,9 +6400,15 @@ function EventTable({
           {events.map((event) => (
             <tr key={event.id}>
               <td className="event-name-cell">
-                <Link href={eventPath(event)} className="event-name-link">
-                  <TranslatedText text={event.name} country={event.location?.country} />
-                </Link>
+                {/* The clamp lives on this wrapper, never on the <a>: a clamped or
+                    ellipsised anchor is a block box, and a block box is clickable
+                    across its whole rectangle — including the blank space after a
+                    short last line. Inline anchors are hit-tested per text line. */}
+                <span className="event-name-clamp">
+                  <Link href={eventPath(event)} className="event-name-link">
+                    <TranslatedText text={event.name} country={event.location?.country} />
+                  </Link>
+                </span>
                 <div className="muted event-sku-line">{event.sku}</div>
               </td>
               <td className="event-location-cell">
@@ -11750,6 +11756,8 @@ function TeamAwardsByEvent({
         {groups.map((group) => (
           <article key={group.eventRef.id} className="award-card">
             <div className="award-card-event">
+              {/* Ellipsis on the wrapper, not the link — see .event-name-clamp. */}
+              <span className="award-card-event-clamp">
               <Link
                 className="award-card-event-name"
                 href={urlWithHash(
@@ -11760,6 +11768,7 @@ function TeamAwardsByEvent({
               >
                 {group.eventRef.name}
               </Link>
+              </span>
               <div className="award-card-event-meta">
                 {group.event ? formatEventDateRange(group.event.start, group.event.end) : "Date unavailable"}
               </div>
