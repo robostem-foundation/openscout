@@ -14140,6 +14140,9 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, share
   const [sort, setSort] = useState<SortState>({ key: "rank", dir: "asc" });
   const onSort = (key: string) =>
     setSort((p) => (p.key === key ? { key, dir: p.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "rank" || key === "team" ? "asc" : "desc" }));
+  // Mobile-only disclosure: the card keeps the primaries, the rest lives in a
+  // detail row toggled per ranking. Same single-open shape as TeamTable.
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
   // Per-event OPR/DPR/CCWM from this event's qual matches. CCWM/DPR are only
   // meaningful where alliances oppose each other (V5RC/VURC), not IQ teamwork.
@@ -14206,36 +14209,43 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, share
   ) : undefined;
 
   if (isIq) {
+    const iqColCount = (showPicklist ? 9 : 8) + 1; // + the mobile-only disclosure cell
     return (
       <Panel title="Rankings" icon={<BarChart3 />} action={exportBtn}>
-        <table>
+        <div className="rk-mobile-head rk-mobile-head-iq" aria-hidden="true">
+          <span>Rank</span><span>Team</span><span>Avg</span><span>High</span><span />
+        </div>
+        <table className="rk-table rk-table-iq">
           <thead>
             <tr>
               <SortableTh col="rank" label="Rank" sort={sort} onSort={onSort} />
               <SortableTh col="team" label="Team" sort={sort} onSort={onSort} />
               <SortableTh col="avg" label="Avg" sort={sort} onSort={onSort} />
               <SortableTh col="high" label="High" sort={sort} onSort={onSort} />
-              <SortableTh col="low" label="Low" sort={sort} onSort={onSort} />
-              <SortableTh col="opr" label="OPR" sort={sort} onSort={onSort} title="Offensive Power Rating (this event)" />
-              <th>Dropped scores</th>
+              <SortableTh col="low" label="Low" sort={sort} onSort={onSort} className="rk-hide-mobile" />
+              <SortableTh col="opr" label="OPR" sort={sort} onSort={onSort} title="Offensive Power Rating (this event)" className="rk-hide-mobile" />
+              <th className="rk-hide-mobile">Dropped scores</th>
               <th className="compare-col">Compare</th>
               {showPicklist && <th className="picklist-col">Picklist</th>}
+              <th className="rk-m-toggle" />
             </tr>
           </thead>
           <tbody>
             {displayRows.map((row) => {
               const stats = iqStatsByRow.get(row.team.id);
+              const expanded = expandedRow === row.id;
               return (
-                <tr key={row.id}>
-                  <td>{row.rank}</td>
+                <Fragment key={row.id}>
+                <tr className="rk-row">
+                  <td className="rk-m-rank">{row.rank}</td>
                   <td className="team-cell">
                     <CompareTeamLink teamId={row.team.id} teamNumber={row.team.name} programCode={programCode} />
                   </td>
-                  <td>{formatNumber(stats?.avg)}</td>
-                  <td>{stats?.high ?? "-"}</td>
-                  <td>{stats?.low ?? "-"}</td>
-                  <td>{fmtRating(oprMap.get(row.team.id)?.opr)}</td>
-                  <td>
+                  <td className="rk-m-avg">{formatNumber(stats?.avg)}</td>
+                  <td className="rk-m-high"><span className="rk-m-tag" aria-hidden="true">H</span>{stats?.high ?? "-"}</td>
+                  <td className="rk-hide-mobile">{stats?.low ?? "-"}</td>
+                  <td className="rk-hide-mobile">{fmtRating(oprMap.get(row.team.id)?.opr)}</td>
+                  <td className="rk-hide-mobile">
                     <DroppedScores dropped={stats?.dropped ?? []} />
                   </td>
                   <td className="compare-col">
@@ -14246,12 +14256,41 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, share
                       <PicklistRowBtn sharedTeamId={sharedTeamId} eventId={eventId} teamId={String(row.team.id)} teamNumber={row.team.name} />
                     </td>
                   )}
+                  <td className="rk-m-toggle">
+                    <button
+                      type="button"
+                      className={`rk-toggle-btn${expanded ? " expanded" : ""}`}
+                      aria-expanded={expanded}
+                      aria-label={`${expanded ? "Hide" : "Show"} more stats for ${row.team.name}`}
+                      onClick={(e) => { e.stopPropagation(); setExpandedRow(expanded ? null : row.id); }}
+                    >
+                      <ChevronDown size={15} />
+                    </button>
+                  </td>
                 </tr>
+                {expanded && (
+                  <tr className="rk-m-detail">
+                    <td colSpan={iqColCount}>
+                      <dl className="rk-detail-grid">
+                        <div><dt>Low</dt><dd>{stats?.low ?? "-"}</dd></div>
+                        <div><dt>OPR</dt><dd>{fmtRating(oprMap.get(row.team.id)?.opr)}</dd></div>
+                        <div className="rk-detail-wide"><dt>Dropped</dt><dd><DroppedScores dropped={stats?.dropped ?? []} /></dd></div>
+                      </dl>
+                      <div className="rk-detail-actions">
+                        <CompareRowBtn teamId={row.team.id} teamNumber={row.team.name} programCode={programCode ?? ""} />
+                        {showPicklist && (
+                          <PicklistRowBtn sharedTeamId={sharedTeamId} eventId={eventId} teamId={String(row.team.id)} teamNumber={row.team.name} />
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
             {!displayRows.length && (
               <tr>
-                <td colSpan={showPicklist ? 9 : 8}>
+                <td colSpan={iqColCount}>
                   <Empty>No rankings returned.</Empty>
                 </td>
               </tr>
@@ -14262,9 +14301,13 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, share
     );
   }
 
+  const colCount = (showPicklist ? 14 : 13) + 1; // + the mobile-only disclosure cell
   return (
     <Panel title="Rankings" icon={<BarChart3 />} action={exportBtn}>
-      <table>
+      <div className="rk-mobile-head" aria-hidden="true">
+        <span>Rank</span><span>Team</span><span>WP</span><span>AP / SP</span><span>AWP</span><span />
+      </div>
+      <table className="rk-table">
         <thead>
           <tr>
             <SortableTh col="rank" label="Rank" sort={sort} onSort={onSort} />
@@ -14274,36 +14317,39 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, share
             <SortableTh col="ap" label="AP" sort={sort} onSort={onSort} />
             <SortableTh col="sp" label="SP" sort={sort} onSort={onSort} />
             <SortableTh col="awp" label="AWP" sort={sort} onSort={onSort} title="Autonomous Win Points" />
-            <SortableTh col="high" label="High" sort={sort} onSort={onSort} className="col-muted" />
-            <SortableTh col="avg" label="Avg" sort={sort} onSort={onSort} className="col-muted" />
-            <SortableTh col="opr" label="OPR" sort={sort} onSort={onSort} title="Offensive Power Rating (this event)" className="col-muted" />
-            <SortableTh col="dpr" label="DPR" sort={sort} onSort={onSort} title="Defensive Power Rating (this event)" className="col-muted" />
-            <SortableTh col="ccwm" label="CCWM" sort={sort} onSort={onSort} title="Calculated Contribution to Winning Margin (OPR − DPR)" />
+            <SortableTh col="high" label="High" sort={sort} onSort={onSort} className="col-muted rk-hide-mobile" />
+            <SortableTh col="avg" label="Avg" sort={sort} onSort={onSort} className="col-muted rk-hide-mobile" />
+            <SortableTh col="opr" label="OPR" sort={sort} onSort={onSort} title="Offensive Power Rating (this event)" className="col-muted rk-hide-mobile" />
+            <SortableTh col="dpr" label="DPR" sort={sort} onSort={onSort} title="Defensive Power Rating (this event)" className="col-muted rk-hide-mobile" />
+            <SortableTh col="ccwm" label="CCWM" sort={sort} onSort={onSort} title="Calculated Contribution to Winning Margin (OPR − DPR)" className="rk-hide-mobile" />
             <th className="compare-col">Compare</th>
             {showPicklist && <th className="picklist-col">Picklist</th>}
+            <th className="rk-m-toggle" />
           </tr>
         </thead>
         <tbody>
           {displayRows.map((row) => {
             const o = oprMap.get(row.team.id);
+            const expanded = expandedRow === row.id;
             return (
-            <tr key={row.id}>
-              <td>{row.rank}</td>
+            <Fragment key={row.id}>
+            <tr className="rk-row">
+              <td className="rk-m-rank">{row.rank}</td>
               <td className="team-cell">
                 <CompareTeamLink teamId={row.team.id} teamNumber={row.team.name} programCode={programCode} />
               </td>
-              <td>
+              <td className="rk-m-record">
                 {row.wins ?? 0}-{row.losses ?? 0}-{row.ties ?? 0}
               </td>
-              <td>{row.wp ?? "-"}</td>
-              <td>{row.ap ?? "-"}</td>
-              <td>{row.sp ?? "-"}</td>
-              <td>{rankingAwp(row)}</td>
-              <td className="col-muted">{row.high_score ?? "-"}</td>
-              <td className="col-muted">{formatNumber(row.average_points)}</td>
-              <td className="col-muted">{fmtRating(o?.opr)}</td>
-              <td className="col-muted">{fmtRating(o?.dpr)}</td>
-              <td>{fmtRating(o?.ccwm)}</td>
+              <td className="rk-m-wp">{row.wp ?? "-"}</td>
+              <td className="rk-m-ap"><span className="rk-m-tag" aria-hidden="true">AP</span>{row.ap ?? "-"}</td>
+              <td className="rk-m-sp"><span className="rk-m-tag" aria-hidden="true">SP</span>{row.sp ?? "-"}</td>
+              <td className="rk-m-awp"><span className="rk-m-tag" aria-hidden="true">AWP</span>{rankingAwp(row)}</td>
+              <td className="col-muted rk-hide-mobile">{row.high_score ?? "-"}</td>
+              <td className="col-muted rk-hide-mobile">{formatNumber(row.average_points)}</td>
+              <td className="col-muted rk-hide-mobile">{fmtRating(o?.opr)}</td>
+              <td className="col-muted rk-hide-mobile">{fmtRating(o?.dpr)}</td>
+              <td className="rk-hide-mobile">{fmtRating(o?.ccwm)}</td>
               <td className="compare-col">
                 <CompareRowBtn teamId={row.team.id} teamNumber={row.team.name} programCode={programCode ?? ""} />
               </td>
@@ -14312,12 +14358,43 @@ function RankingsTable({ rankings, isIq = false, matches = [], allMatches, share
                   <PicklistRowBtn sharedTeamId={sharedTeamId} eventId={eventId} teamId={String(row.team.id)} teamNumber={row.team.name} />
                 </td>
               )}
+              <td className="rk-m-toggle">
+                <button
+                  type="button"
+                  className={`rk-toggle-btn${expanded ? " expanded" : ""}`}
+                  aria-expanded={expanded}
+                  aria-label={`${expanded ? "Hide" : "Show"} more stats for ${row.team.name}`}
+                  onClick={(e) => { e.stopPropagation(); setExpandedRow(expanded ? null : row.id); }}
+                >
+                  <ChevronDown size={15} />
+                </button>
+              </td>
             </tr>
+            {expanded && (
+              <tr className="rk-m-detail">
+                <td colSpan={colCount}>
+                  <dl className="rk-detail-grid">
+                    <div><dt>High</dt><dd>{row.high_score ?? "-"}</dd></div>
+                    <div><dt>Avg</dt><dd>{formatNumber(row.average_points)}</dd></div>
+                    <div><dt>OPR</dt><dd>{fmtRating(o?.opr)}</dd></div>
+                    <div><dt>DPR</dt><dd>{fmtRating(o?.dpr)}</dd></div>
+                    <div><dt>CCWM</dt><dd>{fmtRating(o?.ccwm)}</dd></div>
+                  </dl>
+                  <div className="rk-detail-actions">
+                    <CompareRowBtn teamId={row.team.id} teamNumber={row.team.name} programCode={programCode ?? ""} />
+                    {showPicklist && (
+                      <PicklistRowBtn sharedTeamId={sharedTeamId} eventId={eventId} teamId={String(row.team.id)} teamNumber={row.team.name} />
+                    )}
+                  </div>
+                </td>
+              </tr>
+            )}
+            </Fragment>
             );
           })}
           {!displayRows.length && (
             <tr>
-              <td colSpan={showPicklist ? 14 : 13}>
+              <td colSpan={colCount}>
                 <Empty>No rankings returned.</Empty>
               </td>
             </tr>

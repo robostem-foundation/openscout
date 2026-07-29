@@ -13420,3 +13420,259 @@ td.col-muted { color: var(--text-2); }
   }
 }
 
+/* ── A2 · RankingsTable ── */
+
+/* Mobile card reflow for the event Rankings table (both the V5RC/VURC variant
+   and the IQ variant). Prefix `rk`. Follows the `.ws-table` idiom documented in
+   the MOBILE CARD REFLOW conventions banner: uniform numeric cells become
+   explicit grid slots of the <tr>.
+
+   The card carries the primaries only — rank, team, and the ranking points a
+   scout actually reads down the list. Everything derived (High/Avg/OPR/DPR/CCWM,
+   or Low/OPR/dropped scores on IQ) moves behind a per-row disclosure, together
+   with the Compare and Picklist buttons: at 375px the card rail has no track
+   left for two icon buttons.
+
+   `-m-toggle` and `-m-detail` are display:none GLOBALLY and re-enabled only
+   inside the media block, so a row expanded on a phone cannot leak into the
+   desktop table after a resize — no JS breakpoint needed. */
+.rk-m-toggle,
+.rk-m-detail {
+  display: none;
+}
+
+/* Column-header strip for the mobile card list, drawn above the table because
+   the real <thead> is hidden ≤760px. Desktop-hidden. */
+.rk-mobile-head {
+  display: none;
+}
+
+/* Inline "AP" / "SP" / "AWP" / "H" prefixes. Three bare numbers stacked in one
+   column are unreadable without them; on desktop the real column headers say
+   it, so these stay hidden there. */
+.rk-m-tag {
+  display: none;
+}
+
+/* ═══ Mobile: event Rankings becomes a dense card list ═══ */
+@media (max-width: 760px) {
+  .rk-mobile-head {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) 46px 46px auto auto;
+    column-gap: 10px;
+    align-items: end;
+    padding: 5px 12px 6px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  /* IQ has no Record line, so its rail is one track shorter. */
+  .rk-mobile-head-iq {
+    grid-template-columns: 26px minmax(0, 1fr) 46px 46px auto;
+  }
+  .rk-mobile-head span:nth-child(n + 3) {
+    justify-self: end;
+  }
+
+  /* ── Standard preamble ───────────────────────────────────────────────── */
+  .rk-table {
+    min-width: 0;
+  }
+  .rk-table thead {
+    display: none;
+  }
+  .rk-table,
+  .rk-table tbody,
+  .rk-table tr {
+    display: block;
+  }
+  .rk-table td {
+    padding: 0;
+    border: 0;
+  }
+
+  .rk-table .rk-hide-mobile {
+    display: none;
+  }
+  /* Compare / Picklist move into the disclosure — no room on the rail. */
+  .rk-table .compare-col,
+  .rk-table .picklist-col {
+    display: none;
+  }
+
+  /* ── The card ────────────────────────────────────────────────────────── */
+  .rk-table tbody tr.rk-row {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) 46px 46px auto auto;
+    column-gap: 10px;
+    row-gap: 1px;
+    align-items: center;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    font-variant-numeric: tabular-nums;
+  }
+  .rk-table-iq tbody tr.rk-row {
+    /* Single-line card: nothing sits under the team number. */
+    grid-template-columns: 26px minmax(0, 1fr) 46px 46px auto;
+    row-gap: 0;
+  }
+  .rk-table tbody tr.rk-row:last-child {
+    border-bottom: 0;
+  }
+
+  .rk-table .rk-m-rank {
+    grid-area: 1 / 1 / 3 / 2;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .rk-table .rk-m-rank::before {
+    content: "#";
+    opacity: 0.55;
+  }
+  .rk-table .team-cell {
+    grid-area: 1 / 2 / 2 / 3;
+    min-width: 0;
+    font-size: 15.5px;
+  }
+  .rk-table .team-cell a {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .rk-table .rk-m-record {
+    grid-area: 2 / 2 / 3 / 3;
+    font-size: 11px;
+    line-height: 1.25;
+    color: var(--text-muted);
+  }
+  /* The accent number: WP on V5RC, Avg on IQ. */
+  .rk-table .rk-m-wp,
+  .rk-table-iq .rk-m-avg {
+    grid-area: 1 / 3 / 3 / 4;
+    justify-self: end;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--link);
+  }
+  .rk-table .rk-m-ap,
+  .rk-table .rk-m-sp,
+  .rk-table .rk-m-awp,
+  .rk-table-iq .rk-m-high {
+    justify-self: end;
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--text-muted);
+  }
+  .rk-table .rk-m-ap {
+    grid-area: 1 / 4 / 2 / 5;
+    align-self: end;
+  }
+  .rk-table .rk-m-sp {
+    grid-area: 2 / 4 / 3 / 5;
+    align-self: start;
+  }
+  .rk-table .rk-m-awp {
+    grid-area: 1 / 5 / 3 / 6;
+  }
+  /* IQ's card is one line tall, so its slots don't span a second row. */
+  .rk-table-iq .rk-m-avg {
+    grid-area: 1 / 3 / 2 / 4;
+  }
+  .rk-table-iq .rk-m-high {
+    grid-area: 1 / 4 / 2 / 5;
+  }
+  .rk-table .rk-m-tag {
+    display: inline;
+    margin-right: 3px;
+    color: var(--text-faint);
+  }
+
+  /* ── Disclosure ──────────────────────────────────────────────────────── */
+  .rk-table .rk-m-toggle {
+    display: grid;
+    grid-area: 1 / 6 / 3 / 7;
+    place-items: center;
+  }
+  .rk-table-iq .rk-m-toggle {
+    grid-area: 1 / 5 / 2 / 6;
+  }
+  .rk-toggle-btn {
+    display: grid;
+    place-items: center;
+    /* 32px keeps the tap target honest without widening the rail. */
+    width: 32px;
+    height: 32px;
+    margin-right: -6px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    transition: color 120ms ease, background 120ms ease;
+  }
+  .rk-toggle-btn:active {
+    background: var(--surface-2);
+  }
+  .rk-toggle-btn svg {
+    transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .rk-toggle-btn.expanded {
+    color: var(--text);
+  }
+  .rk-toggle-btn.expanded svg {
+    transform: rotate(180deg);
+  }
+
+  .rk-table tr.rk-m-detail {
+    display: block;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--surface-2);
+  }
+  .rk-table tr.rk-m-detail > td {
+    display: block;
+    /* Aligns the pair grid with the team number, not the rank gutter. */
+    padding: 10px 12px 12px 48px;
+  }
+  .rk-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+    gap: 8px 12px;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .rk-detail-grid dt {
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-faint);
+  }
+  .rk-detail-grid dd {
+    margin: 1px 0 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  /* Dropped scores is a list, not a number — let it take the full width. */
+  .rk-detail-grid .rk-detail-wide {
+    grid-column: 1 / -1;
+  }
+  .rk-detail-grid .rk-detail-wide dd {
+    font-weight: 500;
+  }
+  .rk-detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  /* Last card clears the fixed mobile tab bar when scrolled into view. */
+  .rk-table tbody tr:last-child {
+    scroll-margin-bottom: var(--mobile-tabbar-clear, 92px);
+  }
+}
+
