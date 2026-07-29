@@ -15543,7 +15543,7 @@ function ProfileSettings() {
                 value={teamNumber}
                 onChange={(event) => setTeamNumber(event.target.value.toUpperCase())}
                 maxLength={10}
-                placeholder="169W"
+                placeholder="10B"
               />
             </Field>
             <Field>
@@ -15933,7 +15933,7 @@ function CreateSharedTeamModal({ onClose }: { onClose: () => void }) {
             <FieldLabel htmlFor="st-name-input">Name</FieldLabel>
             <Input id="st-name-input" value={name} autoFocus
               onChange={(e) => setName(e.target.value.slice(0, 40))}
-              placeholder="e.g. 169W Scouting"
+              placeholder="e.g. 10B Scouting"
               onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }} />
           </Field>
 
@@ -15977,7 +15977,7 @@ function CreateSharedTeamModal({ onClose }: { onClose: () => void }) {
                   <FieldLabel htmlFor="st-team-input">Team #</FieldLabel>
                   <Input id="st-team-input" value={teamNumber}
                     onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
-                    placeholder="e.g. 169W" />
+                    placeholder="e.g. 10B" />
                 </Field>
               </div>
             </>
@@ -16232,7 +16232,7 @@ function SharedTeamOverviewTab({ sharedTeamId, team }: { sharedTeamId: string; t
               type="text"
               value={teamNumber}
               onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
-              placeholder="e.g. 169W"
+              placeholder="e.g. 10B"
             />
           </Field>
         </div>
