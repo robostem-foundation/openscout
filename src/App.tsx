@@ -113,8 +113,8 @@ import {
 import type { SharedTeamInvite, SharedTeamMember, SharedTeamMembership, SharedTeamRole } from "./shared-teams";
 import { supabase } from "./supabase";
 import { TranslatedText } from "./components/TranslatedText";
-import { setEventsSettings, setQuickViewFirst, setQuickViewMode, setQuickViewSide, setTranslateMode, useQuickViewFirst, useQuickViewMode, useQuickViewSide, useSettingsEpoch, useTranslateMode } from "./settings";
-import type { QuickViewMode, QuickViewSide, TranslateMode } from "./settings";
+import { setEventsSettings, setQuickViewFirst, setQuickViewMode, setQuickViewSide, setSearchProgram, setTranslateMode, useQuickViewFirst, useQuickViewMode, useQuickViewSide, useSearchProgram, useSettingsEpoch, useTranslateMode } from "./settings";
+import type { QuickViewMode, QuickViewSide, SearchProgram, TranslateMode } from "./settings";
 import type { TabLayout } from "./settings";
 import { clearRecentlyViewed, pushRecentlyViewed, useRecentlyViewed } from "./recently-viewed";
 import type { RecentEntry } from "./recently-viewed";
@@ -840,6 +840,121 @@ async function loadOlderSeasonEvents(): Promise<Event[]> {
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPod|iPad/.test(navigator.platform);
 
+// ── Search scope ──────────────────────────────────────────────────────────────
+// Which programs each setting searches. "auto" passes no filter at all, so every
+// VEX program is in play and only the profile nudge orders them; the other two
+// restrict outright. Event ids are strings (filterAndSortEvents compares them as
+// such); team lookups want numbers.
+const SEARCH_PROGRAM_OPTIONS: Array<{ value: SearchProgram; label: string; title: string }> = [
+  { value: "auto", label: "Auto", title: "Search every program, ordered around your own" },
+  { value: "v5", label: "V5", title: "V5RC events and teams only" },
+  { value: "iq", label: "IQ", title: "VIQRC events and teams only" },
+];
+const SEARCH_PROGRAM_IDS: Record<SearchProgram, number[] | undefined> = {
+  auto: undefined,
+  v5: [1],
+  iq: [41],
+};
+
+function searchProgramIds(scope: SearchProgram): number[] {
+  return SEARCH_PROGRAM_IDS[scope] ?? vexProgramIds;
+}
+
+// The season label the current competition year carries, e.g. "26-27". RobotEvents
+// seasons roll over in spring (a 2026-2027 season event can be held in May 2026), so
+// the cutover month is May rather than January. Only this end of the comparison is
+// derived from the clock — the event's own side is read from its season name — so
+// the worst case is a few days of ambiguity right at the rollover.
+function currentSeasonYearLabel(): string {
+  const year = today.getFullYear() - (today.getMonth() < 4 ? 1 : 0);
+  return `${String(year).slice(2)}-${String(year + 1).slice(2)}`;
+}
+
+/** The season label to call out on a search result, or "" for the current season. */
+function olderSeasonLabel(event: Event): string {
+  const label = seasonYearLabel(event.season?.name);
+  return label && label !== currentSeasonYearLabel() ? label : "";
+}
+
+/**
+ * One event row in a search result list. The name is clamped to a single line so
+ * the tier/program pills can sit on that line without making the row taller, and
+ * the sub-line carries the event's dates (bold, with the season, when it is not
+ * from the current season) instead of its SKU.
+ */
+function SearchEventRow({ event, onSelect }: { event: Event; onSelect: (href: string) => void }) {
+  const category = eventCategory(event);
+  const season = olderSeasonLabel(event);
+  const location = locationLine(event);
+  return (
+    <button type="button" className="gs-result gs-result-event" onMouseDown={() => onSelect(eventPath(event))}>
+      <span className="gs-result-line">
+        <TranslatedText className="gs-result-main" text={event.name} country={event.location?.country} />
+        <span className="gs-result-tags">
+          {/* "Other" is every ordinary tournament — a pill on all of them is noise. */}
+          {category.label !== "Other" && (
+            <span className={`event-priority priority-${category.rank}`}>{category.label}</span>
+          )}
+          <ProgramBadge program={event.program} />
+        </span>
+      </span>
+      <span className="gs-result-sub">
+        <span className={`gs-result-date${season ? " is-older" : ""}`}>
+          {formatEventDateRangeShort(event.start, event.end)}
+        </span>
+        {season && <span className="gs-result-season">{season}</span>}
+        {location && <span className="gs-result-where">{location}</span>}
+      </span>
+    </button>
+  );
+}
+
+/** One team row, matching the event row's single-line-plus-pills shape. */
+function SearchTeamRow({ team, onSelect }: { team: Team; onSelect: (href: string) => void }) {
+  return (
+    <button type="button" className="gs-result gs-result-team" onMouseDown={() => onSelect(teamPath(team))}>
+      <span className="gs-result-line">
+        <span className="gs-result-main">
+          {team.number} - <TranslatedText text={team.team_name ?? "Unnamed Team"} country={team.location?.country} />
+        </span>
+        <span className="gs-result-tags">
+          {team.grade && <span className={`event-grade-badge grade-${gradeCode(team.grade)}`}>{gradeCode(team.grade)}</span>}
+          <ProgramBadge program={team.program} />
+        </span>
+      </span>
+      <span className="gs-result-sub">
+        <span className="gs-result-where">{locationLine(team)}</span>
+      </span>
+    </button>
+  );
+}
+
+/** The Auto / V5 / IQ scope picker shown at the top of every search result list. */
+function SearchScopeToggle({ scope }: { scope: SearchProgram }) {
+  return (
+    <div className="gs-scope" role="group" aria-label="Search scope">
+      <span className="gs-scope-label">Search</span>
+      {SEARCH_PROGRAM_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={scope === option.value ? "active" : ""}
+          aria-pressed={scope === option.value}
+          title={option.title}
+          // mousedown, not click: the dropdown closes on outside mousedown, and a
+          // plain onClick would lose the race with the input's blur handling.
+          onMouseDown={(event) => {
+            event.preventDefault();
+            setSearchProgram(option.value);
+          }}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function GlobalSearch({ className = "" }: { className?: string }) {
   const [query, setQuery] = useState("");
   const debounced = useDebouncedValue(query.trim(), 220);
@@ -859,10 +974,14 @@ function GlobalSearch({ className = "" }: { className?: string }) {
   const [events, setEvents] = useState<Event[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
 
+  // True while older seasons are being searched because the current window came
+  // back empty — results may still appear.
+  const [searchingOlderSeasons, setSearchingOlderSeasons] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   // Re-runs the search when the profile's program/grade lands (it arrives after
   // the first paint), so early results aren't stuck in the unbiased order.
   const searchBias = useSearchBias();
+  const scope = useSearchProgram();
 
   // Fire both searches independently when debounced query changes
   useEffect(() => {
@@ -871,6 +990,7 @@ function GlobalSearch({ className = "" }: { className?: string }) {
       setEvents([]);
       setTeamsLoading(false);
       setEventsLoading(false);
+      setSearchingOlderSeasons(false);
       return;
     }
 
@@ -878,20 +998,46 @@ function GlobalSearch({ className = "" }: { className?: string }) {
 
     // Teams — full team numbers hit the VEX API first, everything else stays
     // cache-first. See runGlobalTeamSearch.
-    const cachedTeams = rankTeamsForSearch(allCachedTeams(), debounced);
-    void runGlobalTeamSearch(debounced, 5, cachedTeams, () => live, setTeams, setTeamsLoading);
+    const programIds = searchProgramIds(scope);
+    const cachedTeams = rankTeamsForSearch(scopeTeamsToPrograms(allCachedTeams(), programIds), debounced);
+    void runGlobalTeamSearch(debounced, 5, cachedTeams, () => live, setTeams, setTeamsLoading, programIds);
 
+    const opts = { search: debounced, hideCanceled: true, sort: "smart" as const, programIds: SEARCH_PROGRAM_IDS[scope]?.map(String) };
     setEventsLoading(true);
-    loadGlobalEventSearchEvents()
-      .then((searchEvents) => {
+    setSearchingOlderSeasons(false);
+
+    // Current window first, then older seasons only if it produced nothing at all.
+    // Scoping to one program routinely empties the window (this season's V5RC list
+    // has no match for a query that only an older event answers), which is exactly
+    // when the fallback earns its two extra fetches — see CommandPalette, which
+    // falls back the same way.
+    const runEventSearch = async () => {
+      const current = filterAndSortEvents(await loadGlobalEventSearchEvents(), opts);
+      if (!live) return;
+      setEvents(current.slice(0, 5));
+      setEventsLoading(false);
+      if (current.length) return;
+
+      setSearchingOlderSeasons(true);
+      try {
+        const prev = filterAndSortEvents(await loadPrevSeasonEvents(), opts);
         if (!live) return;
-        setEvents(filterAndSortEvents(searchEvents, { search: debounced, hideCanceled: true, sort: "smart" }).slice(0, 5));
-      })
-      .catch(() => { if (live) setEvents([]); })
-      .finally(() => { if (live) setEventsLoading(false); });
+        setEvents(prev.slice(0, 5));
+        if (prev.length) return;
+
+        const older = filterAndSortEvents(await loadOlderSeasonEvents(), opts);
+        if (live) setEvents(older.slice(0, 5));
+      } finally {
+        if (live) setSearchingOlderSeasons(false);
+      }
+    };
+
+    runEventSearch().catch(() => {
+      if (live) { setEvents([]); setEventsLoading(false); setSearchingOlderSeasons(false); }
+    });
 
     return () => { live = false; };
-  }, [debounced, searchBias]);
+  }, [debounced, searchBias, scope]);
 
   // Track the narrow-header breakpoint (topbar only).
   useEffect(() => {
@@ -972,17 +1118,7 @@ function GlobalSearch({ className = "" }: { className?: string }) {
         <div className="gs-loading">Loading...</div>
       )}
       {teams.map((team) => (
-        <button
-          key={team.id}
-          type="button"
-          className="gs-result"
-          onMouseDown={() => handleSelect(teamPath(team))}
-        >
-          <span className="gs-result-main">
-            {team.number} - <TranslatedText text={team.team_name ?? "Unnamed Team"} country={team.location?.country} />
-          </span>
-          <span className="gs-result-sub">{locationLine(team)}</span>
-        </button>
+        <SearchTeamRow key={team.id} team={team} onSelect={handleSelect} />
       ))}
       {!teamsLoading && !teams.length && (
         <div className="gs-empty">No teams found.</div>
@@ -1003,17 +1139,10 @@ function GlobalSearch({ className = "" }: { className?: string }) {
         <div className="gs-loading">Loading...</div>
       )}
       {events.map((event) => (
-        <button
-          key={event.id}
-          type="button"
-          className="gs-result"
-          onMouseDown={() => handleSelect(eventPath(event))}
-        >
-          <TranslatedText className="gs-result-main" text={event.name} country={event.location?.country} />
-          <span className="gs-result-sub">{event.sku} · {locationLine(event)}</span>
-        </button>
+        <SearchEventRow key={event.id} event={event} onSelect={handleSelect} />
       ))}
-      {!eventsLoading && !events.length && (
+      {searchingOlderSeasons && <div className="gs-loading">Searching older seasons…</div>}
+      {!eventsLoading && !searchingOlderSeasons && !events.length && (
         <div className="gs-empty">No events found.</div>
       )}
       <button
@@ -1027,6 +1156,7 @@ function GlobalSearch({ className = "" }: { className?: string }) {
   );
   const dropdown = showDropdown ? (
     <div className="global-search-dropdown">
+      <SearchScopeToggle scope={scope} />
       {teamNumberLike ? <>{teamsSection}{eventsSection}</> : <>{eventsSection}{teamsSection}</>}
     </div>
   ) : null;
@@ -1576,6 +1706,14 @@ function teamNumberMatches(team: Team, needle: string): boolean {
   );
 }
 
+// Keeps only teams in the given programs. Applied to every team pool the search
+// bars assemble (browse cache, robostem, RobotEvents), since not every source
+// honours a program filter server-side.
+function scopeTeamsToPrograms(teams: Team[], programIds: number[]): Team[] {
+  if (programIds.length >= vexProgramIds.length) return teams;
+  return teams.filter((team) => programIds.includes(Number(team.program?.id)));
+}
+
 function rankTeamsForSearch(teams: Team[], query: string) {
   const needle = normalizedTeamQuery(query);
   // For number-like queries (e.g. "14141" or "14141X") only keep teams whose
@@ -1644,14 +1782,17 @@ async function runGlobalTeamSearch(
   isLive: () => boolean,
   onTeams: (teams: Team[]) => void,
   onLoading: (loading: boolean) => void,
+  // Programs to search, from the Auto / V5 / IQ scope toggle. Defaults to all of
+  // them, which is what "Auto" passes.
+  programIds: number[] = vexProgramIds,
 ) {
   const publish = (pool: Team[]) => {
-    if (isLive()) onTeams(rankTeamsForSearch(uniqueTeams(pool), query).slice(0, limit));
+    if (isLive()) onTeams(rankTeamsForSearch(scopeTeamsToPrograms(uniqueTeams(pool), programIds), query).slice(0, limit));
   };
 
   if (FULL_TEAM_NUMBER_RE.test(query)) {
     onLoading(true);
-    const vexPromise = api.robotEventsTeams({ number: query, "program[]": vexProgramIds, per_page: 20 });
+    const vexPromise = api.robotEventsTeams({ number: query, "program[]": programIds, per_page: 20 });
     const rsePromise = api.teams({ teamSearch: query, per_page: 50 });
 
     // Surface VEX hits the instant they land — don't wait for robostem.
@@ -1682,7 +1823,7 @@ async function runGlobalTeamSearch(
   try {
     const [rseTeams, exactTeams] = await Promise.all([
       api.teams({ teamSearch: query, per_page: 50 }),
-      /^\d+[a-z]?$/i.test(query) ? api.robotEventsTeams({ number: query, "program[]": vexProgramIds, per_page: 20 }) : Promise.resolve(null),
+      /^\d+[a-z]?$/i.test(query) ? api.robotEventsTeams({ number: query, "program[]": programIds, per_page: 20 }) : Promise.resolve(null),
     ]);
     publish([...cachedTeams, ...(exactTeams?.data ?? []), ...rseTeams.data]);
   } catch {
@@ -16765,9 +16906,16 @@ function SpotlightRow({
       <button type="button" className={cls} onMouseEnter={onMouseEnter} onClick={onClick}>
         <span className="spotlight-badge">{programSlug(t.program) || t.program?.code || "VEX"}</span>
         <span className="spotlight-item-text">
-          <span className="spotlight-item-main">
-            {t.number}
-            {t.team_name ? <> · <TranslatedText text={t.team_name} country={t.location?.country} /></> : ""}
+          <span className="spotlight-item-line">
+            <span className="spotlight-item-main">
+              {t.number}
+              {t.team_name ? <> · <TranslatedText text={t.team_name} country={t.location?.country} /></> : ""}
+            </span>
+            {t.grade && (
+              <span className="gs-result-tags">
+                <span className={`event-grade-badge grade-${gradeCode(t.grade)}`}>{gradeCode(t.grade)}</span>
+              </span>
+            )}
           </span>
           <span className="spotlight-item-sub">{locationLine(t)}</span>
         </span>
@@ -16792,12 +16940,27 @@ function SpotlightRow({
 
   if (item.kind === "event") {
     const ev = item.event;
+    const category = eventCategory(ev);
+    // The left badge already names the season, so the date line only needs the
+    // bold treatment to mark an event as not-this-season.
+    const older = !!olderSeasonLabel(ev);
     return (
       <button type="button" className={cls} onMouseEnter={onMouseEnter} onClick={onClick}>
         <span className="spotlight-badge">{seasonYearLabel(ev.season?.name) ?? <CalendarDays size={11} />}</span>
         <span className="spotlight-item-text">
-          <TranslatedText className="spotlight-item-main" text={ev.name} country={ev.location?.country} />
-          <span className="spotlight-item-sub">{ev.sku} · {locationLine(ev)}</span>
+          <span className="spotlight-item-line">
+            <TranslatedText className="spotlight-item-main" text={ev.name} country={ev.location?.country} />
+            <span className="gs-result-tags">
+              {category.label !== "Other" && (
+                <span className={`event-priority priority-${category.rank}`}>{category.label}</span>
+              )}
+              <ProgramBadge program={ev.program} />
+            </span>
+          </span>
+          <span className="spotlight-item-sub">
+            <span className={`gs-result-date${older ? " is-older" : ""}`}>{formatEventDateRangeShort(ev.start, ev.end)}</span>
+            <span className="gs-result-where">{locationLine(ev)}</span>
+          </span>
         </span>
         <span className="spotlight-item-enter">↵</span>
       </button>
@@ -16834,6 +16997,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   const trayEntries = useCompareTray();
   // See GlobalSearch: re-search once the profile's program/grade is known.
   const searchBias = useSearchBias();
+  const scope = useSearchProgram();
 
   const RECENT_COLLAPSED_LIMIT = 4;
   const RECENT_MAX = 10;
@@ -16860,15 +17024,16 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     let live = true;
 
     // Teams — same logic as GlobalSearch (VEX-first for full team numbers), capped at 3.
-    const cachedTeams = rankTeamsForSearch(allCachedTeams(), debounced);
-    void runGlobalTeamSearch(debounced, 3, cachedTeams, () => live, setTeams, setTeamsLoading);
+    const programIds = searchProgramIds(scope);
+    const cachedTeams = rankTeamsForSearch(scopeTeamsToPrograms(allCachedTeams(), programIds), debounced);
+    void runGlobalTeamSearch(debounced, 3, cachedTeams, () => live, setTeams, setTeamsLoading, programIds);
 
     // Events — 3 results, lazily falling back through older seasons:
     //   • Current season results appear immediately when the first fetch resolves.
     //   • If < 3, a subtle "Searching older seasons…" note appears while we fetch more.
     //   • Each older-season cache is loaded on demand and reused within the 5-min TTL.
     const SPOTLIGHT_EVENT_LIMIT = 3;
-    const opts = { search: debounced, hideCanceled: true, sort: "smart" as const };
+    const opts = { search: debounced, hideCanceled: true, sort: "smart" as const, programIds: SEARCH_PROGRAM_IDS[scope]?.map(String) };
     setEventsLoading(true);
     setSearchingOlderSeasons(false);
 
@@ -16907,7 +17072,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     });
 
     return () => { live = false; };
-  }, [debounced, searchBias]);
+  }, [debounced, searchBias, scope]);
 
   // Reset active row when results change
   useEffect(() => { setActiveIndex(0); }, [debounced]);
@@ -17007,6 +17172,9 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
             </button>
           )}
         </div>
+
+        {/* Scope — same Auto / V5 / IQ preference the header search bar writes. */}
+        <SearchScopeToggle scope={scope} />
 
         {/* Results */}
         <div className="spotlight-results" role="listbox">
