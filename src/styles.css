@@ -1509,6 +1509,162 @@ main {
   border-bottom: 1px solid var(--border-soft);
 }
 
+/* ── Search scope (Auto / V5 / IQ) ────────────────────────────────────────────
+   A single strip above the results, in both the dropdown and the ⌘K palette.
+   Quieter than .home-prog-toggle on purpose — it is a scope hint, not a filter
+   bar, and it must not read as the first result. */
+.gs-scope {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface-2);
+}
+
+.gs-scope-label {
+  margin-right: auto;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.gs-scope button {
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.gs-scope button:hover { color: var(--text); }
+
+.gs-scope button.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* ── Search result rows ───────────────────────────────────────────────────────
+   Name and pills share one line: the name takes the slack and ellipses, the
+   pills never shrink. Clamping the name to a single line is what keeps the row
+   the same height as before the pills existed (in practice shorter — long event
+   names used to wrap to three lines). */
+.gs-result-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.gs-result-line .gs-result-main {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gs-result-tags,
+.spotlight-item-line .gs-result-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+/* The tier pill is sized for a table column elsewhere; here it has to be a chip. */
+.gs-result-tags .event-priority {
+  min-width: 0;
+  min-height: 16px;
+  padding: 0 5px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+/* The shared secondary Badge is too low-contrast to read at this size on a dark
+   surface, so the program pill takes the same surface/text pair as the palette's
+   season chip, which is legible in both themes. */
+.gs-result-tags [data-slot="badge"] {
+  padding: 0 5px;
+  border: 0;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+/* Sub-line: dates, season, location — dot-separated, single line. */
+.gs-result-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.gs-result-sub > * + *::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--text-faint);
+}
+
+.gs-result-where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* An event outside the current season: the date carries the weight, and the
+   season label sits beside it so "Feb 13, 2026" isn't read as upcoming. */
+.gs-result-date.is-older {
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.gs-result-season {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Same one-line-plus-pills shape inside the ⌘K palette. */
+.spotlight-item-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.spotlight-item-line .spotlight-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.spotlight-item-sub .gs-result-date.is-older { color: var(--text-2); }
+
+.spotlight-item-sub > * + *::before {
+  content: "·";
+  margin: 0 6px;
+  color: var(--text-faint);
+}
+
 /* ---- Skills Leaderboard ---- */
 .skills-leaderboard-list {
   display: flex;

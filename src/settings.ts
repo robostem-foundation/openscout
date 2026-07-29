@@ -19,7 +19,8 @@ const QUICK_VIEW_FIRST_KEY = "vex-quick-view-first";
 const QUICK_VIEW_MODE_KEY = "vex-quick-view-mode";
 const QUICK_VIEW_SIDE_KEY = "vex-quick-view-side";
 const TRANSLATE_MODE_KEY = "vex-translate-mode";
-const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY, QUICK_VIEW_FIRST_KEY, QUICK_VIEW_MODE_KEY, QUICK_VIEW_SIDE_KEY, TRANSLATE_MODE_KEY] as const;
+const SEARCH_PROGRAM_KEY = "vex-search-program";
+const SYNCED_KEYS = [EVENTS_PROGRAMS_KEY, EVENTS_FILTERS_KEY, TAB_LAYOUT_KEY, QUICK_VIEW_FIRST_KEY, QUICK_VIEW_MODE_KEY, QUICK_VIEW_SIDE_KEY, TRANSLATE_MODE_KEY, SEARCH_PROGRAM_KEY] as const;
 export type SyncedSettingKey = (typeof SYNCED_KEYS)[number];
 
 // Tab orientation for the event/team detail views. "horizontal" matches the
@@ -32,6 +33,13 @@ export type TabLayout = "horizontal" | "vertical";
 // is both the quota-saver and the "I read this language, stop rewriting my UI"
 // option.
 export type TranslateMode = "auto" | "manual";
+
+// Which program the search bars look in. "auto" searches every VEX program and
+// leans on the profile's own program/grade to order the results (see
+// src/search-bias.ts); "v5"/"iq" restrict the results outright, for when the
+// nudge isn't enough — typically an older-season event that this season's
+// results crowd out.
+export type SearchProgram = "auto" | "v5" | "iq";
 
 type Values = Record<string, unknown>;
 
@@ -341,4 +349,28 @@ export function setTranslateMode(value: TranslateMode) {
 // a React render to decide whether to fetch).
 export function readTranslateMode(): TranslateMode {
   return getTranslateMode();
+}
+
+// --- search program scope ------------------------------------------------------
+
+// Reuses the quick-view listener set (same reason as translate mode): the value
+// must notify on self-writes so every mounted search bar re-runs its query the
+// moment the toggle flips, not only on a cloud load.
+
+function getSearchProgram(): SearchProgram {
+  const v = currentValues[SEARCH_PROGRAM_KEY];
+  return v === "v5" || v === "iq" ? v : "auto";
+}
+
+export function useSearchProgram(): SearchProgram {
+  return useSyncExternalStore(subscribeQuickViewFirst, getSearchProgram, getSearchProgram);
+}
+
+export function setSearchProgram(value: SearchProgram) {
+  writeLS(SEARCH_PROGRAM_KEY, value);
+  const next: Values = { ...currentValues, [SEARCH_PROGRAM_KEY]: value };
+  if (sameValues(next, currentValues)) return;
+  currentValues = next;
+  if (signedIn && supabase && userId) void upsertCloud(supabase, userId, next);
+  emitQuickViewFirst();
 }
