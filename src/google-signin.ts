@@ -28,8 +28,9 @@ const HANDOFF_KEY = "openscout:google-signin";
 export const isGoogleIdentityConfigured = Boolean(CLIENT_ID);
 
 // Google matches redirect_uri by exact string, so this has to be registered
-// verbatim under the client's "Authorized redirect URIs" — one per origin.
-const redirectUri = () => `${window.location.origin}/`;
+// verbatim under the client's "Authorized redirect URIs" — one per origin. No
+// trailing slash: the Cloud console strips it, so a slash here never matches.
+const redirectUri = () => window.location.origin;
 
 const hex = (buffer: ArrayBuffer) =>
   Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, "0")).join("");
