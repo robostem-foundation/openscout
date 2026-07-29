@@ -10720,11 +10720,11 @@ function SeasonSelector({
           ref={scrollRef}
           className={`season-scroll-view no-scrollbar${moreLeft ? " is-more-left" : ""}${moreRight ? " is-more-right" : ""}`}
         >
-          <div ref={trackRef} className="relative w-max rounded-lg bg-muted p-1">
+          <div ref={trackRef} className="season-track relative w-max rounded-lg bg-muted p-1">
             {pill && (
               <span
                 aria-hidden
-                className="pointer-events-none absolute inset-y-1 z-0 rounded-md bg-background shadow-sm ring-1 ring-black/5 transition-[transform,width] duration-200 ease-out"
+                className="season-pill pointer-events-none absolute inset-y-1 z-0 rounded-md bg-background shadow-sm ring-1 ring-black/5 transition-[transform,width] duration-200 ease-out"
                 style={{ width: pill.width, transform: `translateX(${pill.left}px)` }}
               />
             )}

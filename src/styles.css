@@ -624,6 +624,37 @@ main {
     flex-wrap: wrap;
     justify-content: center;
   }
+
+  /* The wrap above never actually happened, and the strip overflowed the PAGE —
+     which shifts the fixed mobile tab bar off-screen on iOS Safari (measured:
+     documentElement.scrollWidth 492 vs clientWidth 375, tab bar pushed to 481).
+     Two independent causes, both fixed here:
+
+     1. `.season-track` is Tailwind `w-max`, i.e. `width: max-content`, which
+        resolves to the UNWRAPPED single-line width. Wrapping can never shrink a
+        max-content box, so the track stayed full width no matter what
+        `flex-wrap` did. It needs an explicit width to wrap into.
+     2. Turning off `overflow-x` removed the only thing containing that width.
+
+     Keeping the wrap (rather than restoring the scroller) is deliberate: the
+     comment above this block states the intent — no label ever half-clipped. */
+  .home-events-header .season-track {
+    width: auto;
+    max-width: 100%;
+  }
+
+  /* The sliding pill is absolutely positioned from a JS-measured translateX and
+     only moves on one axis, so it lands on the wrong row the moment the strip
+     wraps. Suppress it and give the selected item its own background instead —
+     `data-[state=on]` otherwise only shifts text colour, which is too weak to
+     carry selection on its own. */
+  .home-events-header .season-pill {
+    display: none;
+  }
+  .home-events-header .season-track [data-slot="toggle-group-item"][data-state="on"] {
+    background: var(--surface);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
 }
 
 /* Program multi-select toggle (V5 / IQ / …). Multiple may be active at once. */
