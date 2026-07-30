@@ -7677,6 +7677,12 @@ function EventDetail({ param }: { param: string }) {
     },
     [event],
   );
+  // Deliberately a ref read during render, not state: consuming the focus must not
+  // re-render EventDetail. onFocusConsumed fires from the child's effect while the
+  // flash + smooth scroll are still animating, and a re-render of this tree there
+  // drops frames. The child holds its own one-shot guard, so nothing re-fires if
+  // this value goes stale.
+  // eslint-disable-next-line react-hooks/refs -- one-shot flag, intentionally non-reactive
   const activeFocusMatchId = focusMatchId && focusMatchId !== consumedMatchRef.current ? focusMatchId : null;
   // Switch tabs while preserving the current URL (keeps ?focusTeam so the team tab
   // stays available); used by the "See all" links on the team cards.
@@ -7964,10 +7970,12 @@ function EventDetail({ param }: { param: string }) {
     );
   }
 
-  _currentEventSeasonId = event.season.id;
-  _currentEventId = event.id;
-  _currentEventRankings = rankings.data?.data ?? [];
-  _currentEventMatches = matches.data?.data ?? [];
+  // The four `_currentEvent*` globals used to be re-assigned here as well as in the
+  // effects above. Writing them during render is a side effect, and it was
+  // redundant: every consumer reaches them from a user interaction (the compare
+  // modal, the quick view's mount-time capture, the C/compare shortcuts), which
+  // cannot happen before the effects for this commit have flushed. The effects are
+  // now the only writers, so the values are also cleaned up on unmount.
 
   return (
     <ProgramContext.Provider value={programSlug(event.program)}>
@@ -14943,7 +14951,11 @@ function WorldSkillsPageInner() {
     return Array.from(set).sort();
   }, [wsData]);
 
+  // `filterMs` is the "(N ms)" readout beside the result count, so the clock has to
+  // be read where the filtering happens. It is derived from the same inputs as
+  // `filtered` and only ever displayed, never branched on.
   const { filtered, filterMs } = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity -- timing a displayed perf readout
     const t0 = performance.now();
     let rows = wsData ?? [];
     const q = debouncedSearch.trim().toLowerCase();
@@ -14958,6 +14970,7 @@ function WorldSkillsPageInner() {
       );
     if (filterCountries.length) rows = rows.filter((r) => filterCountries.includes(r.team.country ?? ""));
     if (filterRegions.length) rows = rows.filter((r) => filterRegions.includes(r.team.eventRegion ?? ""));
+    // eslint-disable-next-line react-hooks/purity -- see t0 above
     return { filtered: rows, filterMs: Math.round(performance.now() - t0) };
   }, [wsData, debouncedSearch, filterCountries, filterRegions]);
 
