@@ -8604,6 +8604,39 @@ function TrendChart({
   // data, so a keyboard Enter while hovering can open that event (mirrors click).
   const activeIndexRef = useRef<number | null>(null);
   const dataRef = useRef<Array<Record<string, number | string | boolean | null>>>([]);
+
+  // recharts wants flat row objects; use index-safe series keys (s0, s1, …) so
+  // the generated --color-* CSS vars stay valid, with the display label, event
+  // tip, link, and marquee flag stashed alongside each row. The x-axis is keyed
+  // on a unique per-row `_key` (not the formatted month) so that two events in
+  // the same month don't collapse onto one category — which would desync the
+  // hover cursor from the active point.
+  //
+  // Built above the empty-state return so `dataRef` can be filled from an effect:
+  // writing a ref during render is a side effect, and a hook after a conditional
+  // return would break hook order.
+  const config: ChartConfig = {};
+  series.forEach((s, i) => {
+    config[`s${i}`] = { label: s.name, color: s.color };
+  });
+
+  const data = labels.map((label, i) => {
+    const row: Record<string, number | string | boolean | null> = {
+      _key: String(i),
+      _label: label,
+      _tip: tips?.[i] ?? label,
+      _link: links?.[i] ?? null,
+      _marquee: !!markers?.[i],
+    };
+    series.forEach((s, si) => {
+      row[`s${si}`] = s.values[i];
+    });
+    return row;
+  });
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== "Enter") return;
@@ -8626,32 +8659,6 @@ function TrendChart({
   let hi = yCeil ?? Math.max(...allValues);
   if (hi === lo) hi = lo + 1;
   else if (yCeil == null) hi = hi + (hi - lo) * yMaxPad;
-
-  // recharts wants flat row objects; use index-safe series keys (s0, s1, …) so
-  // the generated --color-* CSS vars stay valid, with the display label, event
-  // tip, link, and marquee flag stashed alongside each row. The x-axis is keyed
-  // on a unique per-row `_key` (not the formatted month) so that two events in
-  // the same month don't collapse onto one category — which would desync the
-  // hover cursor from the active point.
-  const config: ChartConfig = {};
-  series.forEach((s, i) => {
-    config[`s${i}`] = { label: s.name, color: s.color };
-  });
-
-  const data = labels.map((label, i) => {
-    const row: Record<string, number | string | boolean | null> = {
-      _key: String(i),
-      _label: label,
-      _tip: tips?.[i] ?? label,
-      _link: links?.[i] ?? null,
-      _marquee: !!markers?.[i],
-    };
-    series.forEach((s, si) => {
-      row[`s${si}`] = s.values[i];
-    });
-    return row;
-  });
-  dataRef.current = data;
 
   const goToEvent = (index: number | string | undefined) => {
     if (index == null) return;
@@ -10122,7 +10129,10 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   // Opened from inside the match-video modal: force a bottom sheet that layers
   // above the video dialog (see the `in-video` styles), ignoring the mode/side
   // settings so it never docks behind the darkened dialog backdrop.
-  const inVideo = useRef(_videoOverlayOpen).current;
+  // Captured once on mount via a lazy state initializer, not `useRef(x).current`:
+  // reading a ref during render is a side effect, and this value must not change
+  // for the panel's lifetime anyway.
+  const [inVideo] = useState(() => _videoOverlayOpen);
   const mode = (inVideo || state.forceSheet) ? "sheet" : modeSetting;
   const side: "left" | "right" = sideSetting === "adaptive" ? (state.pointerSide ?? "right") : sideSetting;
   // Animated close: drop `.open` so the slide-out transition plays, then tell
@@ -10149,8 +10159,10 @@ function TeamQuickView({ state, onClose }: { state: NonNullable<QuickViewState>;
   const primarySharedTeam = sharedTeams[0] ?? null;
   // Capture the event context once — quick view is opened from an event, and the
   // panel closes on navigation, so these stay valid for its lifetime.
-  const contextEventId = useRef(_currentEventId).current;
-  const contextSeasonId = useRef(_currentEventSeasonId).current;
+  // Lazy state initializers, same reasoning as `inVideo` above: captured on mount
+  // and constant thereafter, without reading a ref during render.
+  const [contextEventId] = useState(() => _currentEventId);
+  const [contextSeasonId] = useState(() => _currentEventSeasonId);
   const eventIdForPicklist = contextEventId;
 
   // Resolve the team. Most entry points pass a numeric id; alliance-seed links only
@@ -12269,6 +12281,12 @@ function MatchesTable({
     return map;
   }, [rankings]);
   const allianceRows = allianceRowsFromMatches(matches, rankByTeam);
+  // Declared before `renderElimGroups`, which closes over both. Leaving the memo
+  // below its own closure makes React Compiler bail on memoizing this component
+  // (it cannot prove the manual memoization is preserved).
+  const dayKeyOf = useMemo(() => makeMatchDayKey(eventTz), [eventTz]);
+  const dayKeys = [...new Set(matches.map(dayKeyOf).filter((key): key is string => !!key))].sort();
+  const dayNumbers = dayKeys.length > 1 ? new Map(dayKeys.map((key, index) => [key, index + 1] as const)) : undefined;
   const playoffOrder = ["r16", "qf", "sf", "f"];
   // Final-division events (two divisions facing off) have no qualification
   // matches, only the cross-division finals. In that case promote the
@@ -12307,10 +12325,6 @@ function MatchesTable({
           </section>
         );
       });
-
-  const dayKeyOf = useMemo(() => makeMatchDayKey(eventTz), [eventTz]);
-  const dayKeys = [...new Set(matches.map(dayKeyOf).filter((key): key is string => !!key))].sort();
-  const dayNumbers = dayKeys.length > 1 ? new Map(dayKeys.map((key, index) => [key, index + 1] as const)) : undefined;
 
   // IQ Teamwork: cooperative format. Finals are round 15; "alliances" are the
   // finals partner pairs seeded by score; there is no elimination bracket.
@@ -13966,10 +13980,15 @@ function TeamScoreChart({ points, isIq, onJump }: { points: ScorePoint[]; isIq: 
   const data = points.map((p, i) => ({ i, ...p }));
   // Track the hovered point so Enter — or a click — can open that match in Results.
   const activeIndexRef = useRef<number | null>(null);
+  // The keydown listener is attached once, so it reads the latest data and
+  // callback through refs. Filled from an effect rather than during render:
+  // effects flush before any keypress can reach the listener.
   const dataRef = useRef(data);
-  dataRef.current = data;
   const onJumpRef = useRef(onJump);
-  onJumpRef.current = onJump;
+  useEffect(() => {
+    dataRef.current = data;
+    onJumpRef.current = onJump;
+  }, [data, onJump]);
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== "Enter") return;
@@ -13981,11 +14000,12 @@ function TeamScoreChart({ points, isIq, onJump }: { points: ScorePoint[]; isIq: 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  // Click path — same render's closure, so no ref indirection needed.
   const jump = (index: number | string | undefined) => {
     if (index == null) return;
     const i = typeof index === "number" ? index : Number(index);
-    const id = dataRef.current[i]?.matchId;
-    if (id != null) onJumpRef.current?.(id);
+    const id = data[i]?.matchId;
+    if (id != null) onJump?.(id);
   };
   return (
     <ChartContainer config={config} className="w-full" style={{ height: 168, aspectRatio: "auto" }}>
