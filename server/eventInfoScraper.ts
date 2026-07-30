@@ -98,7 +98,7 @@ function findSection($: cheerio.CheerioAPI, ...names: string[]) {
 
 /** Strip non-breaking spaces and normalise whitespace from a text node. */
 function nodeText($el: cheerio.Cheerio<AnyNode>): string {
-  return $el.text().replace(/ /g, " ").trim();
+  return $el.text().replace(/\u00a0/g, " ").trim();
 }
 
 // Allowlist-based sanitizer for the scraped agenda HTML. Only structural /

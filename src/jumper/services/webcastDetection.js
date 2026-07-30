@@ -4,7 +4,7 @@ export const extractUrlsFromText = (text) => {
     if (!text) return [];
 
     // Regex to match URLs
-    const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/gi;
+    const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi;
     const matches = text.match(urlRegex) || [];
 
     return [...new Set(matches)]; // Remove duplicates
