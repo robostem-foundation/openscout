@@ -3298,7 +3298,8 @@ function CompareRowBtn({ teamId, teamNumber, programCode, teamName }: { teamId: 
       disabled={full}
       onClick={(e) => {
         e.stopPropagation();
-        inTray ? removeFromTray(teamId) : addToTray({ teamId, teamNumber, programCode, teamName });
+        if (inTray) removeFromTray(teamId);
+        else addToTray({ teamId, teamNumber, programCode, teamName });
       }}
     >
       <IconMorph morphed={inTray} size={11} tone="inherit">
@@ -5020,7 +5021,7 @@ function loadNearMeRadius(): number {
   } catch { return NEAR_ME_RADIUS_DEFAULT; }
 }
 function saveNearMeRadius(radius: number) {
-  try { localStorage.setItem(NEAR_ME_RADIUS_KEY, String(radius)); } catch {}
+  try { localStorage.setItem(NEAR_ME_RADIUS_KEY, String(radius)); } catch { /* ignore */ }
 }
 
 function EventsPager({
@@ -7932,7 +7933,7 @@ function EventDetail({ param }: { param: string }) {
       badge: seasonYearLabel(event.season?.name) ?? "'??",
     });
     refreshTrailLabel(window.location.pathname, event.name);
-  }, [event?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [event?.id]); // deps narrowed to the id on purpose: re-record only on a new event
 
   // Expose event season + event ID to comparison modal — skips season-derivation
   // API call and enables per-event stat rows.  Cleared on unmount.
@@ -8417,7 +8418,6 @@ function EventInfoTab({
             // Defense-in-depth: the HTML is already allowlist-sanitized server-side
             // (eventInfoScraper.sanitizeAgendaHtml); DOMPurify is a client backstop so
             // this sink can never render raw remote HTML if the scraper path regresses.
-            // eslint-disable-next-line react/no-danger
             <div
               className="event-info-agenda-html"
               dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(infoData.agenda.html, { ADD_ATTR: ["target"] }) }}
@@ -9845,13 +9845,13 @@ function TeamDetail({ param }: { param: string }) {
       badge: programSlug(team.program) || team.program?.code || "VEX",
     });
     refreshTrailLabel(window.location.pathname, team.number ?? String(team.id));
-  }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [team?.id]); // deps narrowed to the id on purpose: re-run only on a new team
 
   // Expose current team to the global C shortcut handler
   useEffect(() => {
     _currentTeam = team ?? null;
     return () => { _currentTeam = null; };
-  }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [team?.id]); // deps narrowed to the id on purpose: re-run only on a new team
 
   useEffect(() => {
     if (!team || !seasonOptions.length) return;
@@ -12615,7 +12615,7 @@ function noteCaretOffset(el: HTMLElement): number | null {
   const pre = range.cloneRange();
   pre.selectNodeContents(el);
   pre.setEnd(range.startContainer, range.startOffset);
-  return pre.toString().replace(/​/g, "").length;
+  return pre.toString().replace(/\u200b/g, "").length;
 }
 
 // Restore the caret to a plain-text character offset after a DOM rebuild.
@@ -12626,7 +12626,7 @@ function setNoteCaret(el: HTMLElement, offset: number) {
   let remaining = offset;
   let node: Node | null;
   while ((node = walker.nextNode())) {
-    const clean = (node.nodeValue ?? "").replace(/​/g, "");
+    const clean = (node.nodeValue ?? "").replace(/\u200b/g, "");
     if (clean.length === 0) continue; // skip the ZWSP landing node
     if (remaining <= clean.length) {
       const parent = node.parentElement;
@@ -12736,7 +12736,7 @@ function TeamNoteEditor({
       const el = editorRef.current;
       if (!el) return;
       el.focus();
-      const domText = (el.textContent ?? "").replace(/​/g, "");
+      const domText = (el.textContent ?? "").replace(/\u200b/g, "");
       const offset = noteCaretOffset(el) ?? domText.length;
       const next = domText.slice(0, offset) + str + domText.slice(offset);
       commit(next, offset + str.length);
@@ -12750,7 +12750,7 @@ function TeamNoteEditor({
   const onInput = useCallback(() => {
     const el = editorRef.current;
     if (!el || composingRef.current) return;
-    const rawText = (el.textContent ?? "").replace(/​/g, "");
+    const rawText = (el.textContent ?? "").replace(/\u200b/g, "");
     const truncated = rawText.length > NOTE_CHAR_LIMIT;
     const text = truncated ? rawText.slice(0, NOTE_CHAR_LIMIT) : rawText;
     onChange(text);
@@ -12813,7 +12813,7 @@ function TeamNoteEditor({
   useEffect(() => {
     const el = editorRef.current;
     if (!el || composingRef.current) return;
-    const domText = (el.textContent ?? "").replace(/​/g, "");
+    const domText = (el.textContent ?? "").replace(/\u200b/g, "");
     if (domText === value && lastLookupKey.current === lookupKey) return;
     lastLookupKey.current = lookupKey;
     const focused = el.contains(document.activeElement);
@@ -12827,7 +12827,7 @@ function TeamNoteEditor({
     const el = editorRef.current;
     if (!el) return;
     el.focus();
-    setNoteCaret(el, (el.textContent ?? "").replace(/​/g, "").length);
+    setNoteCaret(el, (el.textContent ?? "").replace(/\u200b/g, "").length);
   }, [autoFocus]);
 
   // Expose imperative insert for callers that inject text at the caret.
@@ -14712,7 +14712,7 @@ function loadWsPrefs(): WsPrefs {
   try { return JSON.parse(localStorage.getItem(WS_PREFS_KEY) ?? "{}"); } catch { return {}; }
 }
 function saveWsPrefs(prefs: WsPrefs) {
-  try { localStorage.setItem(WS_PREFS_KEY, JSON.stringify(prefs)); } catch {}
+  try { localStorage.setItem(WS_PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
 }
 function wsGradeToParam(g: string) {
   if (g === "High School") return "hs";
@@ -18136,7 +18136,7 @@ function ComparisonModal({ entries, onClose }: { entries: TrayEntry[]; onClose: 
     }));
 
     return () => { live.value = false; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally runs once on mount
+  }, []); // intentionally runs once on mount
 
   const loadedProfiles = slots.map((s) => s.profile).filter((p): p is Team => !!p);
   const isIqCompare = loadedProfiles.length > 0 && loadedProfiles.every((p) => isIqProgramInfo(p.program));
@@ -19275,7 +19275,8 @@ export default function App() {
       // Cmd+K / Ctrl+K — fires even when typing in an input
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        _spotlightOpen ? closeSpotlight() : openSpotlight();
+        if (_spotlightOpen) closeSpotlight();
+        else openSpotlight();
         return;
       }
 
@@ -19306,9 +19307,8 @@ export default function App() {
       // C → toggle current team in compare tray (when on a team page)
       if (e.key === "c" && !e.metaKey && !e.ctrlKey && _currentTeam !== null) {
         const t = _currentTeam;
-        isInTray(t.id)
-          ? removeFromTray(t.id)
-          : addToTray({ teamId: t.id, teamNumber: t.number, programCode: programSlug(t.program), teamName: t.team_name ?? undefined });
+        if (isInTray(t.id)) removeFromTray(t.id);
+        else addToTray({ teamId: t.id, teamNumber: t.number, programCode: programSlug(t.program), teamName: t.team_name ?? undefined });
         return;
       }
 

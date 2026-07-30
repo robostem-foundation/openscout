@@ -141,7 +141,7 @@ export const getMatchesForEventAndTeam = async (eventId, teamId) => {
                     page++;
                 } while (page <= lastPage);
             }
-        } catch (divisionError) {
+        } catch {
             // This is expected for some events that don't expose divisions
             console.warn('Divisions endpoint not available (404), falling back to team-based fetch.');
 
