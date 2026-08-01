@@ -25,6 +25,26 @@ if (!process.env.ROBOTEVENTS_API_KEY) {
   throw new Error("Missing ROBOTEVENTS_API_KEY in .env");
 }
 
+/**
+ * Apply the shared abuse guard to a feature endpoint. Returns false when the
+ * request has already been answered and the handler should stop.
+ *
+ * The feature endpoints below were previously unguarded, which left the metered
+ * cors.sh quota (event-grades, spotlight-events) and the multi-MB skills board
+ * (top-skills) open to unthrottled use.
+ */
+async function passesGuard(req: express.Request, res: express.Response): Promise<boolean> {
+  const guard = await guardProxyRequest({
+    origin: req.headers.origin ?? null,
+    referer: req.headers.referer ?? null,
+    ip: clientIpFromForwardedFor(req.headers["x-forwarded-for"], req.socket.remoteAddress ?? "unknown"),
+  });
+  if (guard.ok) return true;
+  if (guard.retryAfter) res.setHeader("retry-after", String(guard.retryAfter));
+  res.status(guard.status).json({ message: guard.message });
+  return false;
+}
+
 function proxyRoute(source: ProxySource) {
   return async (req: express.Request, res: express.Response) => {
     // Abuse guard (no-op locally unless APP_ORIGIN / Upstash are configured).
@@ -59,6 +79,7 @@ function proxyRoute(source: ProxySource) {
 
 // Event info scraper — must come before the /api/re-root catch-all
 app.get("/api/event-info", async (req: express.Request, res: express.Response) => {
+  if (!(await passesGuard(req, res))) return;
   const sku = req.query.sku as string | undefined;
   if (!sku) {
     res.status(400).json({ error: "sku query param is required" });
@@ -76,6 +97,7 @@ app.get("/api/event-info", async (req: express.Request, res: express.Response) =
 
 // Event grade-level lookup (cache-first scrape) — also before the catch-alls.
 app.get("/api/event-grades", async (req: express.Request, res: express.Response) => {
+  if (!(await passesGuard(req, res))) return;
   const requests = parseSkuParam(typeof req.query.sku === "string" ? req.query.sku : "");
   if (!requests.length) {
     res.status(400).json({ error: "sku query param is required (comma-separated SKU:programId)" });
@@ -94,6 +116,7 @@ app.get("/api/event-grades", async (req: express.Request, res: express.Response)
 // Top world-skills row per program + grade (server-trimmed) — also before the
 // catch-alls so it isn't swallowed by the /api/re-root proxy.
 app.get("/api/top-skills", async (req: express.Request, res: express.Response) => {
+  if (!(await passesGuard(req, res))) return;
   const program = typeof req.query.program === "string" ? req.query.program : null;
   const grade = typeof req.query.grade === "string" ? req.query.grade : null;
   if (!isTopSkillsProgram(program) || !isTopSkillsGrade(grade) || !programRunsGrade(program, grade)) {
@@ -111,7 +134,8 @@ app.get("/api/top-skills", async (req: express.Request, res: express.Response) =
 });
 
 // Spotlight-tier event SKUs (see server/spotlightEvents.ts) — before the catch-alls.
-app.get("/api/spotlight-events", async (_req: express.Request, res: express.Response) => {
+app.get("/api/spotlight-events", async (req: express.Request, res: express.Response) => {
+  if (!(await passesGuard(req, res))) return;
   try {
     const result = await resolveSpotlightEvents(await currentSeasonByProgram());
     res.setHeader("cache-control", "public, s-maxage=21600, stale-while-revalidate=86400");

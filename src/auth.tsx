@@ -21,7 +21,33 @@ export type Profile = {
   team_program: string | null;
   theme: "light" | "dark" | "system" | null;
   onboarding_done: boolean;
+  // Set when the user has asked for deletion. The account is treated as disabled
+  // from that moment; the row is purged permanently once the window closes.
+  deletion_requested_at: string | null;
 };
+
+/** Days between requesting deletion and the permanent purge (see migration 0014). */
+export const ACCOUNT_DELETION_WINDOW_DAYS = 14;
+
+/**
+ * Ask for this account to be deleted. Returns the date the purge becomes due, or
+ * null when the call failed. Idempotent — a second request does not extend the
+ * window.
+ */
+export async function requestAccountDeletion(): Promise<Date | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("request_account_deletion");
+  if (error || !data) return null;
+  return new Date(data as string);
+}
+
+/** Cancel a pending deletion. Returns true when a pending request was cleared. */
+export async function cancelAccountDeletion(): Promise<boolean> {
+  if (!supabase) return false;
+  const { data, error } = await supabase.rpc("cancel_account_deletion");
+  if (error) return false;
+  return data === true;
+}
 
 export const AUTH_PROGRAMS = [
   { label: "V5RC", value: "1" },
@@ -65,6 +91,7 @@ type AuthValue = {
   signInWithDiscord: () => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (patch: Partial<Profile>) => Promise<void>;
+  refreshProfile: () => Promise<void>;
   openProfileEditor: () => void;
   closeProfileEditor: () => void;
   profileEditorOpen: boolean;
@@ -174,6 +201,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }, []);
 
+  // Re-read the profile row. Needed after an RPC changes it server-side (account
+  // deletion request / restore), where there is no patch to apply optimistically.
+  const refreshProfile = useCallback(async () => {
+    if (!supabase || !user) return;
+    const { data } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+    if (data) setProfile(data as Profile);
+  }, [user?.id]);
+
   const updateProfile = useCallback(
     async (patch: Partial<Profile>) => {
       if (!supabase || !user) return;
@@ -198,11 +233,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signInWithDiscord: () => signInWith("discord"),
       signOut,
       updateProfile,
+      refreshProfile,
       openProfileEditor: () => setProfileEditorOpen(true),
       closeProfileEditor: () => setProfileEditorOpen(false),
       profileEditorOpen,
     }),
-    [ready, user, session, profile, profileEditorOpen, signInWith, signOut, updateProfile],
+    [ready, user, session, profile, profileEditorOpen, signInWith, signOut, updateProfile, refreshProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

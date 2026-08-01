@@ -175,6 +175,36 @@ export async function guardProxyRequest(input: {
   return { ok: true };
 }
 
+/**
+ * Apply `guardProxyRequest` to a bare Node request/response pair and answer it
+ * on rejection. Returns false when the response has already been sent and the
+ * caller should stop.
+ *
+ * Used by the feature endpoints under `api/` (event-info, event-grades,
+ * top-skills, spotlight-events), which were previously unguarded — leaving the
+ * metered cors.sh quota and the multi-MB skills board open to unthrottled use.
+ */
+export async function guardNodeRequest(
+  req: { headers: Record<string, string | string[] | undefined> },
+  res: { statusCode: number; setHeader(name: string, value: string): void; end(body?: string): void },
+): Promise<boolean> {
+  const header = (name: string): string | null => {
+    const value = req.headers[name];
+    return (Array.isArray(value) ? value[0] : value) ?? null;
+  };
+  const guard = await guardProxyRequest({
+    origin: header("origin"),
+    referer: header("referer"),
+    ip: clientIpFromForwardedFor(req.headers["x-forwarded-for"]),
+  });
+  if (guard.ok) return true;
+  res.statusCode = guard.status;
+  if (guard.retryAfter) res.setHeader("retry-after", String(guard.retryAfter));
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify({ message: guard.message }));
+  return false;
+}
+
 /** Extract the client IP from an x-forwarded-for header value (first hop). */
 export function clientIpFromForwardedFor(value: string | string[] | null | undefined, fallback = "unknown"): string {
   const raw = Array.isArray(value) ? value[0] : value;

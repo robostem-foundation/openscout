@@ -1,6 +1,11 @@
 -- 0007: Rename Org → Shared Team (in-place, no data loss).
 -- Run manually in the Supabase SQL editor (or Management API) in one transaction.
 --
+-- SUPERSEDED IN PART — do not re-run this after 0008/0011. It reverts 0008's
+-- WITH CHECK hardening on the two UPDATE policies, and repoints six policies back
+-- at public.is_shared_team_member, which 0011 dropped in favour of the unexposed
+-- private.is_shared_team_member.
+--
 -- NOTE: This migration is defensive about org_picklists. In some environments
 -- 0005_picklist.sql was never applied, so org_picklists may not exist. The DO
 -- block below renames it when present, or creates shared_team_picklists fresh

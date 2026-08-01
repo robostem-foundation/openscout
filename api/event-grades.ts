@@ -10,6 +10,7 @@
 import "dotenv/config";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolveEventGrades } from "../server/eventGrades.js";
+import { guardNodeRequest } from "../server/proxy.js";
 
 // One page of events at most — the client only asks about rows it is rendering.
 const MAX_ITEMS = 40;
@@ -29,6 +30,7 @@ export function parseSkuParam(raw: string): Array<{ sku: string; programId: numb
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  if (!(await guardNodeRequest(req, res))) return;
   const parsed = new URL(req.url ?? "", "http://localhost");
   const requests = parseSkuParam(parsed.searchParams.get("sku") ?? "");
 

@@ -159,20 +159,32 @@ export async function createSharedTeam(
   return sharedTeamId;
 }
 
-/** Update shared team name / team info. */
+/**
+ * Update shared team name / team info.
+ *
+ * Returns false when the write did not land. The UPDATE policy is owner-only, and
+ * PostgREST reports an RLS-filtered update as a successful zero-row no-op — so the
+ * affected-row count, not the error, is what tells us whether anything changed.
+ * Local state is only mutated once the write is confirmed.
+ */
 export async function updateSharedTeam(
   sharedTeamId: string,
   patch: { name?: string; teamProgram?: string | null; teamNumber?: string | null },
-): Promise<void> {
+): Promise<boolean> {
   const sb = supabase;
-  if (!sb) return;
+  if (!sb) return false;
 
   const update: Record<string, unknown> = {};
   if (patch.name !== undefined) update["name"] = patch.name.trim();
   if (patch.teamProgram !== undefined) update["team_program"] = patch.teamProgram;
   if (patch.teamNumber !== undefined) update["team_number"] = patch.teamNumber;
 
-  await sb.from("shared_teams").update(update).eq("id", sharedTeamId);
+  const { data, error } = await sb
+    .from("shared_teams")
+    .update(update)
+    .eq("id", sharedTeamId)
+    .select("id");
+  if (error || !data || data.length === 0) return false;
 
   setState({
     sharedTeams: state.sharedTeams.map((o) =>
@@ -186,6 +198,7 @@ export async function updateSharedTeam(
           },
     ),
   });
+  return true;
 }
 
 /** Leave the shared team (remove self from shared_team_members). */
