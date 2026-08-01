@@ -143,6 +143,17 @@ function Viewer({ onGoToWorlds }) {
     const [players, setPlayers] = useState({});
     const [playerStates, setPlayerStates] = useState({}); // YouTube state per stream (1 = playing)
 
+    // Every stream stays mounted and inactive ones are hidden with `display: none`
+    // so switching is instant and each player keeps its seek position. A hidden
+    // iframe keeps playing though, so its audio bleeds over the visible stream —
+    // pause everything that isn't active whenever the selection changes.
+    useEffect(() => {
+        for (const [streamId, player] of Object.entries(players)) {
+            if (streamId === String(activeStreamId)) continue;
+            try { player?.pauseVideo?.(); } catch { /* player torn down */ }
+        }
+    }, [activeStreamId, players]);
+
     // Loading states
     const [eventLoading, setEventLoading] = useState(false);
     const [teamLoading, setTeamLoading] = useState(false);

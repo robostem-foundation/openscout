@@ -66,7 +66,7 @@ import DOMPurify from "dompurify";
 import { api } from "./api";
 import JumperPage from "./jumper/JumperPage.jsx";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
-import { AUTH_PROGRAMS, AuthSlot, GoogleSignInButton, OnboardingModal, programLabel, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
+import { ACCOUNT_DELETION_WINDOW_DAYS, AUTH_PROGRAMS, AuthSlot, cancelAccountDeletion, GoogleSignInButton, OnboardingModal, programLabel, requestAccountDeletion, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { dayToNumber, daysUntilEventDay, eventDayMs, eventDayNumber, eventDayToUtcNoon, eventDayYear, eventDayParts, formatEventDay, formatEventDayPadded, todayInZone } from "./event-dates";
 import { readSearchBias, syncSearchBias, toGradeCode, useSearchBias } from "./search-bias";
 import { loadCachedWorldSkills, useWorldSkillsVersion, worldSkillsMeta } from "./world-skills-cache";
@@ -3563,6 +3563,36 @@ function PicklistTab({ event, sharedTeamId, rankings = [] }: { event: { id: numb
   const eventIdStr = String(event.id);
   const remaining = entries.filter((e) => !e.crossedOut).length;
 
+  // Notes used to persist on blur alone, which loses text whenever the field
+  // never blurs — a background/app switch on mobile, or closing the tab mid-edit.
+  // Write on a short debounce instead, and flush any pending write on unmount.
+  const noteTimers = useRef<Map<string, number>>(new Map());
+  const queueNoteSave = useCallback(
+    (teamId: string, value: string) => {
+      const timers = noteTimers.current;
+      const pending = timers.get(teamId);
+      if (pending) window.clearTimeout(pending);
+      timers.set(
+        teamId,
+        window.setTimeout(() => {
+          timers.delete(teamId);
+          void updatePicklistNotes(sharedTeamId, eventIdStr, teamId, value);
+        }, 600),
+      );
+    },
+    [sharedTeamId, eventIdStr],
+  );
+  const flushNoteSave = useCallback((teamId: string, value: string) => {
+    const pending = noteTimers.current.get(teamId);
+    if (pending) window.clearTimeout(pending);
+    noteTimers.current.delete(teamId);
+    void updatePicklistNotes(sharedTeamId, eventIdStr, teamId, value);
+  }, [sharedTeamId, eventIdStr]);
+  useEffect(() => {
+    const timers = noteTimers.current;
+    return () => { for (const t of timers.values()) window.clearTimeout(t); };
+  }, []);
+
   function handleDrop(targetIndex: number) {
     if (dragIndex === null || dragIndex === targetIndex) {
       setDragIndex(null);
@@ -3692,10 +3722,12 @@ function PicklistTab({ event, sharedTeamId, rankings = [] }: { event: { id: numb
               className="picklist-notes"
               placeholder="Notes…"
               value={localNotes[entry.teamId] ?? entry.notes}
-              onChange={(e) =>
-                setLocalNotes((prev) => ({ ...prev, [entry.teamId]: e.target.value }))
-              }
-              onBlur={(e) => void updatePicklistNotes(sharedTeamId, eventIdStr, entry.teamId, e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setLocalNotes((prev) => ({ ...prev, [entry.teamId]: value }));
+                queueNoteSave(entry.teamId, value);
+              }}
+              onBlur={(e) => flushNoteSave(entry.teamId, e.target.value)}
               onClick={(e) => e.stopPropagation()}
             />
             <button
@@ -15039,7 +15071,9 @@ function WorldSkillsPageInner() {
     const combined = (Number(wpAuto) || 0) + (Number(wpDriver) || 0);
     const idx = filtered.findIndex((r) => r.scores.score <= combined);
     const rank = idx === -1 ? filtered.length + 1 : idx + 1;
-    const percentile = ((filtered.length - rank + 1) / Math.max(filtered.length, 1) * 100).toFixed(1);
+    // "top N%" means the fraction of the field at or above this rank, so it is
+    // rank/total — not the inverse, which reported "top 100.0%" for rank 1.
+    const percentile = (rank / Math.max(filtered.length, 1) * 100).toFixed(1);
     return { rank, percentile, total: filtered.length, combined };
   }, [wpAuto, wpDriver, filtered]);
 
@@ -15914,7 +15948,87 @@ function ProfileSettings() {
             {saved ? "Saved" : ""}
           </span>
         </div>
+
+        <DeleteAccountSection />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Request account deletion, with the restore window spelled out before the user
+ * commits. Deletion is a two-step confirm rather than a modal: the destructive
+ * action is reversible for 14 days, so the cost of a mis-click is low and the
+ * copy can carry the weight.
+ */
+function DeleteAccountSection() {
+  const { profile, refreshProfile } = useAuth();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pendingSince = profile?.deletion_requested_at ?? null;
+
+  const purgeDate = pendingSince
+    ? new Date(new Date(pendingSince).getTime() + ACCOUNT_DELETION_WINDOW_DAYS * 86400000)
+    : null;
+
+  const handleRequest = async () => {
+    if (!confirming) { setConfirming(true); return; }
+    setBusy(true);
+    setError(null);
+    const due = await requestAccountDeletion();
+    setBusy(false);
+    setConfirming(false);
+    if (!due) { setError("Could not start deletion. Try again in a moment."); return; }
+    await refreshProfile();
+  };
+
+  const handleCancel = async () => {
+    setBusy(true);
+    setError(null);
+    const ok = await cancelAccountDeletion();
+    setBusy(false);
+    if (!ok) { setError("Could not restore the account. Try again in a moment."); return; }
+    await refreshProfile();
+  };
+
+  if (pendingSince) {
+    return (
+      <div className="danger-zone">
+        <h3>Deletion scheduled</h3>
+        <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--text-muted)" }}>
+          This account and everything in it will be permanently deleted on{" "}
+          {purgeDate?.toLocaleDateString(undefined, { dateStyle: "long" })}. You can
+          restore it any time before then.
+        </p>
+        <Button variant="outline" onClick={() => void handleCancel()} disabled={busy}>
+          {busy ? "Restoring…" : "Restore account"}
+        </Button>
+        {error && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--danger, #dc2626)" }}>{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="danger-zone">
+      <h3>Delete account</h3>
+      <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--text-muted)" }}>
+        Deletes your profile, settings, notes, and shared team memberships. You have{" "}
+        {ACCOUNT_DELETION_WINDOW_DAYS} days to change your mind — after that it cannot
+        be undone. Shared team notes and picklists you contributed stay with the team,
+        without your name on them.
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="destructive" onClick={() => void handleRequest()} disabled={busy}>
+          {busy ? "Working…" : confirming ? "Confirm deletion" : "Delete account"}
+        </Button>
+        {confirming && (
+          <Button variant="outline" onClick={() => setConfirming(false)} disabled={busy}>
+            Cancel
+          </Button>
+        )}
+      </div>
+      {error && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--danger, #dc2626)" }}>{error}</p>}
     </div>
   );
 }
@@ -16506,7 +16620,11 @@ function SharedTeamOverviewTab({ sharedTeamId, team }: { sharedTeamId: string; t
   const [teamNumber, setTeamNumber] = useState(team?.teamNumber ?? "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // Only the owner can update the shared team (UPDATE policy is owner-only), so
+  // everyone else gets a read-only view rather than controls that cannot work.
+  const canEdit = team?.role === "owner";
 
   // Sync local fields if the shared team loads after mount
   useEffect(() => {
@@ -16519,8 +16637,13 @@ function SharedTeamOverviewTab({ sharedTeamId, team }: { sharedTeamId: string; t
 
   const handleSave = async () => {
     setSaving(true);
-    await updateSharedTeam(sharedTeamId, { name, teamProgram: program || null, teamNumber: teamNumber.trim() || null });
+    setSaveError(false);
+    const ok = await updateSharedTeam(sharedTeamId, { name, teamProgram: program || null, teamNumber: teamNumber.trim() || null });
     setSaving(false);
+    if (!ok) {
+      setSaveError(true);
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -16548,12 +16671,13 @@ function SharedTeamOverviewTab({ sharedTeamId, team }: { sharedTeamId: string; t
             value={name}
             onChange={(e) => setName(e.target.value.slice(0, 40))}
             maxLength={40}
+            disabled={!canEdit}
           />
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field>
             <FieldLabel htmlFor="os-program">Program</FieldLabel>
-            <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)}>
+            <Select value={program || "none"} onValueChange={(v) => setProgram(v === "none" ? "" : v)} disabled={!canEdit}>
               <SelectTrigger id="os-program" className="w-full">
                 <SelectValue placeholder="Any / none" />
               </SelectTrigger>
@@ -16573,20 +16697,34 @@ function SharedTeamOverviewTab({ sharedTeamId, team }: { sharedTeamId: string; t
               value={teamNumber}
               onChange={(e) => setTeamNumber(e.target.value.slice(0, 10))}
               placeholder="e.g. 10B"
+              disabled={!canEdit}
             />
           </Field>
         </div>
       </FieldGroup>
-      <Button
-        className={`self-start${confirmClass(saved, "success")}`}
-        onClick={() => void handleSave()}
-        disabled={saving || !name.trim()}
-      >
-        <IconMorph morphed={saved} size={14} tone="success">
-          <Save size={14} />
-        </IconMorph>
-        {saved ? "Saved!" : saving ? "Saving…" : "Save changes"}
-      </Button>
+      {canEdit ? (
+        <>
+          <Button
+            className={`self-start${confirmClass(saved, "success")}`}
+            onClick={() => void handleSave()}
+            disabled={saving || !name.trim()}
+          >
+            <IconMorph morphed={saved} size={14} tone="success">
+              <Save size={14} />
+            </IconMorph>
+            {saved ? "Saved!" : saving ? "Saving…" : "Save changes"}
+          </Button>
+          {saveError && (
+            <p style={{ margin: 0, fontSize: 13, color: "var(--danger, #dc2626)" }}>
+              Could not save those changes. Reload and try again.
+            </p>
+          )}
+        </>
+      ) : (
+        <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
+          Only the shared team owner can change these details.
+        </p>
+      )}
 
       <div className="danger-zone">
         <h3>{team.role === "owner" ? "Delete shared team" : "Leave shared team"}</h3>

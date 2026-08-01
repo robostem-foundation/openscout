@@ -1,6 +1,11 @@
 -- 0008: RLS hardening.
 -- Run manually in the Supabase SQL editor after 0007. Idempotent & transactional.
 --
+-- SUPERSEDED IN PART — do not re-run this after 0011. The three functions below
+-- moved to the unexposed `private` schema in 0011; recreating them here as
+-- SECURITY DEFINER in `public` restores the exposure 0011 removed (advisors
+-- 0028/0029) while the policies stay pointed at `private`.
+--
 -- Two fixes:
 --   1. Add WITH CHECK to the two UPDATE policies that only had USING. Without a
 --      WITH CHECK, Postgres reuses USING for the post-update row — and neither

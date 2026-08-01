@@ -7,8 +7,10 @@
 import "dotenv/config";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { isTopSkillsGrade, isTopSkillsProgram, programRunsGrade, resolveTopSkills } from "../server/topSkills.js";
+import { guardNodeRequest } from "../server/proxy.js";
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  if (!(await guardNodeRequest(req, res))) return;
   const url = new URL(req.url ?? "", "http://localhost");
   const program = url.searchParams.get("program");
   const grade = url.searchParams.get("grade");

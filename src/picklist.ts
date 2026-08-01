@@ -108,6 +108,9 @@ async function loadForKey(sharedTeamId: string, eventId: string): Promise<void> 
         .select("id, team_id, team_number, team_name, sort_order, notes, crossed_out")
         .eq("shared_team_id", sharedTeamId)
         .eq("event_id", eventId)
+        // Removals are tombstoned rather than deleted (migration 0013), so a
+        // stale local copy can no longer resurrect a team another member removed.
+        .is("deleted_at", null)
         .order("sort_order", { ascending: true });
 
       if (!error && data) {
@@ -196,6 +199,9 @@ export async function addToPicklist(
         notes: "",
         crossed_out: false,
         added_by: uid,
+        // Re-adding a team clears any tombstone: the unique constraint on
+        // (shared_team_id, event_id, team_id) means the row is reused, not replaced.
+        deleted_at: null,
       }, { onConflict: "shared_team_id,event_id,team_id" })
       .select("id")
       .single();
@@ -229,9 +235,12 @@ export async function removeFromPicklist(
   const sb = supabase;
   if (!sb) return;
   try {
+    // Tombstone rather than DELETE. A hard delete leaves no trace, so another
+    // member's stale local copy re-inserts the row on its next merge — during
+    // live alliance selection that means a team you crossed off comes back.
     const { error } = await sb
       .from("shared_team_picklists")
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq("shared_team_id", sharedTeamId)
       .eq("event_id", eventId)
       .eq("team_id", teamId);
@@ -399,6 +408,7 @@ export async function listSharedTeamPicklistEvents(sharedTeamId: string, topN = 
         .from("shared_team_picklists")
         .select("event_id, team_number, team_name, sort_order")
         .eq("shared_team_id", sharedTeamId)
+        .is("deleted_at", null)
         .order("sort_order", { ascending: true });
       if (!error && data) {
         for (const row of data as Array<{ event_id: string; team_number: string; team_name: string | null; sort_order: number }>) {
@@ -457,6 +467,7 @@ export async function loadSharedTeamPicklistEntries(sharedTeamId: string): Promi
         .from("shared_team_picklists")
         .select("id, event_id, team_id, team_number, team_name, sort_order, notes, crossed_out")
         .eq("shared_team_id", sharedTeamId)
+        .is("deleted_at", null)
         .order("sort_order", { ascending: true });
       if (!error && data) {
         for (const row of data as Array<{ id: string; event_id: string; team_id: string; team_number: string; team_name: string | null; sort_order: number; notes: string | null; crossed_out: boolean }>) {

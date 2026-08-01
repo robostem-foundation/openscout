@@ -92,7 +92,7 @@ export type ActivityItem = {
  * Builds a recent-activity feed by merging the newest rows from shared_team_match_notes,
  * shared_team_picklists, and shared_team_favorites. This is "recent state", not an audit log:
  * deletes leave no trace and notes only carry updated_at. No new table needed —
- * every select rides the existing is_shared_team_member RLS policy.
+ * every select rides the existing private.is_shared_team_member RLS policy.
  */
 export async function loadSharedTeamActivity(sharedTeamId: string, limit = 50): Promise<ActivityItem[]> {
   const sb = supabase;

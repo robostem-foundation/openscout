@@ -9,8 +9,10 @@ import "dotenv/config";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolveSpotlightEvents } from "../server/spotlightEvents.js";
 import { currentSeasonByProgram } from "../server/topSkills.js";
+import { guardNodeRequest } from "../server/proxy.js";
 
-export default async function handler(_req: IncomingMessage, res: ServerResponse) {
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  if (!(await guardNodeRequest(req, res))) return;
   res.setHeader("content-type", "application/json");
   try {
     const result = await resolveSpotlightEvents(await currentSeasonByProgram());
