@@ -37,6 +37,7 @@ async function passesGuard(req: express.Request, res: express.Response): Promise
   const guard = await guardProxyRequest({
     origin: req.headers.origin ?? null,
     referer: req.headers.referer ?? null,
+    authorization: req.headers.authorization ?? null,
     ip: clientIpFromForwardedFor(req.headers["x-forwarded-for"], req.socket.remoteAddress ?? "unknown"),
   });
   if (guard.ok) return true;
@@ -51,6 +52,7 @@ function proxyRoute(source: ProxySource) {
     const guard = await guardProxyRequest({
       origin: req.headers.origin ?? null,
       referer: req.headers.referer ?? null,
+      authorization: req.headers.authorization ?? null,
       ip: clientIpFromForwardedFor(req.headers["x-forwarded-for"], req.socket.remoteAddress ?? "unknown"),
     });
     if (!guard.ok) {
@@ -153,6 +155,7 @@ app.post("/api/translate", express.json({ limit: "64kb" }), async (req: express.
   const guard = await guardProxyRequest({
     origin: req.headers.origin ?? null,
     referer: req.headers.referer ?? null,
+    authorization: req.headers.authorization ?? null,
     ip: clientIpFromForwardedFor(req.headers["x-forwarded-for"], req.socket.remoteAddress ?? "unknown"),
   });
   if (!guard.ok) {
