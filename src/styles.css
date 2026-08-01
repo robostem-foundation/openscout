@@ -7310,8 +7310,15 @@ footer {
     order: -1;
   }
 
+  /* minmax(0, …) — NOT plain 1fr — for the same reason as the sidebar variant
+     above: the season/program strips have a wide intrinsic width that a plain
+     `1fr` track propagates as min-content, pushing the whole page sideways. */
   .event-toolbar-inline .event-filter-fields {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .event-toolbar-inline .filter-section,
+  .event-toolbar-inline .filter-field {
+    min-width: 0;
   }
 
   .filters {
@@ -7375,7 +7382,7 @@ footer {
   }
 
   .event-toolbar-inline .event-filter-fields {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .global-search {
@@ -15167,5 +15174,40 @@ td.col-muted { color: var(--text-2); }
     display: flex;
     flex-wrap: wrap;
     gap: 8px 10px;
+  }
+}
+
+/* ═══ Mobile: flyout menus always open fully on screen ═══
+   Every picker flyout is absolutely positioned against its trigger and carries
+   a desktop-sized width (`min(360px, 82vw)`, `min(460px, 86vw)`, …). On a phone
+   that width is wider than the trigger, so a menu anchored to a chip near an
+   edge — the Teams region filter is the worst of them — hangs off the side of
+   the viewport. Give the triggers their own row and let the menu span it, so
+   the panel is exactly as wide as the screen allows and never overhangs. The
+   event-filter sidebar already does this via its own block above; these rules
+   are the general case, and they only exist below 760px so desktop is
+   untouched. */
+@media (max-width: 760px) {
+  /* A picker trigger takes a full row, giving its menu the width to open into. */
+  .filters .picker-menu,
+  .team-filters .picker-menu {
+    flex: 1 1 100%;
+  }
+
+  .picker-menu-list {
+    left: 0;
+    right: 0;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  /* Menus that size to their own content (rather than to a full-width trigger)
+     already fit today, but cap them so a long label can't push one off-screen.
+     `.ws-filter-dropdown` gets the same cap from its own block above. */
+  .skills-lb-vex-menu,
+  .breadcrumb-menu,
+  .auth-dropdown {
+    max-width: calc(100vw - 24px);
   }
 }
