@@ -12996,6 +12996,16 @@ a.myteam-tcard:hover { border-color: var(--accent); }
 .myteam-recent-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
 .myteam-recent-row:last-child { border-bottom: none; padding-bottom: 0; }
 .myteam-recent .rr-label { font-size: 13px; color: var(--text); }
+/* One-line event header above each run of matches from the same event. */
+.myteam-recent-evrow { display: flex; min-width: 0; padding: 10px 0 2px; }
+.myteam-recent-evrow:first-child { padding-top: 0; }
+.myteam-recent-evrow .rr-event { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; text-decoration: none; }
+.myteam-recent-evrow .rr-event-name { font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.myteam-recent-evrow a.rr-event:hover .rr-event-name { color: var(--accent); }
+.myteam-recent-evrow .event-tier-tag { flex: 0 0 auto; }
+@media (max-width: 700px) {
+  .myteam-recent-evrow .event-tier-tag { display: none; }
+}
 .myteam-recent-skill .rr-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
 .myteam-recent .rr-open { display: inline-flex; align-items: center; color: var(--text-faint); flex: 0 0 auto; }
 .myteam-recent .rr-open:hover { color: var(--accent); }
