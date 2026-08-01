@@ -5,6 +5,7 @@
 
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { isAppAuthConfigured, verifyAppToken } from "./appAuth.js";
 
 export const PROXY_SOURCES = ["rse", "re", "re-root", "jumper"] as const;
 export type ProxySource = (typeof PROXY_SOURCES)[number];
@@ -152,21 +153,39 @@ export type GuardResult =
   | { ok: false; status: number; message: string; retryAfter?: number };
 
 /**
- * Combined proxy guard: rejects disallowed origins (403) and IPs over the rate
- * limit (429). Both checks are skipped when their env config is absent, so
+ * Combined proxy guard: rejects unauthorized callers (403) and callers over the
+ * rate limit (429). Both checks are skipped when their env config is absent, so
  * `npm run dev` works with no extra setup.
+ *
+ * A caller is authorized by *either* an allow-listed origin (browsers) or a
+ * valid Supabase access token (native clients, which send no Origin/Referer at
+ * all — see appAuth.ts). The origin check runs first because it is synchronous
+ * and covers essentially all web traffic; token verification only happens for
+ * requests that would otherwise be rejected.
+ *
+ * Rate limiting keys on the authenticated user when there is one, and the IP
+ * otherwise. Per-IP alone would put a whole school behind one NAT address into
+ * a single bucket.
  */
 export async function guardProxyRequest(input: {
   origin?: string | null;
   referer?: string | null;
+  authorization?: string | null;
   ip: string;
 }): Promise<GuardResult> {
+  let subject = `ip:${input.ip}`;
+
   if (!isAllowedOrigin(input)) {
-    return { ok: false, status: 403, message: "Forbidden: origin not allowed" };
+    const principal = isAppAuthConfigured() ? await verifyAppToken(input.authorization) : null;
+    if (!principal) {
+      return { ok: false, status: 403, message: "Forbidden: origin not allowed" };
+    }
+    subject = `user:${principal.userId}`;
   }
+
   const limiter = getLimiter();
   if (limiter) {
-    const { success, reset } = await limiter.limit(input.ip);
+    const { success, reset } = await limiter.limit(subject);
     if (!success) {
       const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000));
       return { ok: false, status: 429, message: "Too many requests", retryAfter };
@@ -195,6 +214,7 @@ export async function guardNodeRequest(
   const guard = await guardProxyRequest({
     origin: header("origin"),
     referer: header("referer"),
+    authorization: header("authorization"),
     ip: clientIpFromForwardedFor(req.headers["x-forwarded-for"]),
   });
   if (guard.ok) return true;

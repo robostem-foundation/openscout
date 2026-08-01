@@ -65,6 +65,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const guard = await guardProxyRequest({
     origin: (req.headers.origin as string) ?? null,
     referer: (req.headers.referer as string) ?? null,
+    authorization: (req.headers.authorization as string) ?? null,
     ip: clientIpFromForwardedFor(req.headers["x-forwarded-for"], req.socket.remoteAddress ?? "unknown"),
   });
   if (!guard.ok) {
