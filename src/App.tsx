@@ -18934,6 +18934,8 @@ function MyTeamDashboard() {
           outcome: isIq ? null : teamMatchOutcome(m, team.id),
           teamScore: mine?.score ?? null,
           oppScore: opp?.score ?? null,
+          eventId: m.event.id,
+          event: ev,
           sort: ev ? new Date(ev.start ?? 0).getTime() : 0,
           order: m.matchnum ?? 0,
         };
@@ -18942,6 +18944,19 @@ function MyTeamDashboard() {
       .sort((a, b) => (b.sort - a.sort) || (b.order - a.order))
       .slice(0, 6);
   }, [seasonMatches, team, eventIndex, isIq]);
+
+  // The same rows split into consecutive runs per event, so each run can carry a
+  // one-line event header. Matches are already newest-first, so a run break is
+  // just a change of event id.
+  const recentMatchGroups = useMemo(() => {
+    const groups: { eventId: number; event: Event | undefined; rows: typeof recentMatches }[] = [];
+    for (const m of recentMatches) {
+      const last = groups[groups.length - 1];
+      if (last && last.eventId === m.eventId) last.rows.push(m);
+      else groups.push({ eventId: m.eventId, event: m.event, rows: [m] });
+    }
+    return groups;
+  }, [recentMatches]);
 
   // Recent skills grouped by event (driver + programming on one row), newest first.
   const recentSkills = useMemo(() => {
@@ -19265,16 +19280,28 @@ function MyTeamDashboard() {
       <aside className="panel myteam-recent myteam-timeline-aside">
         <div className="myteam-recent-block">
           <div className="myteam-recent-head">Recent matches</div>
-          {recentMatches.length > 0 ? (
+          {recentMatchGroups.length > 0 ? (
             <ul className="myteam-recent-list">
-              {recentMatches.map((m) => (
-                <li key={m.id} className="myteam-recent-row">
-                  <span className="rr-label">{m.label}</span>
-                  <span className="rr-right">
-                    {m.outcome && <span className={`rr-badge rr-${m.outcome}`}>{m.outcome}</span>}
-                    <span className="rr-score">{m.teamScore ?? "—"}<span className="rr-dash">–</span>{m.oppScore ?? "—"}</span>
-                  </span>
-                </li>
+              {recentMatchGroups.map((g) => (
+                <Fragment key={g.eventId}>
+                  <li className="myteam-recent-evrow">
+                    {g.event
+                      ? <Link className="rr-event" href={eventPath(g.event)} title={g.event.name}>
+                          <EventTierTag event={g.event} />
+                          <span className="rr-event-name">{g.event.name}</span>
+                        </Link>
+                      : <span className="rr-event"><span className="rr-event-name">Event</span></span>}
+                  </li>
+                  {g.rows.map((m) => (
+                    <li key={m.id} className="myteam-recent-row">
+                      <span className="rr-label">{m.label}</span>
+                      <span className="rr-right">
+                        {m.outcome && <span className={`rr-badge rr-${m.outcome}`}>{m.outcome}</span>}
+                        <span className="rr-score">{m.teamScore ?? "—"}<span className="rr-dash">–</span>{m.oppScore ?? "—"}</span>
+                      </span>
+                    </li>
+                  ))}
+                </Fragment>
               ))}
             </ul>
           ) : (
