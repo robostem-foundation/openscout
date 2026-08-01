@@ -16524,6 +16524,9 @@ function JoinSharedTeamPage({ token }: { token: string }) {
       const res = data as { ok?: boolean; already_member?: boolean; error?: string };
       if (res.error === "invite_invalid") setResult({ error: "This invite link has expired or already been used." });
       else if (res.error === "shared_team_full") setResult({ error: "This shared team is full (20 members max)." });
+      // Anonymous sessions can browse everything but cannot join a shared team —
+      // membership needs an identity other members can see. See migration 0015.
+      else if (res.error === "requires_account") setResult({ error: "Sign in with Discord or Google to join a shared team." });
       else {
         await reloadSharedTeams();
         setResult({ ok: true, alreadyMember: res.already_member });
