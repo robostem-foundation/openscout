@@ -30,45 +30,17 @@ Most of this information is already available on VEX Events. The problem is find
 
 Looking for nearby events can mean paging through competitions around the world. Scouting another team usually means opening several pages and manually comparing their results. OpenScout organizes that data around the things you actually need before and during a competition.
 
-### Events
+| | |
+| --- | --- |
+| **Events** | Filter events by season, program, grade level, region, and event type. Worlds, Signature Events, and Championship events are labeled automatically. Smart Sort moves relevant events toward the top based on their location and date. |
+| **Teams** | Each team page includes rankings, skills scores, match history, awards, and previous seasons. The radar chart compares win rate, AWP, consistency, world skills, and experience in one view. It gives you a quick idea of how a team performs before you dig into the full numbers. |
+| **Skills** | Browse world skills rankings with driver and programming scores shown separately. |
+| **Jumper** | Choose a match and OpenScout finds the correct livestream, then jumps to roughly when that match begins. No more dragging through a six-hour recording trying to find one match. Currently supports YouTube and BoxCast. |
+| **My Team** | Pin your team to keep its information easy to reach. You can check upcoming events, review recent matches, and save scouting notes before you forget them. |
+| **Shared teams** | Invite other members of your club and work from the same scouting information. Shared picklists update live across everyone's devices, which is much easier than passing a spreadsheet around the pits. |
+| **Translation** | Event names from other regions can be translated automatically. This makes international events, including Chinese Signature Events, much easier to browse. |
 
-Filter events by season, program, grade level, region, and event type. Worlds, Signature Events, and Championship events are labeled automatically.
-
-Smart Sort moves relevant events toward the top based on their location and date, so nearby upcoming events are easier to find.
-
-### Teams
-
-Each team page includes rankings, skills scores, match history, awards, and previous seasons.
-
-The radar chart compares win rate, AWP, consistency, world skills, and experience in one view. It gives you a quick idea of how a team performs before you dig into the full numbers.
-
-### Skills
-
-Browse world skills rankings with driver and programming scores shown separately.
-
-### Jumper
-
-Choose a match and OpenScout finds the correct livestream, then jumps to roughly when that match begins. No more dragging through a six-hour recording trying to find one match.
-
-Jumper currently supports YouTube and BoxCast.
-
-### My Team
-
-Pin your team to keep its information easy to reach. You can check upcoming events, review recent matches, and save scouting notes before you forget them.
-
-### Shared teams
-
-Invite other members of your club and work from the same scouting information. Shared picklists update live across everyone's devices, which is much easier than passing a spreadsheet around the pits.
-
-### Translation
-
-Event names from other regions can be translated automatically. This makes international events, including Chinese Signature Events, much easier to browse.
-
-### Mobile and offline support
-
-OpenScout can be installed as a Progressive Web App on your phone or computer.
-
-Pages you've already loaded remain available when the venue Wi-Fi stops cooperating. The interface also follows your system's light or dark mode setting.
+OpenScout can be installed as a Progressive Web App on your phone or computer. Pages you've already loaded remain available when the venue Wi-Fi stops cooperating. The interface also follows your system's light or dark mode setting.
 
 <div align="center">
 <img src=".github/assets/team.png" alt="OpenScout team page for team 10B, showing world skills rank, win rate, a radar chart, and win rate and skills trends over the season" width="840">
