@@ -1,21 +1,24 @@
-<div align="center">
+<p align="center">
+  <picture>
+    <source srcset=".github/assets/logo-dark.png" media="(prefers-color-scheme: dark)">
+    <source srcset=".github/assets/logo-light.png" media="(prefers-color-scheme: light)">
+    <img src=".github/assets/logo-light.png" width="360" alt="OpenScout">
+  </picture>
+</p>
 
-<img src="public/openscout-mark.png" alt="OpenScout" width="88">
+<p align="center">Scouting and analytics for VEX Robotics events. Every event and every team, in one place, across V5RC, VIQRC, VURC and VAIRC.</p>
 
-# OpenScout
+<p align="center">
+  <a href="https://openscout.ing"><img alt="Live at openscout.ing" src="https://img.shields.io/badge/live-openscout.ing-0a0a0a?style=flat-square"></a>
+  <a href="LICENSE"><img alt="License AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square"></a>
+  <img alt="React 19" src="https://img.shields.io/badge/React-19-149eca?style=flat-square">
+  <img alt="TypeScript 5.9" src="https://img.shields.io/badge/TypeScript-5.9-3178c6?style=flat-square">
+</p>
 
-**Scouting and analytics for VEX Robotics events.**
-
-Every event and every team, in one place. Covers V5RC, VIQRC, VURC, and VAIRC.
-
-[![Live](https://img.shields.io/badge/live-openscout.ing-0a0a0a)](https://openscout.ing)
-[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
-[![Built with React](https://img.shields.io/badge/React-19-149eca)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6)](https://www.typescriptlang.org)
-
-<img src=".github/assets/events.png" alt="OpenScout event browser, showing filters for season, program, grade, region, and event type next to a sorted list of events" width="840">
-
-</div>
+<p align="center">
+  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a><br>
+  <a href="https://openscout.ing"><img src=".github/assets/events.png" width="840" alt="OpenScout event browser, showing filters for season, program, grade, region, and event type next to a sorted list of events"></a>
+</p>
 
 ---
 
