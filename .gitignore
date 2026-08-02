@@ -25,8 +25,5 @@ mockups/
 # Docs — plans, specs, feedback, drafts. Kept locally, never published.
 docs/
 
-# Agent config, skills, and worktrees (local only)
-
-
 .vercel
 .env*.local

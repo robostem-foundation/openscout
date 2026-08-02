@@ -10,8 +10,8 @@ export default tseslint.config(
       "**/dist",
       "server-dist",
       // Live git worktrees (see `git worktree list`) are whole extra checkouts of
-      // this repo, excluded from git via .git/info/exclude. Linting them lints a
-      // second copy of every source file — and their built bundles.
+      // this repo. Linting them lints a second copy of every source file, plus
+      // their built bundles.
       "**/worktrees",
       // Local-only design mockups (gitignored), not shipped code.
       "mockups",
