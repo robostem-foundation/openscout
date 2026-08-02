@@ -1,0 +1,14 @@
+# https://openscout.ing/robots.txt
+
+User-agent: *
+Allow: /
+
+# The upstream API proxy. Nothing under it is a page.
+Disallow: /api/
+
+# Private pages (/settings, /my-team, /join/...) are deliberately NOT listed
+# here. They serve <meta name="robots" content="noindex">, and a crawler has to
+# be allowed to fetch a page before it can see that tag. Blocking them here
+# would leave them eligible to appear as bare URLs instead.
+
+Sitemap: https://openscout.ing/sitemap.xml

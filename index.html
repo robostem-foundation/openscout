@@ -29,6 +29,76 @@
     <meta name="twitter:description" content="Live brackets, rankings, team records, world skills standings, and match video for every VEX Robotics event." />
     <meta name="twitter:image" content="https://openscout.ing/openscout-mark.png" />
     <title>OpenScout: scouting and analytics for VEX Robotics</title>
+    <!--
+      Site-level structured data. It rides on every page: the per-URL pass in
+      server/htmlMeta.ts rewrites meta tags only, and leaves this alone.
+
+      Sitelinks (the indented list of sections under a brand result) are chosen
+      by Google, not declared here. This tells it what the site is and what its
+      sections are; the ranking of those sections is what earns the ladder.
+
+      NOTE: the CSP in vercel.json and server/index.ts pins a sha256 of this
+      block. Editing it, whitespace included, means recomputing both hashes or
+      the browser drops the tag.
+    -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://openscout.ing/#organization",
+            "name": "OpenScout",
+            "url": "https://openscout.ing/",
+            "logo": "https://openscout.ing/openscout-mark.png",
+            "parentOrganization": { "@type": "Organization", "name": "RoboSTEM Foundation" }
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://openscout.ing/#website",
+            "name": "OpenScout",
+            "url": "https://openscout.ing/",
+            "description": "Live brackets, rankings, team records, world skills standings, and match video for every VEX Robotics event.",
+            "publisher": { "@id": "https://openscout.ing/#organization" },
+            "inLanguage": "en"
+          },
+          {
+            "@type": "ItemList",
+            "name": "OpenScout sections",
+            "itemListElement": [
+              {
+                "@type": "SiteNavigationElement",
+                "position": 1,
+                "name": "Events",
+                "description": "Browse VEX Robotics events by date, region, and program.",
+                "url": "https://openscout.ing/events"
+              },
+              {
+                "@type": "SiteNavigationElement",
+                "position": 2,
+                "name": "Teams",
+                "description": "Search VEX Robotics teams by number, name, or region.",
+                "url": "https://openscout.ing/teams"
+              },
+              {
+                "@type": "SiteNavigationElement",
+                "position": 3,
+                "name": "Skills",
+                "description": "Live VEX Robotics world skills standings.",
+                "url": "https://openscout.ing/skills"
+              },
+              {
+                "@type": "SiteNavigationElement",
+                "position": 4,
+                "name": "Jumper",
+                "description": "Jump straight to any match on an event livestream recording.",
+                "url": "https://openscout.ing/jumper"
+              }
+            ]
+          }
+        ]
+      }
+    </script>
     <script>
       // Apply the saved theme before first paint to avoid a flash.
       try {

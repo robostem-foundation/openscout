@@ -204,8 +204,14 @@ if (process.env.NODE_ENV === "production") {
   // the `headers` block in vercel.json (production on Vercel uses that instead).
   // Applied only in production so Vite's dev server (which needs unsafe-eval/inline
   // for HMR) is not broken in development.
+  // The two hashes are the inline theme script and the inline JSON-LD block in
+  // index.html, in that order. Editing either (whitespace included) means
+  // recomputing its hash here and in vercel.json.
   const CSP =
-    "default-src 'self'; script-src 'self' https://va.vercel-scripts.com https://www.youtube.com; " +
+    "default-src 'self'; script-src 'self' " +
+    "'sha256-Cfur0MTdmWpX79fo5ZtNP8wbmLmUPaZZAok6NHHYKf4=' " +
+    "'sha256-ZEK79UnjmCZrGRHsv536cA3A8oR7QhJy7mSYcSP+beg=' " +
+    "https://va.vercel-scripts.com https://www.youtube.com; " +
     "style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; " +
     "media-src 'self' https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co " +
     "https://www.googleapis.com https://api.boxcast.com https://*.boxcast.com https://vitals.vercel-insights.com; " +

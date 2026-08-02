@@ -25,7 +25,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'sha256-Cfur0MTdmWpX79fo5ZtNP8wbmLmUPaZZAok6NHHYKf4=' https://va.vercel-scripts.com https://www.youtube.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; media-src 'self' https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://www.googleapis.com https://ipapi.co https://photon.komoot.io https://nominatim.openstreetmap.org https://api.boxcast.com https://*.boxcast.com https://vitals.vercel-insights.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+          "value": "default-src 'self'; script-src 'self' 'sha256-Cfur0MTdmWpX79fo5ZtNP8wbmLmUPaZZAok6NHHYKf4=' 'sha256-ZEK79UnjmCZrGRHsv536cA3A8oR7QhJy7mSYcSP+beg=' https://va.vercel-scripts.com https://www.youtube.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; media-src 'self' https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://www.googleapis.com https://ipapi.co https://photon.komoot.io https://nominatim.openstreetmap.org https://api.boxcast.com https://*.boxcast.com https://vitals.vercel-insights.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
         },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
