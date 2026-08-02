@@ -6,6 +6,8 @@
   </picture>
 </p>
 
+---
+
 <p align="center">Scouting and analytics for VEX Robotics events. Every event and every team, in one place, across V5RC, VIQRC, VURC and VAIRC.</p>
 
 <p align="center">

@@ -6,6 +6,8 @@
   </picture>
 </p>
 
+---
+
 <p align="center">VEX 机器人赛事的侦查与数据分析工具。所有赛事、所有战队，集中在一个地方，覆盖 V5RC、VIQRC、VURC 和 VAIRC。</p>
 
 <p align="center">
