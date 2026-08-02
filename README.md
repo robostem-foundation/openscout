@@ -8,7 +8,7 @@
 
 ---
 
-<p align="center">Scouting and analytics for VEX Robotics events. Every event and every team, in one place, across V5RC, VIQRC, VURC and VAIRC.</p>
+<p align="center">Scouting and analytics for VEX Robotics events. Browse every event and team across V5RC, VIQRC, VURC, and VAIRC in one place.</p>
 
 <p align="center">
   <a href="https://openscout.ing"><img alt="Live at openscout.ing" src="https://img.shields.io/badge/live-openscout.ing-0a0a0a?style=flat-square"></a>
@@ -24,35 +24,59 @@
 
 ---
 
-## What it does
+## What OpenScout does
 
-The data is all on VEX Events already. Getting at it is the tedious part. Finding the
-handful of events near you next month means paging through everything happening
-worldwide, and sizing up an opponent means opening their page in one tab and yours in
-another.
+Most of this information is already available on VEX Events. The problem is finding and comparing it.
 
-So this is the same data, rearranged around what you do with it at a competition.
+Looking for nearby events can mean paging through competitions around the world. Scouting another team usually means opening several pages and manually comparing their results. OpenScout organizes that data around the things you actually need before and during a competition.
 
-| | |
-| --- | --- |
-| **Events** | Filters that narrow a season down to something you'd read: season, program, grade, region, event type. Worlds, Signature and Championship events get tagged as such, and Smart Sort floats the ones happening near you and near now. |
-| **Teams** | Rankings, skills scores, match record, awards, and every season the team has competed in. There's a radar chart that puts win rate, AWP, consistency, world skills and experience on one shape, which is usually enough to tell whether a team is worth a closer look. |
-| **Skills** | World skills leaderboards, driver and programming split out. |
-| **Jumper** | The one people ask for most. Pick a match and it finds the right stream and seeks to the moment that match starts, instead of you dragging through six hours of livestream. Works with YouTube and BoxCast. |
-| **My Team** | Pin your team and it follows you around: upcoming events, recent matches, and a place to write down what you noticed while it's still fresh. |
-| **Shared teams** | Invite the rest of your club. The picklist you build together updates on everyone's screen as it changes, which beats three people editing the same spreadsheet in the pits. |
-| **Translation** | Events from other regions get their names translated, so a Chinese signature event isn't just an unreadable row in your list. |
+### Events
 
-It installs as a PWA if you want it on a phone, anything you've already loaded still
-works when the venue wifi gives out, and it follows your system light/dark setting.
+Filter events by season, program, grade level, region, and event type. Worlds, Signature Events, and Championship events are labeled automatically.
+
+Smart Sort moves relevant events toward the top based on their location and date, so nearby upcoming events are easier to find.
+
+### Teams
+
+Each team page includes rankings, skills scores, match history, awards, and previous seasons.
+
+The radar chart compares win rate, AWP, consistency, world skills, and experience in one view. It gives you a quick idea of how a team performs before you dig into the full numbers.
+
+### Skills
+
+Browse world skills rankings with driver and programming scores shown separately.
+
+### Jumper
+
+Choose a match and OpenScout finds the correct livestream, then jumps to roughly when that match begins. No more dragging through a six-hour recording trying to find one match.
+
+Jumper currently supports YouTube and BoxCast.
+
+### My Team
+
+Pin your team to keep its information easy to reach. You can check upcoming events, review recent matches, and save scouting notes before you forget them.
+
+### Shared teams
+
+Invite other members of your club and work from the same scouting information. Shared picklists update live across everyone's devices, which is much easier than passing a spreadsheet around the pits.
+
+### Translation
+
+Event names from other regions can be translated automatically. This makes international events, including Chinese Signature Events, much easier to browse.
+
+### Mobile and offline support
+
+OpenScout can be installed as a Progressive Web App on your phone or computer.
+
+Pages you've already loaded remain available when the venue Wi-Fi stops cooperating. The interface also follows your system's light or dark mode setting.
 
 <div align="center">
 <img src=".github/assets/team.png" alt="OpenScout team page for team 10B, showing world skills rank, win rate, a radar chart, and win rate and skills trends over the season" width="840">
 </div>
 
-## Running it locally
+## Running OpenScout locally
 
-Node 20 or newer.
+You'll need Node.js 20 or newer.
 
 ```bash
 git clone https://github.com/axcdeng/webscout.git
@@ -62,83 +86,104 @@ cp .env.example .env
 npm run dev
 ```
 
-That's it; one process serves the site and the API together, on
-<http://localhost:5175>.
+OpenScout will run at:
 
-You will need API keys before anything shows up, though. The competition data is gated
-behind tokens, so without them you get a working but empty shell.
+```text
+http://localhost:5175
+```
 
-| Setting | What it unlocks |
-| --- | --- |
-| `ROBOTEVENTS_API_KEY` and `RSE_API_KEY` | Events, teams, rankings, matches |
-| `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` | Accounts, notes, shared teams, picklists |
-| `VITE_DEFAULT_YOUTUBE_API_KEY` | Jumper |
-| `UPSTASH_REDIS_REST_URL` and `_TOKEN` | Rate limiting (skip it locally, it no-ops) |
+The site and API are served together from one process.
 
-`RSE_API_KEY` is a RoboSTEM DB key, and it's free. Sign in with Google or Discord at
-<https://robostem-api.org/dashboard> and generate one there. That's the source for team
-stats and the TrueSkill ratings; the endpoint reference lives at
-<https://robostem-api.org/redoc>.
+You'll need API keys before event data appears. Without them, the app will still run, but most pages will be empty.
 
-`ROBOTEVENTS_API_KEY` is the VEX Events v2 token, which you request from your account on
-the VEX events site.
+| Setting                                                 | What it enables                                                                                   |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `ROBOTEVENTS_API_KEY` and `RSE_API_KEY`                 | Events, teams, rankings, matches, team statistics, and TrueSkill ratings (still in development)   |
+| `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` | Accounts, notes, shared teams, and picklists                                                      |
+| `VITE_DEFAULT_YOUTUBE_API_KEY`                          | Jumper                                                                                            |
+| `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` | Rate limiting                                                                                     |
 
-Beyond that, [.env.example](.env.example) is the documentation. Every variable has a
-comment saying what it does, whether it's a secret, and what degrades if you leave it
-blank. Only the Supabase row is load-bearing for accounts, and skipping it entirely
-still leaves browsing intact; you just lose anything that saves state.
+You can skip Upstash while running locally. Rate limiting will simply be disabled.
 
-### Other commands
+### RoboSTEM DB
+
+`RSE_API_KEY` is a free RoboSTEM DB API key. Sign in with Google or Discord at:
+
+https://robostem-api.org/dashboard
+
+The RoboSTEM DB provides team statistics and TrueSkill ratings (still in development). Its API documentation is available at:
+
+https://robostem-api.org/redoc
+
+### VEX Events
+
+`ROBOTEVENTS_API_KEY` is a VEX Events API v2 token. You can request one through your account on the VEX Events website.
+
+### Supabase
+
+Supabase powers accounts and anything that saves data, including notes, shared teams, and picklists.
+
+Browsing events and teams still works without Supabase. You'll only lose features that require an account or saved state.
+
+The comments in `.env.example` explain every available variable, whether it should be kept secret, and what stops working when it's missing.
+
+## Other commands
 
 ```bash
-npm run build    # build for production
-npm test         # run the tests
-npm run lint     # check code style
-npm run preview  # serve the production build
+npm run build    # Build for production
+npm test         # Run the test suite
+npm run lint     # Check code style
+npm run preview  # Serve the production build
 ```
 
-## How it fits together
+## Project structure
 
-```
-src/          The front end. React and Vite.
-  jumper/     Stream detection and the seek math behind match video.
-server/       The API, and everything that talks to VEX Events.
-api/          The same handlers again, as Vercel functions.
-supabase/     Schema for accounts, notes, shared teams, picklists.
+```text
+src/          Front end built with React and Vite
+  jumper/     Stream detection and match timestamp calculations
+server/       API and VEX Events integrations
+api/          The same API handlers packaged as Vercel functions
+supabase/     Database schema for accounts, notes, shared teams, and picklists
 ```
 
-Schema changes live in `supabase/migrations/` and get applied by hand, in order, in the
-Supabase SQL editor. They're all written to be safe to run twice, so if you lose track
-of where you are you can just re-run from the top.
+Database changes are stored in `supabase/migrations/`.
+
+Migrations are applied manually and in numerical order through the Supabase SQL editor. Each migration is written to be safe to run more than once, so you can rerun them from the beginning if you aren't sure which ones have already been applied.
 
 ## Contributing
 
-Issues and PRs welcome. Run this before you open one:
+Issues and pull requests are welcome.
+
+Before opening a pull request, run:
 
 ```bash
 npm run lint && npx tsc -b && npm test
 ```
 
-Two warnings. `src/App.tsx` is enormous and is being broken up gradually, so don't be
-alarmed. And a schema change wants a new numbered migration rather than an edit to an
-existing one (the old ones have already run on production databases).
+A couple of things to know before working on the project:
+
+* `src/App.tsx` is currently very large. It's being split into smaller files over time.
+* Don't edit an existing migration after it has been committed. Production databases may have already run it. Add a new numbered migration instead.
 
 ## Security
 
-If you find a security problem, email [contact@robostem.org](mailto:contact@robostem.org)
-rather than filing a public issue.
+Please don't report security vulnerabilities through a public GitHub issue.
+
+Email them privately to:
+
+[contact@robostem.org](mailto:contact@robostem.org)
 
 ## License
 
-[GNU Affero General Public License v3.0](LICENSE).
+OpenScout is licensed under the [GNU Affero General Public License v3.0](LICENSE).
 
-Use it, fork it, run your own copy, all fine. The one real condition is that if you
-modify it and run it as a public service, your changes have to be published under the
-same license. If that doesn't work for what you have in mind, email
-[contact@robostem.org](mailto:contact@robostem.org) and we can talk.
+You can use it, fork it, modify it, and host your own version. If you modify OpenScout and make that version publicly available as a service, you must publish your changes under the same license.
 
-Geist and Geist Mono are Vercel's, under the
+For commercial licensing or another arrangement, contact:
+
+[contact@robostem.org](mailto:contact@robostem.org)
+
+Geist and Geist Mono are created by Vercel and licensed under the
 [SIL Open Font License 1.1](public/fonts/OFL.txt).
 
-OpenScout isn't affiliated with or endorsed by VEX Robotics. Competition data comes
-from VEX Events.
+OpenScout is not affiliated with or endorsed by VEX Robotics. Competition data is provided through VEX Events.
