@@ -22,7 +22,11 @@ EVENT_INFO_TAB_PLAN.md
 # Design mockups (local only)
 mockups/
 
-# Feedback docs (local only)
-docs/feedback/
+# Docs — plans, specs, feedback, drafts. Kept locally, never published.
+docs/
+
+# Agent config, skills, and worktrees (local only)
+
+
 .vercel
 .env*.local
