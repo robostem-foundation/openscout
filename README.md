@@ -31,12 +31,11 @@ handful of events near you next month means paging through everything happening
 worldwide, and sizing up an opponent means opening their page in one tab and yours in
 another.
 
-So this is the same data, rearranged around what you're actually doing with it at a
-competition.
+So this is the same data, rearranged around what you do with it at a competition.
 
 | | |
 | --- | --- |
-| **Events** | Filters that narrow a season down to something you'd actually read: season, program, grade, region, event type. Worlds, Signature and Championship events get tagged as such, and Smart Sort floats the ones happening near you and near now. |
+| **Events** | Filters that narrow a season down to something you'd read: season, program, grade, region, event type. Worlds, Signature and Championship events get tagged as such, and Smart Sort floats the ones happening near you and near now. |
 | **Teams** | Rankings, skills scores, match record, awards, and every season the team has competed in. There's a radar chart that puts win rate, AWP, consistency, world skills and experience on one shape, which is usually enough to tell whether a team is worth a closer look. |
 | **Skills** | World skills leaderboards, driver and programming split out. |
 | **Jumper** | The one people ask for most. Pick a match and it finds the right stream and seeks to the moment that match starts, instead of you dragging through six hours of livestream. Works with YouTube and BoxCast. |
@@ -66,13 +65,8 @@ npm run dev
 That's it; one process serves the site and the API together, on
 <http://localhost:5175>.
 
-You will need an API key before anything shows up, though. All the competition data
-comes from VEX Events and that's gated behind a token, so without one you get a
-perfectly functional empty shell.
-
-[.env.example](.env.example) is the real documentation here. Every variable has a
-comment explaining what it does, whether it's genuinely secret, and what degrades if
-you leave it blank. Roughly:
+You will need API keys before anything shows up, though. The competition data is gated
+behind tokens, so without them you get a working but empty shell.
 
 | Setting | What it unlocks |
 | --- | --- |
@@ -81,8 +75,18 @@ you leave it blank. Roughly:
 | `VITE_DEFAULT_YOUTUBE_API_KEY` | Jumper |
 | `UPSTASH_REDIS_REST_URL` and `_TOKEN` | Rate limiting (skip it locally, it no-ops) |
 
-Only the second row is load-bearing for accounts. Skip Supabase entirely and browsing
-still works fine; you just lose anything that saves state.
+`RSE_API_KEY` is a RoboSTEM DB key, and it's free. Sign in with Google or Discord at
+<https://robostem-api.org/dashboard> and generate one there. That's the source for team
+stats and the TrueSkill ratings; the endpoint reference lives at
+<https://robostem-api.org/redoc>.
+
+`ROBOTEVENTS_API_KEY` is the VEX Events v2 token, which you request from your account on
+the VEX events site.
+
+Beyond that, [.env.example](.env.example) is the documentation. Every variable has a
+comment saying what it does, whether it's a secret, and what degrades if you leave it
+blank. Only the Supabase row is load-bearing for accounts, and skipping it entirely
+still leaves browsing intact; you just lose anything that saves state.
 
 ### Other commands
 
