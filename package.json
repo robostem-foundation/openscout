@@ -2,6 +2,13 @@
   "name": "openscout",
   "version": "0.1.0",
   "private": true,
+  "description": "Scouting and analytics for VEX Robotics events.",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://openscout.ing",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/axcdeng/webscout.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "tsx server/index.ts",
