@@ -1,7 +1,11 @@
 import "dotenv/config";
 import express from "express";
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { injectMeta } from "./htmlMeta.js";
+import { resolveMetaForPath } from "./pageShell.js";
+import { SITE_URL } from "../src/lib/page-meta.js";
 import { createServer as createViteServer } from "vite";
 import { clientIpFromForwardedFor, guardProxyRequest, proxyRequest, type ProxySource } from "./proxy.js";
 import { scrapeEventInfo } from "./eventInfoScraper.js";
@@ -44,6 +48,17 @@ async function passesGuard(req: express.Request, res: express.Response): Promise
   if (guard.retryAfter) res.setHeader("retry-after", String(guard.retryAfter));
   res.status(guard.status).json({ message: guard.message });
   return false;
+}
+
+/**
+ * Rewrite the shell's <head> for one request path. Mirrors api/shell.ts, which
+ * does the same job on Vercel; both share server/pageShell.ts so the copy and
+ * the upstream lookups can only be defined once.
+ */
+async function shellFor(shell: string, requestPath: string): Promise<string> {
+  const meta = await resolveMetaForPath(requestPath);
+  const canonical = meta.noindex ? null : `${SITE_URL}${requestPath === "/" ? "/" : requestPath}`;
+  return injectMeta(shell, meta, canonical);
 }
 
 function proxyRoute(source: ProxySource) {
@@ -204,20 +219,41 @@ if (process.env.NODE_ENV === "production") {
     res.setHeader("X-Frame-Options", "DENY");
     next();
   });
-  app.use(express.static(path.join(root, "dist")));
-  // SPA fallback. Express 5 (path-to-regexp v8) rejects a bare "*" path string,
+  // `index: false` so "/" falls through to the meta pass below instead of being
+  // answered with the untouched dist/index.html.
+  app.use(express.static(path.join(root, "dist"), { index: false }));
+  // SPA fallback, with the same per-URL <head> the Vercel deployment serves via
+  // api/shell.ts. Express 5 (path-to-regexp v8) rejects a bare "*" path string,
   // so use a path-less middleware as the catch-all instead.
-  app.use((_req, res) => {
-    res.sendFile(path.join(root, "dist", "index.html"));
+  const builtShell = await readFile(path.join(root, "dist", "index.html"), "utf8");
+  app.use(async (req, res) => {
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.send(await shellFor(builtShell, req.path));
   });
 } else {
+  // `appType: "custom"` so the SPA fallback is ours: Vite still transforms the
+  // shell (HMR client, module rewriting), then the meta tags go in on top, which
+  // keeps dev previewing exactly what production ships.
   const vite = await createViteServer({
     root,
     server: { middlewareMode: true },
-    appType: "spa",
+    appType: "custom",
   });
 
   app.use(vite.middlewares);
+  app.use(async (req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    if (!(req.headers.accept ?? "").includes("text/html")) return next();
+    try {
+      const raw = await readFile(path.join(root, "index.html"), "utf8");
+      const transformed = await vite.transformIndexHtml(req.originalUrl, raw);
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      res.send(await shellFor(transformed, req.path));
+    } catch (error) {
+      vite.ssrFixStacktrace(error as Error);
+      next(error);
+    }
+  });
 }
 
 app.listen(port, () => {

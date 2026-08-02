@@ -10,15 +10,25 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="OpenScout" />
-    <meta name="description" content="OpenScout — scouting and analytics for VEX Robotics events." />
-    <meta property="og:title" content="OpenScout" />
-    <meta property="og:description" content="Scouting and analytics for VEX Robotics events." />
-    <meta property="og:image" content="/openscout-mark.png" />
+    <!--
+      These are the HOME page's tags, not generic ones: `/` is served straight
+      from the filesystem, so it never reaches the per-URL pass in api/shell.ts.
+      Every other path does, and has these replaced. Keep them in sync with
+      DEFAULT_META in src/lib/page-meta.ts.
+    -->
+    <meta name="description" content="Live brackets, rankings, team records, world skills standings, and match video for every VEX Robotics event." />
+    <link rel="canonical" href="https://openscout.ing/" />
+    <meta property="og:site_name" content="OpenScout" />
+    <meta property="og:title" content="OpenScout: scouting and analytics for VEX Robotics" />
+    <meta property="og:description" content="Live brackets, rankings, team records, world skills standings, and match video for every VEX Robotics event." />
+    <meta property="og:image" content="https://openscout.ing/openscout-mark.png" />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://openscout.ing/" />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="OpenScout" />
-    <meta name="twitter:description" content="Scouting and analytics for VEX Robotics events." />
-    <title>OpenScout</title>
+    <meta name="twitter:title" content="OpenScout: scouting and analytics for VEX Robotics" />
+    <meta name="twitter:description" content="Live brackets, rankings, team records, world skills standings, and match video for every VEX Robotics event." />
+    <meta name="twitter:image" content="https://openscout.ing/openscout-mark.png" />
+    <title>OpenScout: scouting and analytics for VEX Robotics</title>
     <script>
       // Apply the saved theme before first paint to avoid a flash.
       try {

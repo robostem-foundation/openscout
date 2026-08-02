@@ -70,6 +70,8 @@ import { resolveWorldsProgram, worldsDivisionName, worldsMatchTimestamps } from 
 import type { WorldsProgram } from "./jumper/services/worldsMatchVideo.js";
 import { fetchBroadcastPlaylist } from "./jumper/services/boxcast.js";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
+import { applyRouteMeta, usePageMeta } from "./document-meta";
+import { eventMeta, teamMeta } from "./lib/page-meta";
 import { ACCOUNT_DELETION_WINDOW_DAYS, AUTH_PROGRAMS, AuthSlot, cancelAccountDeletion, GoogleSignInButton, OnboardingModal, programLabel, requestAccountDeletion, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { dayToNumber, daysUntilEventDay, eventDayMs, eventDayNumber, eventDayToUtcNoon, eventDayYear, eventDayParts, formatEventDay, formatEventDayPadded, todayInZone } from "./event-dates";
 import { readSearchBias, syncSearchBias, toGradeCode, useSearchBias } from "./search-bias";
@@ -7794,6 +7796,8 @@ function EventDetail({ param }: { param: string }) {
   const event = lookup.data ?? null;
   const loading = lookup.loading;
   const error = lookup.error ?? (!loading && !event ? "Event not found" : null);
+  // Swap the SKU placeholder in the tab title for the event's real name.
+  usePageMeta(event ? eventMeta(event) : null);
   // Which focus id has already had its scroll+flash "spent". Recorded in a ref (not
   // state) so recording it never re-renders / cancels the in-flight scroll. Gating
   // the id passed to the Results table on this makes the jump fire exactly once —
@@ -9901,6 +9905,8 @@ function TeamDetail({ param }: { param: string }) {
   const team = lookup.data ?? null;
   const loading = lookup.loading;
   const error = lookup.error ?? (!loading && !team ? "Team not found" : null);
+  // Swap the bare team number in the tab title for "1698V Skyrise".
+  usePageMeta(team ? teamMeta(team) : null);
   const id = team ? String(team.id) : "";
   const events = useAsync(
     async () => {
@@ -19606,6 +19612,9 @@ export default function App() {
   // first frame of each route (no one-frame flash of the previous trail).
   useLayoutEffect(() => {
     recordBreadcrumb(path);
+    // The route's data-free meta. Event and team pages refine it (usePageMeta)
+    // once their lookup resolves.
+    applyRouteMeta(path);
   }, [path]);
 
   // Global keyboard shortcuts

@@ -5,6 +5,9 @@
   "functions": {
     "api/translate.ts": {
       "maxDuration": 60
+    },
+    "api/shell.ts": {
+      "includeFiles": "dist/index.html"
     }
   },
   "rewrites": [
@@ -14,7 +17,7 @@
     { "source": "/api/spotlight-events", "destination": "/api/spotlight-events" },
     { "source": "/api/translate", "destination": "/api/translate" },
     { "source": "/api/:path*", "destination": "/api/proxy?__p=:path*" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/api/shell?__p=/$1" }
   ],
   "headers": [
     {
