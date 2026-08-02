@@ -143,6 +143,15 @@ export type Match = {
   alliances: Alliance[];
 };
 
+/** One row of the Jumper admin's Edge Config `routes` list. `path` is the short
+ *  link (e.g. "sunshine") that Jumper's Viewer resolves a preset's streams from —
+ *  the SKU alone only identifies the event, not its configured streams. */
+export type JumperRoute = {
+  label?: string;
+  path: string;
+  sku: string;
+};
+
 export type JumperPresetExists = {
   exists: boolean;
   sku?: string;
@@ -158,6 +167,10 @@ export type MatchTimestamp = {
   timestamp: number | null;
   livestreamLink: string | null;
   videoId: string | null;
+  /** Set only for VEX Worlds matches, which stream on BoxCast rather than YouTube
+   *  (so they never appear in the Jumper admin's presets). The video modal plays
+   *  these through hls.js instead of a YouTube iframe. */
+  boxcast?: { broadcastId: string; channelId: string } | null;
 };
 
 export type Ranking = {

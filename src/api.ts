@@ -6,6 +6,7 @@ import type {
   EventInfoData,
   JumperPresetExists,
   Match,
+  JumperRoute,
   MatchTimestamp,
   Paginated,
   Program,
@@ -184,6 +185,10 @@ export const api = {
     return dedupedJson<{ grades: Record<string, string[]> }>(`/api/event-grades?${params.toString()}`);
   },
   jumperPresetEventExists: (sku: string) => jumperJson<JumperPresetExists>("preset-event-exists", { sku }),
+  // The whole preset list. `preset-event-exists` answers the same question off the
+  // same Edge Config key, but only this carries each preset's `path`, which the
+  // Jumper deep links need — and one shared list beats one request per event card.
+  jumperRoutes: () => jumperJson<JumperRoute[]>("get-all-routes"),
   jumperMatchTimestamps: (sku: string, query: Query = {}) => jumperJson<MatchTimestamp[]>("match-timestamp", { sku, ...query }),
   superscore: (program: "v5rc" | "viqrc", query: Query = {}) =>
     rseJson<Paginated<SuperscoreRow>>(`superscore/rankings/${program}`, query),

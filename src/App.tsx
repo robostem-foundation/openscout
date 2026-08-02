@@ -65,6 +65,10 @@ import type { Dispatch, ErrorInfo, KeyboardEvent, MouseEvent, PointerEvent as Re
 import DOMPurify from "dompurify";
 import { api } from "./api";
 import JumperPage from "./jumper/JumperPage.jsx";
+import WorldsHlsPlayer from "./jumper/components/WorldsHlsPlayer.jsx";
+import { resolveWorldsProgram, worldsDivisionName, worldsMatchTimestamps } from "./jumper/services/worldsMatchVideo.js";
+import type { WorldsProgram } from "./jumper/services/worldsMatchVideo.js";
+import { fetchBroadcastPlaylist } from "./jumper/services/boxcast.js";
 import { clearTrail, getTrail, recordTrail, refreshTrailLabel, subscribeTrail } from "./breadcrumbs";
 import { ACCOUNT_DELETION_WINDOW_DAYS, AUTH_PROGRAMS, AuthSlot, cancelAccountDeletion, GoogleSignInButton, OnboardingModal, programLabel, requestAccountDeletion, SignedOut, SignInButtons, suggestedName, useAuth, useOutsideClick } from "./auth";
 import { dayToNumber, daysUntilEventDay, eventDayMs, eventDayNumber, eventDayToUtcNoon, eventDayYear, eventDayParts, formatEventDay, formatEventDayPadded, todayInZone } from "./event-dates";
@@ -126,7 +130,7 @@ import type { TrayEntry } from "./compare";
 import { toCsv, downloadCsv as downloadCsvFile } from "./export";
 import { computeEventOpr } from "./analytics";
 import type { TeamOpr } from "./analytics";
-import type { Alliance, Award, CountryGroup, Event, EventInfoData, IdInfo, JumperPresetExists, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, TopSkillsResult, WorldSkillsEntry } from "./types";
+import type { Alliance, Award, CountryGroup, Event, EventInfoData, IdInfo, JumperRoute, Match, MatchTimestamp, Paginated, Ranking, Season, Skill, Team, TopSkillsResult, WorldSkillsEntry } from "./types";
 import tzLookup from "@photostructure/tz-lookup";
 
 const programOptions = [
@@ -2285,8 +2289,105 @@ function highlightAwards(awards: Award[], event?: Event | null): HighlightAward[
 
 
 
-function jumperPresetName(event: Event, preset?: JumperPresetExists | null) {
-  return preset?.preset ?? preset?.presetName ?? preset?.preset_name ?? preset?.sku ?? event.sku;
+// Everything the match play buttons need for one event. Two backends:
+//
+//   YouTube — events an admin configured as a Jumper preset. `preset-event-exists`
+//     gates them and `match-timestamp` returns a seek offset per match.
+//   BoxCast — VEX Worlds. It streams on BoxCast, so it is never a Jumper preset
+//     and match-timestamp knows nothing about it; the offsets are resolved in the
+//     browser from WORLDS_CONFIG plus the channel's broadcast listing.
+//
+// An event is one or the other, never both, so the unused path stays idle.
+function useMatchVideos(event: Event | null | undefined, matches: Match[], delayMs = 0, divisionId?: number | null) {
+  // Keyed on the event's identity, not the object, so an unstable `event` prop
+  // cannot hand the effects below a fresh object every render and loop.
+  const worlds = useMemo(() => (event ? resolveWorldsProgram(event) : null), [event?.id, event?.sku]);
+  const isWorlds = !!worlds;
+  const worldsKey = worlds ? `${worlds.program}::${worlds.year}` : null;
+
+  // One shared preset list for the whole page instead of a per-event existence
+  // check — the team pages mount a dozen of these hooks at once, and the list
+  // also carries each preset's short path, which the Jumper deep link needs.
+  const routes = useAsync(async () => (isWorlds ? null : jumperRoutes()), [isWorlds], delayMs);
+  const preset = useMemo(
+    () => (event ? routes.data?.find((r) => r.sku === event.sku) ?? null : null),
+    [routes.data, event?.sku],
+  );
+
+  const presetTimestamps = useAsync(
+    async () => {
+      if (!event || isWorlds || !preset) return null;
+      return api.jumperMatchTimestamps(event.sku, { offsetSeconds: -5 });
+    },
+    [event?.sku, isWorlds, preset?.path],
+  );
+
+  // Worlds resolution needs the matches themselves (to derive each match's day
+  // index), so it re-runs as the caller's match list fills in.
+  const worldsTimestamps = useAsync(
+    async () => {
+      if (!event || !worlds || !matches.length) return null;
+      return (await worldsMatchTimestamps(event, matches, worlds)) as MatchTimestamp[];
+    },
+    [event?.id, worldsKey, matches.length],
+  );
+
+  const list = isWorlds ? worldsTimestamps.data : presetTimestamps.data;
+  const timestampMap = useMemo(() => new Map((list ?? []).map((ts) => [ts.id, ts])), [list]);
+
+  return {
+    supported: isWorlds || !!preset,
+    loading: isWorlds ? worldsTimestamps.loading : routes.loading || (preset ? presetTimestamps.loading : false),
+    timestampMap,
+    jumperHref: jumperHref(event, worlds, preset, divisionId),
+  };
+}
+
+// The preset list is identical for every event on the page, so fetch it once and
+// share the promise. Refetched only on reload — the admin's presets are static
+// within a session.
+let jumperRoutesPromise: Promise<JumperRoute[]> | null = null;
+function jumperRoutes() {
+  if (!jumperRoutesPromise) {
+    jumperRoutesPromise = api.jumperRoutes().catch((error) => {
+      jumperRoutesPromise = null; // let a later mount retry a transient failure
+      throw error;
+    });
+  }
+  return jumperRoutesPromise;
+}
+
+// Where the Jumper link in a match table header points. Always OpenScout's own
+// /jumper tab, never jumper.robostem.org — the tool is bundled here, so sending
+// people off-site drops them out of the app (and the old link passed the SKU as
+// `?preset=`, which only ever resolves a preset's short path, so it landed on an
+// empty Jumper every time).
+//
+// Worlds: `?view=worlds` switches JumperPage to the Worlds view, and
+// program/year/division are the params Worlds.jsx reads. Naming the division
+// matters for multi-division events — each Worlds division is its own BoxCast
+// channel-day, so without it Jumper opens with no division picked.
+//
+// Everything else: `?sku=` is the param Viewer.jsx resolves an event from. It
+// discovers the event's divisions itself and maps each one to its stream, so a
+// multi-division signature event needs nothing beyond the SKU.
+function jumperHref(
+  event: Event | null | undefined,
+  worlds: WorldsProgram | null,
+  preset: JumperRoute | null,
+  divisionId?: number | null,
+) {
+  if (!event) return null;
+  if (worlds) {
+    const params = new URLSearchParams({ view: "worlds", program: worlds.program, year: worlds.year });
+    const division = worldsDivisionName(event, worlds, divisionId ?? null);
+    if (division) params.set("division", division);
+    return `/jumper?${params}`;
+  }
+  // `?preset=` (the short path), not `?sku=` — a SKU alone resolves the event but
+  // leaves Jumper with no streams attached, which is what the old link did.
+  if (!preset) return null;
+  return `/jumper?preset=${encodeURIComponent(preset.path)}`;
 }
 
 let ytApiLoaded = false;
@@ -7794,21 +7895,9 @@ function EventDetail({ param }: { param: string }) {
     [id, event?.id, divisions],
     1000,
   );
-  const preset = useAsync(
-    async () => {
-      if (!event) return null;
-      return api.jumperPresetEventExists(event.sku);
-    },
-    [event?.sku],
-    1500,
-  );
-  const matchTimestamps = useAsync(
-    async () => {
-      if (!event || !preset.data?.exists) return null;
-      return api.jumperMatchTimestamps(event.sku, { offsetSeconds: -5 });
-    },
-    [event?.sku, preset.data?.exists],
-  );
+  // `division` is the division the user is viewing — it names the division in the
+  // Worlds deep link so Jumper opens on the same one.
+  const matchVideos = useMatchVideos(event, matches.data?.data ?? [], 1500, division);
 
   const focusTeamEventMatches = useAsync(
     async () => {
@@ -7829,8 +7918,6 @@ function EventDetail({ param }: { param: string }) {
   );
 
   const eventAwards = awards.data?.data ?? [];
-  const timestampMap = useMemo(() => new Map((matchTimestamps.data ?? []).map((timestamp) => [timestamp.id, timestamp])), [matchTimestamps.data]);
-  const presetUrl = event && preset.data?.exists ? `https://jumper.robostem.org/?preset=${encodeURIComponent(jumperPresetName(event, preset.data))}` : null;
   const activeStatus = tab === "team-matches" ? focusTeamEventMatches : tab === "matches" ? matches : tab === "rankings" ? rankings : tab === "skills" ? skills : tab === "awards" ? awards : tab === "picklist" || tab === "info" ? { loading: false, error: null } : teams;
 
   const keyAwards = useMemo(() => highlightAwards(eventAwards, event), [eventAwards, event]);
@@ -8134,10 +8221,10 @@ function EventDetail({ param }: { param: string }) {
           multiDivision={(event.divisions?.length ?? 0) > 1}
           onJumpToMatch={jumpToResultsMatch}
           onOpenTab={goToTab}
-          presetSupported={!!preset.data?.exists}
-          presetLoading={preset.loading || (preset.data?.exists ? matchTimestamps.loading : false)}
-          presetUrl={presetUrl}
-          timestampMap={timestampMap}
+          presetSupported={matchVideos.supported}
+          presetLoading={matchVideos.loading}
+          jumperHref={matchVideos.jumperHref}
+          timestampMap={matchVideos.timestampMap}
           onOpenMatch={(match, timestamp) => setPlayback({ match, timestamp })}
         />
       )}
@@ -8147,10 +8234,10 @@ function EventDetail({ param }: { param: string }) {
       {tab === "matches" && (
         <MatchesTable
           matches={filteredMatches}
-          timestampMap={timestampMap}
-          presetSupported={!!preset.data?.exists}
-          presetLoading={preset.loading || (preset.data?.exists ? matchTimestamps.loading : false)}
-          presetUrl={presetUrl}
+          timestampMap={matchVideos.timestampMap}
+          presetSupported={matchVideos.supported}
+          presetLoading={matchVideos.loading}
+          jumperHref={matchVideos.jumperHref}
           onOpenMatch={(match, timestamp) => setPlayback({ match, timestamp })}
           isIq={isIqProgram(event)}
           scoreTier={iqScoreTier}
@@ -11165,16 +11252,7 @@ function TeamEventCard({
   const multiDivision = (event.divisions?.length ?? 0) > 1;
   const wins = useMemo(() => computeEventAwardWins(event, eventAwards, focusTeamId, !!isIq), [event, eventAwards, focusTeamId, isIq]);
 
-  const preset = useAsync(async () => api.jumperPresetEventExists(event.sku), [event.sku], 1500);
-  const matchTimestamps = useAsync(
-    async () => {
-      if (!preset.data?.exists) return null;
-      return api.jumperMatchTimestamps(event.sku, { offsetSeconds: -5 });
-    },
-    [event.sku, preset.data?.exists],
-  );
-  const timestampMap = useMemo(() => new Map((matchTimestamps.data ?? []).map((ts) => [ts.id, ts])), [matchTimestamps.data]);
-  const presetUrl = preset.data?.exists ? `https://jumper.robostem.org/?preset=${encodeURIComponent(jumperPresetName(event, preset.data))}` : null;
+  const matchVideos = useMatchVideos(event, eventMatches, 1500);
 
   return (
     <details className="event-group">
@@ -11234,10 +11312,10 @@ function TeamEventCard({
             isIq={isIq}
             multiDivision={multiDivision}
             showPlay
-            presetSupported={!!preset.data?.exists}
-            presetLoading={preset.loading || (preset.data?.exists ? matchTimestamps.loading : false)}
-            presetUrl={presetUrl}
-            timestampMap={timestampMap}
+            presetSupported={matchVideos.supported}
+            presetLoading={matchVideos.loading}
+            jumperHref={matchVideos.jumperHref}
+            timestampMap={matchVideos.timestampMap}
             onOpenMatch={onOpenMatch}
           />
         </DragScroll>
@@ -11449,7 +11527,7 @@ function DivisionTag({ match, multiDivision }: { match: Match; multiDivision: bo
   return <TranslatedText className="division-tag" text={match.division.name} />;
 }
 
-function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDivision = false, multiDivision = true, showPlay = false, presetSupported = false, presetLoading = false, presetUrl, timestampMap, onOpenMatch }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; hideDivision?: boolean; multiDivision?: boolean; showPlay?: boolean; presetSupported?: boolean; presetLoading?: boolean; presetUrl?: string | null; timestampMap?: Map<number, MatchTimestamp>; onOpenMatch?: (match: Match, timestamp: MatchTimestamp) => void }) {
+function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDivision = false, multiDivision = true, showPlay = false, presetSupported = false, presetLoading = false, jumperHref, timestampMap, onOpenMatch }: { matches: Match[]; focusTeamId: number; isIq?: boolean; scoreTier?: (score: number | null | undefined) => ScoreTier; hideDivision?: boolean; multiDivision?: boolean; showPlay?: boolean; presetSupported?: boolean; presetLoading?: boolean; jumperHref?: string | null; timestampMap?: Map<number, MatchTimestamp>; onOpenMatch?: (match: Match, timestamp: MatchTimestamp) => void }) {
   const sortedMatches = [...matches].sort((a, b) => compareMatchesDisplay(a, b, preferredTeamDivisionId(matches, focusTeamId)));
   const divisionWins = divisionFinalWins(sortedMatches, focusTeamId);
   const lastFinalIds = lastFinalIdsByDivision(sortedMatches);
@@ -11465,9 +11543,9 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDiv
               {presetLoading ? (
                 <span className="play-header-icon loading" />
               ) : presetSupported ? (
-                <a href={presetUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="play-header-link active" title="Open in Jumper">
+                <Link href={jumperHref ?? "#"} className="play-header-link active" title="Open in Jumper">
                   <LinkIcon size={14} />
-                </a>
+                </Link>
               ) : (
                 <span className="play-header-link disabled" title="No livestream preset">
                   <Unlink size={14} />
@@ -11489,7 +11567,8 @@ function TeamMatchTable({ matches, focusTeamId, isIq = false, scoreTier, hideDiv
           const divisionWin = lastFinalIds.get(match.division.id) === match.id ? divisionWins.get(match.division.id) : undefined;
           const displayName = shortMatchName(isIq && isIqFinalsMatch(match) ? "Finals" : match.name);
           const timestamp = showPlay ? timestampMap?.get(match.id) : undefined;
-          const canPlay = showPlay && presetSupported && timestamp && timestamp.timestamp !== null && timestamp.videoId;
+          // A playable source is either a YouTube video id or a Worlds BoxCast broadcast.
+          const canPlay = showPlay && presetSupported && timestamp && timestamp.timestamp !== null && (timestamp.videoId || timestamp.boxcast);
 
           return (
             <Fragment key={match.id}>
@@ -12260,7 +12339,7 @@ function MatchesTable({
   timestampMap,
   presetSupported,
   presetLoading,
-  presetUrl,
+  jumperHref,
   onOpenMatch,
   isIq = false,
   scoreTier,
@@ -12275,7 +12354,7 @@ function MatchesTable({
   timestampMap: Map<number, MatchTimestamp>;
   presetSupported: boolean;
   presetLoading: boolean;
-  presetUrl: string | null;
+  jumperHref: string | null;
   onOpenMatch: (match: Match, timestamp: MatchTimestamp) => void;
   isIq?: boolean;
   scoreTier?: (score: number | null | undefined) => ScoreTier;
@@ -12348,7 +12427,7 @@ function MatchesTable({
                   timestampMap={timestampMap}
                   presetSupported={presetSupported}
                   presetLoading={presetLoading}
-                  presetUrl={presetUrl}
+                  jumperHref={jumperHref}
                   onOpenMatch={onOpenMatch}
                   dayNumbers={dayNumbers}
                   dayKeyOf={dayKeyOf}
@@ -12407,7 +12486,7 @@ function MatchesTable({
                 timestampMap={timestampMap}
                 presetSupported={presetSupported}
                 presetLoading={presetLoading}
-                presetUrl={presetUrl}
+                jumperHref={jumperHref}
                 onOpenMatch={onOpenMatch}
                 dayNumbers={dayNumbers}
                 dayKeyOf={dayKeyOf}
@@ -12447,7 +12526,7 @@ function MatchesTable({
                 timestampMap={timestampMap}
                 presetSupported={presetSupported}
                 presetLoading={presetLoading}
-                presetUrl={presetUrl}
+                jumperHref={jumperHref}
                 onOpenMatch={onOpenMatch}
                 dayNumbers={dayNumbers}
                 dayKeyOf={dayKeyOf}
@@ -13024,7 +13103,7 @@ function ResultsMatchTable({
   timestampMap,
   presetSupported,
   presetLoading,
-  presetUrl,
+  jumperHref,
   onOpenMatch,
   dayNumbers,
   dayKeyOf = makeMatchDayKey(),
@@ -13047,7 +13126,7 @@ function ResultsMatchTable({
   timestampMap?: Map<number, MatchTimestamp>;
   presetSupported?: boolean;
   presetLoading?: boolean;
-  presetUrl?: string | null;
+  jumperHref?: string | null;
   onOpenMatch?: (match: Match, timestamp: MatchTimestamp) => void;
   dayNumbers?: Map<string, number>;
   // Resolves a match to its "YYYY-MM-DD" day key (event-local when a timezone is
@@ -13191,9 +13270,9 @@ function ResultsMatchTable({
             {presetLoading ? (
               <span className="play-header-icon loading" />
             ) : presetSupported ? (
-              <a href={presetUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="play-header-link active" title="Open in Jumper">
+              <Link href={jumperHref ?? "#"} className="play-header-link active" title="Open in Jumper">
                 <LinkIcon size={14} />
-              </a>
+              </Link>
             ) : (
               <span className="play-header-link disabled" title="No livestream preset">
                 <Unlink size={14} />
@@ -13229,7 +13308,7 @@ function ResultsMatchTable({
           const hideOpponent = focusInRed || focusInBlue;
           const iqResult = isIq ? iqMatchResult(match) : null;
           const timestamp = timestampMap?.get(match.id);
-          const canPlay = presetSupported && timestamp && timestamp.timestamp !== null && timestamp.videoId;
+          const canPlay = presetSupported && timestamp && timestamp.timestamp !== null && (timestamp.videoId || timestamp.boxcast);
           // Abbreviate "Qualification 12" → "Q12" so the match column stays narrow
           // (the team match tables already do this via shortMatchName). `labelFor`
           // wins where the caller supplies its own label, e.g. elimination
@@ -13350,6 +13429,19 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
   const pollRef = useRef<number>(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(playback.timestamp.timestamp ?? 0);
+  // Worlds (BoxCast/HLS) playback. WorldsHlsPlayer takes a ref object and hands
+  // back its <video>; mirroring writes into state re-runs the adapter effect
+  // below once the element actually mounts inside the Dialog portal.
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const worldsVideoRef = useMemo(() => {
+    let node: HTMLVideoElement | null = null;
+    return {
+      get current() { return node; },
+      set current(next: HTMLVideoElement | null) { node = next; setVideoEl(next); },
+    };
+  }, []);
+  const [hlsSrc, setHlsSrc] = useState<string | null>(null);
+  const [hlsError, setHlsError] = useState<string | null>(null);
 
   // Flag the video modal as open so a quick view launched from its notes renders
   // as a non-dimmed bottom sheet above this dialog instead of behind it.
@@ -13362,6 +13454,12 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
   const redTeams = red?.teams.map((t) => t.team.name).join(" ") ?? "";
   const blueTeams = blue?.teams.map((t) => t.team.name).join(" ") ?? "";
   const startSeconds = Math.max(0, Math.floor(playback.timestamp.timestamp ?? 0));
+
+  // The HLS player seeks on a new object identity, so build one per match jump.
+  const worldsSeek = useMemo(
+    () => (playback.timestamp.boxcast ? { time: Math.max(0.001, startSeconds), nonce: playback.match.id } : null),
+    [playback.timestamp.boxcast, playback.match.id, startSeconds],
+  );
 
   const embedUrl = useMemo(() => {
     if (!playback.timestamp.videoId) return "";
@@ -13409,6 +13507,48 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
       playerRef.current = null;
     };
   }, [playback.timestamp.videoId, iframeEl]);
+
+  // --- Worlds / BoxCast branch -------------------------------------------------
+  // Worlds streams are HLS, not YouTube. Fetch the signed playlist, render the
+  // ported Worlds player, and adapt its <video> element to the same playerRef
+  // surface the YouTube path exposes so the controls and notes below work as-is.
+  useEffect(() => {
+    const boxcast = playback.timestamp.boxcast;
+    if (!boxcast) return;
+    let live = true;
+    setHlsError(null);
+    fetchBroadcastPlaylist(boxcast.broadcastId, boxcast.channelId)
+      .then((data: { playlist?: string }) => {
+        if (!live) return;
+        if (data?.playlist) setHlsSrc(data.playlist);
+        else setHlsError("This broadcast has no playable recording.");
+      })
+      .catch(() => { if (live) setHlsError("Could not load the Worlds stream."); });
+    return () => { live = false; };
+  }, [playback.timestamp.boxcast]);
+
+  useEffect(() => {
+    if (!playback.timestamp.boxcast || !videoEl) return;
+    playerRef.current = {
+      seekTo: (seconds: number) => { videoEl.currentTime = Math.max(0, seconds); },
+      pauseVideo: () => videoEl.pause(),
+      playVideo: () => { void videoEl.play().catch(() => {}); },
+      getCurrentTime: () => videoEl.currentTime,
+      destroy: () => {},
+    };
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onTime = () => setCurrentTime(Math.floor(videoEl.currentTime));
+    videoEl.addEventListener("play", onPlay);
+    videoEl.addEventListener("pause", onPause);
+    videoEl.addEventListener("timeupdate", onTime);
+    return () => {
+      videoEl.removeEventListener("play", onPlay);
+      videoEl.removeEventListener("pause", onPause);
+      videoEl.removeEventListener("timeupdate", onTime);
+      playerRef.current = null;
+    };
+  }, [playback.timestamp.boxcast, videoEl]);
 
   const seekBy = (delta: number) => {
     if (!playerRef.current) return;
@@ -13459,8 +13599,8 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
               rel="noopener noreferrer"
               className="video-yt-link"
             >
-              <Youtube size={16} />
-              Open in YouTube
+              {playback.timestamp.boxcast ? <Tv2 size={16} /> : <Youtube size={16} />}
+              {playback.timestamp.boxcast ? "Open in BoxCast" : "Open in YouTube"}
             </a>
             <CloseButton onClose={onClose} />
           </div>
@@ -13468,7 +13608,15 @@ function MatchVideoOverlay({ playback, onClose }: { playback: MatchPlayback; onC
         <div className="video-body">
           <div className="video-main">
             <div className="video-embed-wrap">
-              {playback.timestamp.videoId ? (
+              {playback.timestamp.boxcast ? (
+                hlsSrc ? (
+                  <div className="video-player-hls">
+                    <WorldsHlsPlayer src={hlsSrc} seekRequest={worldsSeek} mediaRef={worldsVideoRef} />
+                  </div>
+                ) : (
+                  <div className="video-unavailable">{hlsError ?? "Loading stream…"}</div>
+                )
+              ) : playback.timestamp.videoId ? (
                 <iframe
                   ref={setIframeRef}
                   src={embedUrl}
@@ -14150,7 +14298,7 @@ function TeamMatchesTab({
   onOpenTab,
   presetSupported,
   presetLoading,
-  presetUrl,
+  jumperHref,
   timestampMap,
   onOpenMatch,
 }: {
@@ -14166,7 +14314,7 @@ function TeamMatchesTab({
   onOpenTab?: (tab: EventDetailTab) => void;
   presetSupported?: boolean;
   presetLoading?: boolean;
-  presetUrl?: string | null;
+  jumperHref?: string | null;
   timestampMap?: Map<number, MatchTimestamp>;
   onOpenMatch?: (match: Match, timestamp: MatchTimestamp) => void;
 }) {
@@ -14189,7 +14337,7 @@ function TeamMatchesTab({
               showPlay
               presetSupported={presetSupported}
               presetLoading={presetLoading}
-              presetUrl={presetUrl}
+              jumperHref={jumperHref}
               timestampMap={timestampMap}
               onOpenMatch={onOpenMatch}
             />
@@ -18855,17 +19003,10 @@ function MyTeamDashboard() {
     return null;
   }, [nextUp, team]);
 
-  // Jumper livestream timestamps for the live event (drives the play button).
-  const preset = useAsync(async () => {
-    if (!liveEvent) return null;
-    return api.jumperPresetEventExists(liveEvent.sku);
-  }, [liveEvent?.sku]);
-  const matchTimestamps = useAsync(async () => {
-    if (!liveEvent || !preset.data?.exists) return null;
-    return api.jumperMatchTimestamps(liveEvent.sku, { offsetSeconds: -5 });
-  }, [liveEvent?.sku, preset.data?.exists]);
-  const timestampMap = useMemo(() => new Map((matchTimestamps.data ?? []).map((ts) => [ts.id, ts])), [matchTimestamps.data]);
-  const presetSupported = !!preset.data?.exists;
+  // Livestream timestamps for the live event (drives the play button).
+  const matchVideos = useMatchVideos(liveEvent, liveMatches);
+  const timestampMap = matchVideos.timestampMap;
+  const presetSupported = matchVideos.supported;
 
   // Next upcoming event (any season) for the idle "Up next" panel.
   const now = today.getTime();
@@ -19196,7 +19337,7 @@ function MyTeamDashboard() {
             const { red, blue, redScore, blueScore, winner } = matchWinner(m);
             const hasScore = winner !== "-";
             const ts = timestampMap.get(m.id);
-            const canPlay = presetSupported && ts && ts.timestamp !== null && ts.videoId;
+            const canPlay = presetSupported && ts && ts.timestamp !== null && (ts.videoId || ts.boxcast);
             const isNext = nextUp?.id === m.id;
             return (
               <tr key={m.id} className={isNext ? "myteam-next-row" : ""}>

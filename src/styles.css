@@ -4870,6 +4870,13 @@ a.team-card-num:hover {
   border: 0;
 }
 
+/* Worlds streams on BoxCast HLS, which has no embed chrome — WorldsHlsPlayer
+   brings its own controls and fills the same 16:9 box as the YouTube iframe. */
+.video-player-hls {
+  position: absolute;
+  inset: 0;
+}
+
 .video-unavailable {
   position: absolute;
   inset: 0;
@@ -5675,7 +5682,10 @@ a.team-card-num:hover {
   border-radius: var(--radius);
 }
 
-.division-tabs span {
+/* Direct child only: the sliding .slide-pill inside each button is also a
+   <span>, and a descendant selector here handed it this margin-right — leaving
+   the active fill 4px short of the button's right edge. */
+.division-tabs > span {
   margin-right: 4px;
   color: var(--text-2);
   font-weight: 700;
